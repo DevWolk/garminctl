@@ -41,6 +41,8 @@ func dumpWithDeviceXML(t *testing.T) *device.DirFS {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() { _ = dfs.Close() }) // Windows cannot remove the temp dir while the root handle is open
+
 	return dfs
 }
 

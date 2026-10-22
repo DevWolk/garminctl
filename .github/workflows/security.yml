@@ -27,6 +27,9 @@ jobs:
         run: go tool -modfile=tools.mod govulncheck ./...
 
   codeql:
+    # Dependabot's pull requests run with a read-only token, which cannot
+    # upload results; the merged change is scanned on main anyway.
+    if: github.actor != 'dependabot[bot]'
     name: CodeQL
     runs-on: ubuntu-latest
     permissions:

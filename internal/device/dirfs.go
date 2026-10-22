@@ -62,12 +62,9 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 			return "", errors.New("invalid path")
 		}
 
-		cand := filepath.Join(cur, part)
-		if _, err := d.root.Lstat(cand); err == nil {
-			cur = cand
-			continue
-		}
-
+		// Every element goes through the directory listing, even one that
+		// exists as typed: on a case-insensitive filesystem (Windows) a
+		// direct lookup would succeed without telling the on-disk spelling.
 		found, err := d.findFold(cur, part)
 		if err != nil {
 			return "", ErrNotFound
@@ -75,7 +72,7 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 
 		if found == "" {
 			if create && i == len(parts)-1 {
-				return cand, nil
+				return filepath.Join(cur, part), nil
 			}
 
 			return "", ErrNotFound
@@ -87,21 +84,27 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 	return cur, nil
 }
 
-// findFold returns the entry of dir whose name equals name ignoring case,
-// or "" when there is none.
+// findFold returns the entry of dir named name, or the first one that
+// matches ignoring case, or "" when there is none.
 func (d *DirFS) findFold(dir, name string) (string, error) {
 	entries, err := d.readDir(dir)
 	if err != nil {
 		return "", err
 	}
 
+	fold := ""
+
 	for _, e := range entries {
-		if strings.EqualFold(e.Name(), name) {
-			return e.Name(), nil
+		if e.Name() == name {
+			return name, nil
+		}
+
+		if fold == "" && strings.EqualFold(e.Name(), name) {
+			fold = e.Name()
 		}
 	}
 
-	return "", nil
+	return fold, nil
 }
 
 func (d *DirFS) readDir(rel string) ([]os.DirEntry, error) {
