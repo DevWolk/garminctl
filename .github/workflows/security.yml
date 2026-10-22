@@ -27,12 +27,16 @@ jobs:
         run: go tool -modfile=tools.mod govulncheck ./...
 
   codeql:
-    # Dependabot's pull requests run with a read-only token, which cannot
-    # upload results; the merged change is scanned on main anyway.
-    if: github.actor != 'dependabot[bot]'
+    # Code scanning is available to public repositories and to private ones
+    # with GitHub Code Security, which a personal private repository lacks,
+    # so the job waits for the repository to go public. Dependabot's pull
+    # requests are skipped too: their read-only token cannot upload results,
+    # and the merged change is scanned on main anyway.
+    if: ${{ !github.event.repository.private && github.actor != 'dependabot[bot]' }}
     name: CodeQL
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       security-events: write
 
