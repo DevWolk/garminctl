@@ -45,5 +45,6 @@ make lint-fix   # apply the auto-fixable findings and formatting
 ## Pull requests
 
 One change per pull request, with the user-visible effect in the first line
-of the description. CI runs the tests on Linux and Windows, the linter,
-govulncheck and CodeQL; all of them must pass.
+of the description. CI runs the tests on Linux and Windows, the linter and
+govulncheck; all of them must pass. CodeQL joins them once the repository
+is public (code scanning is not available to a personal private one).
