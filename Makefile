@@ -6,7 +6,7 @@ PKG := ./cmd/garminctl
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build build-windows test race lint lint-fix fmt vet vuln check clean
+.PHONY: all build build-windows install update test race lint lint-fix fmt vet vuln check clean
 
 all: build build-windows
 
@@ -15,6 +15,16 @@ build:
 
 build-windows:
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(EXE) $(PKG)
+
+# Roll the build out on this machine: restart the running server and
+# refresh the Windows autostart copy. See scripts/install.sh.
+install: all
+	./scripts/install.sh
+
+# Fast-forward main and roll it out.
+update:
+	git pull --ff-only
+	$(MAKE) install
 
 test:
 	go test ./...

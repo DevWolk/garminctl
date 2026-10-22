@@ -55,7 +55,9 @@ See CLAUDE.md for the working rules. Module map:
 
 Quality gate: `make check` (golangci-lint with `.golangci.yml`, govet
 included, race tests, govulncheck) must pass; the tools are pinned in
-`tools.mod`. The web and MCP servers share `garmin.Lazy` (one lazily opened
+`tools.mod`. `make install` rebuilds both binaries and rolls them out on
+this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
+the Windows autostart copy); `make update` pulls main first. The web and MCP servers share `garmin.Lazy` (one lazily opened
 watch); `internal/paths` names the cache directory; tests over a dump use
 `internal/testdump`. `tools/expresswatch` is the daily Garmin Express
 release check (state in `docs/express-release.json`, workflow

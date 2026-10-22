@@ -44,7 +44,14 @@ GOOS=windows GOARCH=amd64 go build -o bin/garminctl.exe ./cmd/garminctl   # nati
 ```sh
 make check        # golangci-lint (govet included), go test -race, govulncheck
 make lint-fix     # apply the auto-fixable lint findings and formatting
+make install      # rebuild, restart the running server, refresh the Windows autostart copy
+make update       # git pull --ff-only, then make install
 ```
+
+`make install` restarts whichever server is running (the dev server in WSL,
+or the Windows autostart copy in `%LOCALAPPDATA%\garminctl`) on the new
+build and starts the dev server if nothing serves; the MCP server is picked
+up at Claude Code's next connection. `scripts/install.sh` has the details.
 
 `.golangci.yml` is the source of truth for the linters. golangci-lint and
 govulncheck are pinned in `tools.mod` and run through `go tool`, so nothing
