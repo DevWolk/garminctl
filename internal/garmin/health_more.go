@@ -2,17 +2,22 @@ package garmin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 // History returns one row per day for up to a year from Connect's range
-// endpoints (steps, resting heart rate, stress, body battery, sleep), a
-// handful of requests instead of one per day. Calories and intensity minutes
-// are not available this way and stay zero.
+// endpoints (steps, resting heart rate, stress, body battery, sleep). Each of
+// them accepts at most 28 days per request, so the span is fetched in 28-day
+// windows, a few at a time, and days older than two days are cached on disk.
+// Calories and intensity minutes are not available this way and stay zero.
 func (c *Cloud) History(ctx context.Context, days int) ([]DailyHealth, error) {
 	if days < 1 {
 		days = 30
@@ -26,6 +31,9 @@ func (c *Cloud) History(ctx context.Context, days int) ([]DailyHealth, error) {
 	}
 	end := time.Now()
 	start := end.AddDate(0, 0, -(days - 1))
+	cache := c.loadHistoryCache(ctx)
+	final := end.AddDate(0, 0, -2).Format("2006-01-02") // days up to this one no longer change
+	var mu sync.Mutex
 	byDate := map[string]*DailyHealth{}
 	row := func(date string) *DailyHealth {
 		if r, ok := byDate[date]; ok {
@@ -36,101 +44,156 @@ func (c *Cloud) History(ctx context.Context, days int) ([]DailyHealth, error) {
 		return r
 	}
 	var errs []string
-	// Range endpoints are asked in windows of at most 90 days.
-	for ws := start; !ws.After(end); ws = ws.AddDate(0, 0, 90) {
-		we := ws.AddDate(0, 0, 89)
+	fail := func(what string, err error) {
+		mu.Lock()
+		errs = append(errs, what+": "+err.Error())
+		mu.Unlock()
+	}
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 6)
+	for ws := start; !ws.After(end); ws = ws.AddDate(0, 0, 28) {
+		we := ws.AddDate(0, 0, 27)
 		if we.After(end) {
 			we = end
 		}
-		s, e := ws.Format("2006-01-02"), we.Format("2006-01-02")
-
-		var steps []struct {
-			CalendarDate  string `json:"calendarDate"`
-			TotalSteps    int    `json:"totalSteps"`
-			TotalDistance int    `json:"totalDistance"`
-			StepGoal      int    `json:"stepGoal"`
-		}
-		if err := c.gc.GetJSON(ctx, fmt.Sprintf("/usersummary-service/stats/steps/daily/%s/%s", s, e), &steps); err != nil {
-			errs = append(errs, "steps: "+err.Error())
-		}
-		for _, d := range steps {
-			r := row(d.CalendarDate)
-			r.Steps, r.DistanceM, r.StepGoal = d.TotalSteps, d.TotalDistance, d.StepGoal
-		}
-
-		var rhr struct {
-			AllMetrics struct {
-				MetricsMap map[string][]struct {
-					Value        float64 `json:"value"`
-					CalendarDate string  `json:"calendarDate"`
-				} `json:"metricsMap"`
-			} `json:"allMetrics"`
-		}
-		if err := c.gc.GetJSON(ctx, fmt.Sprintf("/userstats-service/wellness/daily/%s?fromDate=%s&untilDate=%s&metricId=60", dn, s, e), &rhr); err != nil {
-			errs = append(errs, "resting heart rate: "+err.Error())
-		}
-		for _, d := range rhr.AllMetrics.MetricsMap["WELLNESS_RESTING_HEART_RATE"] {
-			row(d.CalendarDate).RestingHR = int(d.Value)
-		}
-
-		var stress []struct {
-			CalendarDate string `json:"calendarDate"`
-			Values       struct {
-				OverallStressLevel int `json:"overallStressLevel"`
-			} `json:"values"`
-		}
-		if err := c.gc.GetJSON(ctx, fmt.Sprintf("/usersummary-service/stats/stress/daily/%s/%s", s, e), &stress); err != nil {
-			errs = append(errs, "stress: "+err.Error())
-		}
-		for _, d := range stress {
-			row(d.CalendarDate).AvgStress = d.Values.OverallStressLevel
-		}
-
-		var bb []struct {
-			Date   string      `json:"date"`
-			Values [][]float64 `json:"bodyBatteryValuesArray"`
-		}
-		if err := c.gc.GetJSON(ctx, fmt.Sprintf("/wellness-service/wellness/bodyBattery/reports/daily?startDate=%s&endDate=%s", s, e), &bb); err != nil {
-			errs = append(errs, "body battery: "+err.Error())
-		}
-		for _, d := range bb {
-			r := row(d.Date)
-			lo, hi := 0, 0
-			for i, p := range d.Values {
-				if len(p) < 2 {
-					continue
-				}
-				v := int(p[1])
-				if i == 0 || v < lo {
-					lo = v
-				}
-				if v > hi {
-					hi = v
-				}
+		// Skip windows the cache already covers completely.
+		cached := true
+		for d := ws; !d.After(we); d = d.AddDate(0, 0, 1) {
+			ds := d.Format("2006-01-02")
+			r, ok := cache[ds]
+			if !ok || ds > final {
+				cached = false
+				break
 			}
-			r.BodyBatteryLow, r.BodyBatteryHigh = lo, hi
+			byDate[ds] = &r
 		}
-
-		var sl struct {
-			IndividualStats []struct {
+		if cached {
+			continue
+		}
+		s, e := ws.Format("2006-01-02"), we.Format("2006-01-02")
+		fetch := func(what string, fn func() error) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				if err := fn(); err != nil {
+					fail(what, err)
+				}
+			}()
+		}
+		fetch("steps", func() error {
+			var steps []struct {
+				CalendarDate  string `json:"calendarDate"`
+				TotalSteps    int    `json:"totalSteps"`
+				TotalDistance int    `json:"totalDistance"`
+				StepGoal      int    `json:"stepGoal"`
+			}
+			if err := c.gc.GetJSON(ctx, fmt.Sprintf("/usersummary-service/stats/steps/daily/%s/%s", s, e), &steps); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, d := range steps {
+				r := row(d.CalendarDate)
+				r.Steps, r.DistanceM, r.StepGoal = d.TotalSteps, d.TotalDistance, d.StepGoal
+			}
+			return nil
+		})
+		fetch("resting heart rate", func() error {
+			var rhr struct {
+				AllMetrics struct {
+					MetricsMap map[string][]struct {
+						Value        float64 `json:"value"`
+						CalendarDate string  `json:"calendarDate"`
+					} `json:"metricsMap"`
+				} `json:"allMetrics"`
+			}
+			if err := c.gc.GetJSON(ctx, fmt.Sprintf("/userstats-service/wellness/daily/%s?fromDate=%s&untilDate=%s&metricId=60", dn, s, e), &rhr); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, d := range rhr.AllMetrics.MetricsMap["WELLNESS_RESTING_HEART_RATE"] {
+				row(d.CalendarDate).RestingHR = int(d.Value)
+			}
+			return nil
+		})
+		fetch("stress", func() error {
+			var stress []struct {
 				CalendarDate string `json:"calendarDate"`
 				Values       struct {
-					TotalSleepTimeInSeconds int `json:"totalSleepTimeInSeconds"`
+					OverallStressLevel int `json:"overallStressLevel"`
 				} `json:"values"`
-			} `json:"individualStats"`
-		}
-		if err := c.gc.GetJSON(ctx, fmt.Sprintf("/sleep-service/stats/sleep/daily/%s/%s", s, e), &sl); err != nil {
-			errs = append(errs, "sleep: "+err.Error())
-		}
-		for _, d := range sl.IndividualStats {
-			row(d.CalendarDate).SleepSec = d.Values.TotalSleepTimeInSeconds
-		}
+			}
+			if err := c.gc.GetJSON(ctx, fmt.Sprintf("/usersummary-service/stats/stress/daily/%s/%s", s, e), &stress); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, d := range stress {
+				row(d.CalendarDate).AvgStress = d.Values.OverallStressLevel
+			}
+			return nil
+		})
+		fetch("body battery", func() error {
+			var bb []struct {
+				Date   string      `json:"date"`
+				Values [][]float64 `json:"bodyBatteryValuesArray"`
+			}
+			if err := c.gc.GetJSON(ctx, fmt.Sprintf("/wellness-service/wellness/bodyBattery/reports/daily?startDate=%s&endDate=%s", s, e), &bb); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, d := range bb {
+				r := row(d.Date)
+				lo, hi := 0, 0
+				for i, p := range d.Values {
+					if len(p) < 2 {
+						continue
+					}
+					v := int(p[1])
+					if i == 0 || v < lo {
+						lo = v
+					}
+					if v > hi {
+						hi = v
+					}
+				}
+				r.BodyBatteryLow, r.BodyBatteryHigh = lo, hi
+			}
+			return nil
+		})
+		fetch("sleep", func() error {
+			var sl struct {
+				IndividualStats []struct {
+					CalendarDate string `json:"calendarDate"`
+					Values       struct {
+						TotalSleepTimeInSeconds int `json:"totalSleepTimeInSeconds"`
+					} `json:"values"`
+				} `json:"individualStats"`
+			}
+			if err := c.gc.GetJSON(ctx, fmt.Sprintf("/sleep-service/stats/sleep/daily/%s/%s", s, e), &sl); err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, d := range sl.IndividualStats {
+				row(d.CalendarDate).SleepSec = d.Values.TotalSleepTimeInSeconds
+			}
+			return nil
+		})
 	}
+	wg.Wait()
 	out := make([]DailyHealth, 0, days)
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		date := d.Format("2006-01-02")
 		if r, ok := byDate[date]; ok {
 			out = append(out, *r)
+			if date <= final {
+				cache[date] = *r
+			}
 		} else {
 			out = append(out, DailyHealth{Date: date})
 		}
@@ -138,7 +201,34 @@ func (c *Cloud) History(ctx context.Context, days int) ([]DailyHealth, error) {
 	if len(byDate) == 0 && len(errs) > 0 {
 		return nil, fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
+	c.saveHistoryCache(ctx, cache)
 	return out, nil
+}
+
+func (c *Cloud) historyCachePath(ctx context.Context) string {
+	unit := uint64(0)
+	if dx, err := c.svc.DeviceXML(ctx); err == nil {
+		unit = dx.UnitID
+	}
+	return filepath.Join(c.cacheDir, fmt.Sprintf("history-%d.json", unit))
+}
+
+func (c *Cloud) loadHistoryCache(ctx context.Context) map[string]DailyHealth {
+	m := map[string]DailyHealth{}
+	b, err := os.ReadFile(c.historyCachePath(ctx))
+	if err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	return m
+}
+
+func (c *Cloud) saveHistoryCache(ctx context.Context, m map[string]DailyHealth) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(c.cacheDir, 0o755)
+	_ = os.WriteFile(c.historyCachePath(ctx), b, 0o600)
 }
 
 // HealthExtras is the rest of what Garmin Connect knows: fitness metrics,

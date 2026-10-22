@@ -269,7 +269,9 @@ tab, `music ls` and `music_list` report them as "providers" by size only.
 
 ## More Connect endpoints (health extras and history, verified 2026-10-22)
 
-- Range stats, used for anything over 14 days: steps
+- Range stats, used for anything over 14 days (every one of them refuses
+  spans over 28 days, so the tool asks in 28-day windows and caches days
+  older than two days in `~/.cache/garminctl/history-<unit>.json`): steps
   `GET /usersummary-service/stats/steps/daily/{start}/{end}`
   (`calendarDate, totalSteps, totalDistance, stepGoal`); resting heart rate
   `GET /userstats-service/wellness/daily/{displayName}?fromDate&untilDate&metricId=60`
