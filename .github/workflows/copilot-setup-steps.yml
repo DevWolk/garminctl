@@ -1,0 +1,33 @@
+# Prepares the environment Copilot coding agent works in, so `make check`
+# runs there without the agent having to discover the toolchain itself.
+# The job name is fixed: GitHub looks for `copilot-setup-steps`.
+name: Copilot setup steps
+
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+  pull_request:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Warm the module and tool caches
+        run: |
+          go mod download
+          go build ./...
+          go tool -modfile=tools.mod golangci-lint version
+          go tool -modfile=tools.mod govulncheck -version
