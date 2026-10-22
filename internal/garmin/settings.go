@@ -2,13 +2,15 @@ package garmin
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/fit"
 )
 
 // Paths on the watch.
@@ -45,10 +47,12 @@ func (v *SettingsView) Message(nameOrNum string, index int) (*fit.NamedMessage, 
 		if m.Index != index {
 			continue
 		}
+
 		if m.Name == nameOrNum || strconv.Itoa(int(m.Num)) == nameOrNum {
 			return m, true
 		}
 	}
+
 	return nil, false
 }
 
@@ -74,60 +78,133 @@ type ResolvedChange struct {
 // and, when available, the current settings for the previous value.
 func (s *Service) Resolve(c Change, view *SettingsView) (ResolvedChange, error) {
 	rc := ResolvedChange{Change: c}
-	p := s.profile
-	var mp *fit.MesgProfile
-	if n, err := strconv.Atoi(c.Mesg); err == nil {
-		rc.MesgNum = uint16(n)
-		mp = p.Messages[rc.MesgNum]
-	} else if m, ok := p.MessageByName(c.Mesg); ok {
-		mp = m
-		rc.MesgNum = m.Num
-	} else {
-		return rc, fmt.Errorf("unknown message %q", c.Mesg)
-	}
-	var fp *fit.FieldProfile
-	if n, err := strconv.Atoi(c.Field); err == nil {
-		rc.FieldNum = uint8(n)
-		if mp != nil {
-			fp = mp.Fields[rc.FieldNum]
-		}
-	} else if mp != nil {
-		f, ok := mp.FieldByName(c.Field)
-		if !ok {
-			return rc, fmt.Errorf("message %s has no field %q", c.Mesg, c.Field)
-		}
-		fp = f
-		rc.FieldNum = f.Num
-	} else {
-		return rc, fmt.Errorf("message %s is undocumented; address its fields by number", c.Mesg)
-	}
-	v, err := p.ParseValue(fp, c.Value)
+
+	mp, err := s.resolveMesg(&rc)
 	if err != nil {
 		return rc, err
 	}
+
+	fp, err := resolveField(&rc, mp)
+	if err != nil {
+		return rc, err
+	}
+
+	v, err := s.profile.ParseValue(fp, c.Value)
+	if err != nil {
+		return rc, err
+	}
+
+	raw, err := changeRaw(v)
+	if err != nil {
+		return rc, fmt.Errorf("field %s.%s: %w", c.Mesg, c.Field, err)
+	}
+
+	rc.Raw = raw
+
+	if view != nil {
+		rc.Previous = previousValue(view, rc)
+	}
+
+	return rc, nil
+}
+
+// resolveMesg sets rc.MesgNum from a profile name or a number and returns
+// the message profile, nil for an undocumented number.
+func (s *Service) resolveMesg(rc *ResolvedChange) (*fit.MesgProfile, error) {
+	if n, err := strconv.Atoi(rc.Mesg); err == nil {
+		if n < 0 || n > math.MaxUint16 {
+			return nil, fmt.Errorf("message number %d is out of range", n)
+		}
+
+		rc.MesgNum = uint16(n)
+
+		return s.profile.Messages[rc.MesgNum], nil
+	}
+
+	m, ok := s.profile.MessageByName(rc.Mesg)
+	if !ok {
+		return nil, fmt.Errorf("unknown message %q", rc.Mesg)
+	}
+
+	rc.MesgNum = m.Num
+
+	return m, nil
+}
+
+// resolveField sets rc.FieldNum from a profile name or a number and returns
+// the field profile, nil for an undocumented number.
+func resolveField(rc *ResolvedChange, mp *fit.MesgProfile) (*fit.FieldProfile, error) {
+	if n, err := strconv.Atoi(rc.Field); err == nil {
+		if n < 0 || n > math.MaxUint8 {
+			return nil, fmt.Errorf("field number %d is out of range", n)
+		}
+
+		rc.FieldNum = uint8(n)
+
+		if mp == nil {
+			return nil, nil // an undocumented message: the field has no profile either
+		}
+
+		return mp.Fields[rc.FieldNum], nil
+	}
+
+	if mp == nil {
+		return nil, fmt.Errorf("message %s is undocumented; address its fields by number", rc.Mesg)
+	}
+
+	f, ok := mp.FieldByName(rc.Field)
+	if !ok {
+		return nil, fmt.Errorf("message %s has no field %q", rc.Mesg, rc.Field)
+	}
+
+	rc.FieldNum = f.Num
+
+	return f, nil
+}
+
+// changeRaw turns a parsed value into the unscaled integer the change file
+// carries in its 32-bit value slot.
+func changeRaw(v any) (int64, error) {
+	var raw int64
+
 	switch x := v.(type) {
 	case string:
-		return rc, fmt.Errorf("field %s.%s: string values cannot be sent as a settings change", c.Mesg, c.Field)
+		return 0, errors.New("string values cannot be sent as a settings change")
 	case float64:
-		rc.Raw = int64(x)
+		raw = int64(x)
 	default:
 		iv, err := toInt64(v)
 		if err != nil {
-			return rc, fmt.Errorf("field %s.%s: %w", c.Mesg, c.Field, err)
+			return 0, err
 		}
-		rc.Raw = iv
+
+		raw = iv
 	}
-	if view != nil {
-		if m, ok := view.Message(strconv.Itoa(int(rc.MesgNum)), c.Index); ok {
-			if f, ok := m.FieldByName(strconv.Itoa(int(rc.FieldNum))); ok {
-				rc.Previous = f.Value
-				if arr, isArr := f.Raw.([]any); isArr && c.ArrayIndex != nil && *c.ArrayIndex < len(arr) {
-					rc.Previous = arr[*c.ArrayIndex]
-				}
-			}
-		}
+
+	if raw < math.MinInt32 || raw > math.MaxUint32 {
+		return 0, fmt.Errorf("value %d does not fit the 32-bit slot of a settings change", raw)
 	}
-	return rc, nil
+
+	return raw, nil
+}
+
+// previousValue reads the field's current value from the settings view.
+func previousValue(view *SettingsView, rc ResolvedChange) any {
+	m, ok := view.Message(strconv.Itoa(int(rc.MesgNum)), rc.Index)
+	if !ok {
+		return nil
+	}
+
+	f, ok := m.FieldByName(strconv.Itoa(int(rc.FieldNum)))
+	if !ok {
+		return nil
+	}
+
+	if arr, isArr := f.Raw.([]any); isArr && rc.ArrayIndex != nil && *rc.ArrayIndex < len(arr) {
+		return arr[*rc.ArrayIndex]
+	}
+
+	return f.Value
 }
 
 func toInt64(v any) (int64, error) {
@@ -139,6 +216,10 @@ func toInt64(v any) (int64, error) {
 	case int32:
 		return int64(x), nil
 	case uint64:
+		if x > math.MaxInt64 {
+			return 0, fmt.Errorf("value %d is too large", x)
+		}
+
 		return int64(x), nil
 	case uint32:
 		return int64(x), nil
@@ -148,10 +229,12 @@ func toInt64(v any) (int64, error) {
 		if x {
 			return 1, nil
 		}
+
 		return 0, nil
 	case float64:
 		return int64(x), nil
 	}
+
 	return 0, fmt.Errorf("integer expected, got %T", v)
 }
 
@@ -186,20 +269,28 @@ func BuildChangeFile(changes []ResolvedChange, unitID uint64, swVersion uint16, 
 		{Num: 2, Size: 1, BaseType: fit.BaseUint8},
 		{Num: 3, Size: 1, BaseType: fit.BaseUint8},
 	}
+
 	for _, c := range changes {
-		vals := map[uint8]any{253: ts, 4: uint32(c.Raw), 0: c.MesgNum, 2: c.FieldNum}
+		// The value slot is a uint32; Resolve keeps Raw within int32..uint32,
+		// and a negative value travels as its two's complement.
+		raw := uint32(c.Raw) //nolint:gosec // range checked in changeRaw; negatives are sent as two's complement on purpose
+
+		vals := map[uint8]any{253: ts, 4: raw, 0: c.MesgNum, 2: c.FieldNum}
 		if c.ArrayIndex != nil || c.Index > 0 {
 			vals[1] = c.Index
+
 			ai := 0
 			if c.ArrayIndex != nil {
 				ai = *c.ArrayIndex
 			}
+
 			vals[3] = ai
 			_ = b.Write(MesgSettingsChange, indexed, vals)
 		} else {
 			_ = b.Write(MesgSettingsChange, simple, vals)
 		}
 	}
+
 	return b.Bytes()
 }
 
@@ -214,44 +305,61 @@ type ApplyResult struct {
 // ApplyChanges writes a settings-change file to GARMIN/NewFiles.
 func (s *Service) ApplyChanges(ctx context.Context, changes []Change) (*ApplyResult, error) {
 	if len(changes) == 0 {
-		return nil, fmt.Errorf("no changes given")
+		return nil, errors.New("no changes given")
 	}
+
 	view, err := s.Settings(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	dx, err := s.DeviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	if dx.SoftwareVersion < 0 || dx.SoftwareVersion > math.MaxUint16 {
+		return nil, fmt.Errorf("software version %d in GarminDevice.xml is out of range", dx.SoftwareVersion)
+	}
+
 	var resolved []ResolvedChange
+
 	for _, c := range changes {
 		rc, err := s.Resolve(c, view)
 		if err != nil {
 			return nil, err
 		}
+
 		resolved = append(resolved, rc)
 	}
+
 	data := BuildChangeFile(resolved, dx.UnitID, uint16(dx.SoftwareVersion), time.Now())
+
 	name := fmt.Sprintf("%s/%s.FIT", PathNewFiles, newUUID())
 	if err := s.dev.Write(ctx, name, data); err != nil {
 		return nil, fmt.Errorf("write %s: %w", name, err)
 	}
+
 	s.invalidate(PathSettings)
+
 	note := "The watch applies files in GARMIN/NewFiles when the USB session ends; unplug the watch (or eject it) and check the setting."
+
 	var managed []string
+
 	for _, rc := range resolved {
 		if s.know.ManagedByConnect(rc.MesgNum, rc.FieldNum) {
 			managed = append(managed, rc.Mesg+"."+rc.Field)
 		}
 	}
+
 	if len(managed) > 0 {
 		note += " Warning: Garmin Connect re-sends " + strings.Join(managed, ", ") + " on every Garmin Express or phone sync and will overwrite this change unless the same value is set in Garmin Connect."
 	}
+
 	return &ApplyResult{Path: name, Bytes: len(data), Changes: resolved, Note: note}, nil
 }
 
-// SettingsFields flattens the view for display: one row per field.
+// SettingsRow is one field of the flattened view, with notes merged in.
 type SettingsRow struct {
 	Mesg      string   `json:"mesg"`
 	MesgNum   uint16   `json:"mesgNum"`
@@ -279,27 +387,34 @@ func (v *SettingsView) Rows() []SettingsRow {
 
 func (v *SettingsView) rows(p *fit.Profile) []SettingsRow {
 	var rows []SettingsRow
+
 	for _, m := range v.Messages {
 		mesgName := m.Name
 		if mn, ok := v.Knowledge.Messages[strconv.Itoa(int(m.Num))]; ok && mesgName == "" {
 			mesgName = mn.Name
 		}
+
 		if mesgName == "" {
 			mesgName = "mesg" + strconv.Itoa(int(m.Num))
 		}
+
 		for _, f := range m.Fields {
 			r := SettingsRow{Mesg: mesgName, MesgNum: m.Num, Index: m.Index, Field: f.Name, FieldNum: f.Num, Type: f.Type, Units: f.Units, Known: f.Known, Value: f.Value, Raw: f.Raw}
+
 			key := strconv.Itoa(int(m.Num)) + "." + strconv.Itoa(int(f.Num))
 			if n, ok := v.Knowledge.Fields[key]; ok {
 				if r.Field == "" {
 					r.Field = n.Name
 				}
+
 				r.Note = n.Note
 				r.Confident = n.Confidence
 			}
+
 			if r.Field == "" {
 				r.Field = "field" + strconv.Itoa(int(f.Num))
 			}
+
 			r.ManagedByConnect = v.Knowledge.ManagedByConnect(m.Num, f.Num)
 			if mp, ok := p.Messages[m.Num]; ok {
 				if fp, ok := mp.Fields[f.Num]; ok {
@@ -309,41 +424,48 @@ func (v *SettingsView) rows(p *fit.Profile) []SettingsRow {
 					}
 				}
 			}
+
 			rows = append(rows, r)
 		}
 	}
+
 	return rows
 }
 
 // ParseChangeSpec parses "mesg.field=value", "mesg[idx].field=value" or
 // "mesg.field[arr]=value" as used on the command line.
 func ParseChangeSpec(spec string) (Change, error) {
-	eq := strings.Index(spec, "=")
-	if eq < 0 {
+	left, value, ok := strings.Cut(spec, "=")
+	if !ok {
 		return Change{}, fmt.Errorf("expected mesg.field=value, got %q", spec)
 	}
-	left, value := spec[:eq], spec[eq+1:]
-	dot := strings.Index(left, ".")
-	if dot < 0 {
+
+	mesg, field, ok := strings.Cut(left, ".")
+	if !ok {
 		return Change{}, fmt.Errorf("expected mesg.field, got %q", left)
 	}
-	c := Change{Mesg: left[:dot], Field: left[dot+1:], Value: value}
+
+	c := Change{Mesg: mesg, Field: field, Value: value}
 	if i := strings.Index(c.Mesg, "["); i >= 0 && strings.HasSuffix(c.Mesg, "]") {
 		n, err := strconv.Atoi(c.Mesg[i+1 : len(c.Mesg)-1])
 		if err != nil {
 			return Change{}, fmt.Errorf("bad message index in %q", left)
 		}
+
 		c.Index = n
 		c.Mesg = c.Mesg[:i]
 	}
+
 	if i := strings.Index(c.Field, "["); i >= 0 && strings.HasSuffix(c.Field, "]") {
 		n, err := strconv.Atoi(c.Field[i+1 : len(c.Field)-1])
 		if err != nil {
 			return Change{}, fmt.Errorf("bad array index in %q", left)
 		}
+
 		c.ArrayIndex = &n
 		c.Field = c.Field[:i]
 	}
+
 	return c, nil
 }
 
@@ -352,19 +474,24 @@ func enumOptions(p *fit.Profile, typeName string) []string {
 	if !ok || len(vals) == 0 || len(vals) > 64 {
 		return nil
 	}
+
 	type kv struct {
 		v int64
 		n string
 	}
+
 	var list []kv
 	for v, n := range vals {
 		list = append(list, kv{v, n})
 	}
+
 	sort.Slice(list, func(i, j int) bool { return list[i].v < list[j].v })
+
 	out := make([]string, len(list))
 	for i, e := range list {
 		out[i] = e.n
 	}
+
 	return out
 }
 
@@ -382,18 +509,25 @@ type SchemaField struct {
 // Schema lists the documented fields of a message.
 func (s *Service) Schema(mesg string) ([]SchemaField, error) {
 	var mp *fit.MesgProfile
+
 	if n, err := strconv.Atoi(mesg); err == nil {
-		mp = s.profile.Messages[uint16(n)]
+		if n >= 0 && n <= math.MaxUint16 {
+			mp = s.profile.Messages[uint16(n)]
+		}
 	} else if m, ok := s.profile.MessageByName(mesg); ok {
 		mp = m
 	}
+
 	if mp == nil {
 		return nil, fmt.Errorf("unknown message %q", mesg)
 	}
+
 	var out []SchemaField
 	for _, f := range mp.Fields {
 		out = append(out, SchemaField{Num: f.Num, Name: f.Name, Type: f.Type, Base: f.BaseType, Array: f.Array, Units: f.Units, Options: enumOptions(s.profile, f.Type)})
 	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].Num < out[j].Num })
+
 	return out, nil
 }

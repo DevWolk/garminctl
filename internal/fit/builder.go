@@ -2,15 +2,20 @@ package fit
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
 // FITEpoch is 1989-12-31T00:00:00Z, the origin of FIT timestamps.
 var FITEpoch = time.Date(1989, 12, 31, 0, 0, 0, 0, time.UTC)
 
-// Timestamp converts t to a FIT timestamp.
+// Timestamp converts t to a FIT timestamp. Times outside the uint32 range
+// of the format (1989-12-31 to 2126-02-07) are clamped to its ends.
 func Timestamp(t time.Time) uint32 {
-	return uint32(t.Unix() - FITEpoch.Unix())
+	secs := t.Unix() - FITEpoch.Unix()
+	secs = max(0, min(secs, math.MaxUint32))
+
+	return uint32(secs)
 }
 
 // TimestampTime converts a FIT timestamp to time.Time.
@@ -39,7 +44,12 @@ func NewBuilder(profileVersion uint16, bigEndian bool) *Builder {
 // Write appends a data record. values maps field numbers to values; fields
 // absent from values are written as invalid.
 func (b *Builder) Write(globalNum uint16, fields []FieldDef, values map[uint8]any) error {
+	if len(fields) > math.MaxUint8 {
+		return fmt.Errorf("message %d: %d fields, a definition holds at most %d", globalNum, len(fields), math.MaxUint8)
+	}
+
 	sig := fmt.Sprintf("%d:%v", globalNum, fields)
+
 	def := b.lastDef
 	if def == nil || sig != b.lastSig {
 		def = &Definition{LocalNum: 0, BigEndian: b.bigEndian, GlobalNum: globalNum, Fields: fields}
@@ -47,13 +57,16 @@ func (b *Builder) Write(globalNum uint16, fields []FieldDef, values map[uint8]an
 		b.lastDef = def
 		b.file.Records = append(b.file.Records, Record{Kind: RecDefinition, Def: def})
 	}
+
 	m := &Message{Def: def}
 	for _, fd := range fields {
 		f := Field{Def: fd, Raw: make([]byte, fd.Size)}
+
 		v, has := values[fd.Num]
 		if !has {
 			v = nil
 		}
+
 		if fd.BaseType == BaseString {
 			for i := range f.Raw {
 				f.Raw[i] = 0
@@ -64,12 +77,16 @@ func (b *Builder) Write(globalNum uint16, fields []FieldDef, values map[uint8]an
 				copy(f.Raw[i:], inv)
 			}
 		}
+
 		if err := f.SetValue(v, b.bigEndian); err != nil {
 			return fmt.Errorf("message %d: %w", globalNum, err)
 		}
+
 		m.Fields = append(m.Fields, f)
 	}
+
 	b.file.Records = append(b.file.Records, Record{Kind: RecData, Msg: m})
+
 	return nil
 }
 

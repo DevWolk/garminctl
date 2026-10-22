@@ -3,7 +3,7 @@ package garmin
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // Garmin's update manifest publishes MD5 checksums; integrity check only, not security
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -16,14 +16,14 @@ import (
 	"strings"
 	"time"
 
-	"garminctl/internal/ciqstore"
-	"garminctl/internal/device"
-	"garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
 )
 
-// UpdatesURL is Garmin's device software update service (the one Garmin
-// Express calls). It answers to the device XML alone.
-var UpdatesURL = "https://omt.garmin.com/api/device-software/v1/updates"
+// DefaultUpdatesURL is Garmin's device software update service (the one
+// Garmin Express calls). It answers to the device XML alone.
+const DefaultUpdatesURL = "https://omt.garmin.com/api/device-software/v1/updates"
 
 // HTTPClient is used for update checks and downloads.
 var HTTPClient = &http.Client{Timeout: 10 * time.Minute}
@@ -86,26 +86,35 @@ func (s *Service) CheckSoftwareUpdates(ctx context.Context) ([]SoftwareUpdate, e
 	if err != nil {
 		return nil, err
 	}
+
 	body, _ := json.Marshal(map[string]any{"GarminDeviceXml": string(xmlBytes)})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, UpdatesURL, bytes.NewReader(body))
+
+	url := s.UpdatesURL // set by New; tests point it at their own server
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "garminctl/0.1")
+
 	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("update service: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("update service answered %s", resp.Status)
 	}
+
 	var r omtResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&r); err != nil {
 		return nil, fmt.Errorf("update service: %w", err)
 	}
+
 	out := make([]SoftwareUpdate, 0, len(r.Updates))
 	for _, u := range r.Updates {
 		su := SoftwareUpdate{
@@ -120,9 +129,12 @@ func (s *Service) CheckSoftwareUpdates(ctx context.Context) ([]SoftwareUpdate, e
 				su.ReleaseNotes = append(su.ReleaseNotes, strings.TrimSpace(line))
 			}
 		}
+
 		out = append(out, su)
 	}
+
 	sort.SliceStable(out, func(i, j int) bool { return out[i].IsPrimaryFirmware && !out[j].IsPrimaryFirmware })
+
 	return out, nil
 }
 
@@ -130,6 +142,7 @@ func firstNonEmpty(a, b string) string {
 	if a != "" {
 		return a
 	}
+
 	return b
 }
 
@@ -150,80 +163,123 @@ func (s *Service) InstallSoftwareUpdate(ctx context.Context, partNumber string) 
 	if err != nil {
 		return nil, err
 	}
+
+	u, err := findUpdate(updates, partNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := downloadUpdate(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := strings.Trim(strings.ReplaceAll(u.InstallPath, "\\", "/"), "/")
+	if err := s.ensureDir(ctx, dir); err != nil {
+		return nil, err
+	}
+
+	target := path.Join(dir, u.FileName)
+	if err := s.dev.Write(ctx, target, data); err != nil {
+		return nil, fmt.Errorf("write %s: %w", target, err)
+	}
+
+	s.invalidate(PathDeviceXML)
+
+	restart := u.IsRestartRequired || u.IsPrimaryFirmware
+
+	note := "Written to the watch. It installs the update when the USB session ends: unplug the watch."
+	if restart {
+		note += " The watch restarts to apply it; keep it charged and do not interrupt the restart."
+	}
+
+	return &InstallResult{PartNumber: u.PartNumber, Path: target, Bytes: len(data), Restart: restart, Note: note}, nil
+}
+
+// findUpdate picks the offered update with the given part number and checks
+// that Garmin told us where it goes.
+func findUpdate(updates []SoftwareUpdate, partNumber string) (*SoftwareUpdate, error) {
 	var u *SoftwareUpdate
+
 	for i := range updates {
 		if updates[i].PartNumber == partNumber {
 			u = &updates[i]
 		}
 	}
+
 	if u == nil {
 		return nil, fmt.Errorf("no update with part number %s is offered for this watch", partNumber)
 	}
+
 	if u.DownloadURL == "" || u.InstallPath == "" || u.FileName == "" {
 		return nil, fmt.Errorf("%s: Garmin did not provide a download or install location", u.ProductName)
 	}
+
+	return u, nil
+}
+
+// downloadUpdate fetches the deliverable and checks its size and checksum.
+func downloadUpdate(ctx context.Context, u *SoftwareUpdate) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.DownloadURL, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download answered %s", resp.Status)
 	}
+
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
 	if err != nil {
 		return nil, fmt.Errorf("download: %w", err)
 	}
+
 	if u.SizeBytes > 0 && int64(len(data)) != u.SizeBytes {
 		return nil, fmt.Errorf("download size %d does not match the expected %d bytes", len(data), u.SizeBytes)
 	}
+
 	if u.MD5 != "" {
-		sum := md5.Sum(data)
+		sum := md5.Sum(data) //nolint:gosec // Garmin's update manifest publishes MD5 checksums; integrity check only, not security
 		if !strings.EqualFold(hex.EncodeToString(sum[:]), u.MD5) {
 			return nil, errors.New("download checksum mismatch; nothing was written to the watch")
 		}
 	}
-	dir := strings.Trim(strings.ReplaceAll(u.InstallPath, "\\", "/"), "/")
-	if err := s.ensureDir(ctx, dir); err != nil {
-		return nil, err
-	}
-	target := path.Join(dir, u.FileName)
-	if err := s.dev.Write(ctx, target, data); err != nil {
-		return nil, fmt.Errorf("write %s: %w", target, err)
-	}
-	s.invalidate(PathDeviceXML)
-	note := "Written to the watch. It installs the update when the USB session ends: unplug the watch."
-	if u.IsRestartRequired || u.IsPrimaryFirmware {
-		note += " The watch restarts to apply it; keep it charged and do not interrupt the restart."
-	}
-	return &InstallResult{PartNumber: u.PartNumber, Path: target, Bytes: len(data), Restart: u.IsRestartRequired || u.IsPrimaryFirmware, Note: note}, nil
+
+	return data, nil
 }
 
 // ensureDir creates every missing segment of dir on the watch.
 func (s *Service) ensureDir(ctx context.Context, dir string) error {
 	cur := ""
-	for _, seg := range strings.Split(dir, "/") {
+
+	for seg := range strings.SplitSeq(dir, "/") {
 		if seg == "" {
 			continue
 		}
+
 		if cur == "" {
 			cur = seg
 		} else {
 			cur += "/" + seg
 		}
+
 		if _, err := s.dev.Stat(ctx, cur); err == nil {
 			continue
 		} else if !errors.Is(err, device.ErrNotFound) {
 			return fmt.Errorf("stat %s: %w", cur, err)
 		}
+
 		if err := s.dev.Mkdir(ctx, cur); err != nil {
 			return fmt.Errorf("mkdir %s: %w", cur, err)
 		}
 	}
+
 	return nil
 }
 
@@ -239,26 +295,36 @@ func (s *Service) SoftwareInventory(ctx context.Context) ([]SoftwarePart, error)
 	if err != nil {
 		return nil, err
 	}
+
 	f, err := fit.Decode(b)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", PathDeviceFIT, err)
 	}
+
 	seen := map[string]bool{}
+
 	var out []SoftwarePart
+
 	for _, m := range f.MessagesByNum(35) { // software
 		pn, _ := m.Value(5).(string)
+
 		ver := m.Value(3)
 		if pn == "" || ver == nil {
 			continue
 		}
+
 		fv, _ := ver.(uint64)
+
 		key := fmt.Sprintf("%s@%d", pn, fv)
 		if seen[key] {
 			continue
 		}
+
 		seen[key] = true
+
 		out = append(out, SoftwarePart{PartNumber: pn, Version: float64(fv) / 100})
 	}
+
 	return out, nil
 }
 
@@ -279,14 +345,19 @@ func (s *Service) CheckAppUpdates(ctx context.Context) ([]AppUpdate, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	seen := map[string]bool{}
+
 	var out []AppUpdate
+
 	for _, a := range apps {
 		if a.FileName == "" || a.ID == "" || seen[a.ID] {
 			continue
 		}
+
 		seen[a.ID] = true
 		au := AppUpdate{App: a, InstalledVersion: a.Version, StoreURL: "https://apps.garmin.com/apps/" + a.ID}
+
 		info, err := ciqstore.AppInfo(ctx, a.ID)
 		if err != nil {
 			au.Error = err.Error()
@@ -294,8 +365,10 @@ func (s *Service) CheckAppUpdates(ctx context.Context) ([]AppUpdate, error) {
 			au.LatestVersion, au.LatestName = info.LatestInternalVersion, info.LatestExternalVersion
 			au.UpdateAvailable = info.LatestInternalVersion > a.Version
 		}
+
 		out = append(out, au)
 	}
+
 	return out, nil
 }
 
@@ -305,14 +378,19 @@ func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
 	if len(data) < 16 || data[0] != 0 || data[1] != 0 || data[2] != 0 {
 		return "", errors.New("this does not look like a Connect IQ .PRG file")
 	}
+
 	var b [4]byte
+
 	_, _ = rand.Read(b[:])
 	name := strings.ToUpper(hex.EncodeToString(b[:])) + ".PRG"
+
 	p, err := s.WriteAppFile(ctx, name, data)
 	if err != nil {
 		return "", err
 	}
+
 	s.invalidate(PathAppsConfig)
+
 	return p, nil
 }
 
@@ -330,15 +408,19 @@ func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (s
 		if err := s.dev.Write(ctx, target, data); err != nil {
 			return "", fmt.Errorf("write %s: %w", target, err)
 		}
+
 		return target, nil
 	}
+
 	h, ok := s.dev.(device.HiddenFS)
 	if !ok {
 		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
 	}
+
 	if err := h.WriteHidden(ctx, AppFolder, name, data); err != nil {
 		return "", err
 	}
+
 	return target, nil
 }
 
@@ -351,52 +433,97 @@ func (s *Service) RemoveApp(ctx context.Context, ref string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	ref = strings.TrimSuffix(strings.TrimSuffix(ref, ".PRG"), ".prg")
-	var app *App
-	for i := range apps {
-		a := &apps[i]
-		if a.FileName != "" && (strings.EqualFold(a.FileName, ref) || strings.EqualFold(a.Name, ref) || strings.EqualFold(a.ID, ref)) {
-			app = a
-			break
-		}
-	}
+
+	app := installedApp(apps, ref)
 	if app == nil {
 		return nil, fmt.Errorf("%q is not an installed Connect IQ app", ref)
 	}
+
 	if app.Native {
 		return nil, fmt.Errorf("%s is built into the watch and cannot be removed", app.Name)
 	}
+
 	if strings.EqualFold(app.FileName, "Toystore") {
 		return nil, errors.New("the Connect IQ Store app cannot be removed")
 	}
+
 	var removed []string
-	prg := app.FileName + ".PRG"
-	if _, err := s.dev.Stat(ctx, AppFolder+"/"+prg); err == nil {
-		if err := s.dev.Delete(ctx, AppFolder+"/"+prg); err != nil {
-			return removed, err
-		}
-		removed = append(removed, AppFolder+"/"+prg)
-	} else if h, ok := s.dev.(device.HiddenFS); ok {
-		switch err := h.DeleteHidden(ctx, AppFolder, prg); {
-		case err == nil:
-			removed = append(removed, AppFolder+"/"+prg)
-		case errors.Is(err, device.ErrNotFound):
-		default:
-			return removed, err
-		}
-	} else {
-		return nil, errors.New("this watch does not expose its app folder over USB from here")
+
+	binary, err := s.removeAppBinary(ctx, app.FileName+".PRG")
+	if err != nil {
+		return removed, err
 	}
-	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + app.FileName + ".SET", "GARMIN/Apps/DATA/" + app.FileName + ".DAT", "GARMIN/Apps/DATA/" + app.FileName + ".IDX", "GARMIN/Apps/DATA/" + app.FileName + ".IMT"} {
+
+	if binary != "" {
+		removed = append(removed, binary)
+	}
+
+	removed, err = s.removeAppSidecars(ctx, app.FileName, removed)
+	if err != nil {
+		return removed, err
+	}
+
+	s.invalidate(PathAppsConfig)
+
+	return removed, nil
+}
+
+// installedApp finds a store app by file id, name or store id.
+func installedApp(apps []App, ref string) *App {
+	for i := range apps {
+		a := &apps[i]
+		if a.FileName != "" && matchesApp(*a, ref) {
+			return a
+		}
+	}
+
+	return nil
+}
+
+// removeAppBinary deletes the .PRG from the visible or hidden app folder and
+// returns the deleted path, or "" when it was not there.
+func (s *Service) removeAppBinary(ctx context.Context, prg string) (string, error) {
+	target := AppFolder + "/" + prg
+
+	if _, err := s.dev.Stat(ctx, target); err == nil {
+		if err := s.dev.Delete(ctx, target); err != nil {
+			return "", err
+		}
+
+		return target, nil
+	}
+
+	h, ok := s.dev.(device.HiddenFS)
+	if !ok {
+		return "", errors.New("this watch does not expose its app folder over USB from here")
+	}
+
+	switch err := h.DeleteHidden(ctx, AppFolder, prg); {
+	case err == nil:
+		return target, nil
+	case errors.Is(err, device.ErrNotFound):
+		return "", nil
+	default:
+		return "", err
+	}
+}
+
+// removeAppSidecars deletes the settings and data files of an app.
+func (s *Service) removeAppSidecars(ctx context.Context, fileName string, removed []string) ([]string, error) {
+	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + fileName + ".SET", "GARMIN/Apps/DATA/" + fileName + ".DAT", "GARMIN/Apps/DATA/" + fileName + ".IDX", "GARMIN/Apps/DATA/" + fileName + ".IMT"} {
 		if _, err := s.dev.Stat(ctx, p); err != nil {
 			continue
 		}
+
 		if err := s.dev.Delete(ctx, p); err != nil {
 			return removed, err
 		}
+
 		removed = append(removed, p)
 	}
-	s.invalidate(PathAppsConfig)
+
 	return removed, nil
 }
 
@@ -405,8 +532,10 @@ func (s *Service) AppFiles(ctx context.Context) ([]device.Entry, error) {
 	if entries, err := s.dev.List(ctx, AppFolder); err == nil {
 		return entries, nil
 	}
+
 	if h, ok := s.dev.(device.HiddenFS); ok {
 		return h.ListHidden(ctx, AppFolder)
 	}
+
 	return nil, device.ErrNotFound
 }

@@ -21,6 +21,7 @@ import (
 	"time"
 )
 
+// Garmin endpoints and the client identity of the Connect Mobile app.
 const (
 	DefaultDomain = "garmin.com"
 	clientID      = "GCM_ANDROID_DARK"
@@ -95,13 +96,14 @@ func DefaultStorePath() string {
 	if err != nil {
 		dir = "."
 	}
+
 	return filepath.Join(dir, "garminctl", "garmin-connect.json")
 }
 
 // New creates a client and loads a saved session from store, if any.
 func New(store string) *Client {
 	c := &Client{Domain: DefaultDomain, HTTP: &http.Client{Timeout: 5 * time.Minute}, store: store}
-	if b, err := os.ReadFile(store); err == nil {
+	if b, err := os.ReadFile(store); err == nil { //nolint:gosec // store is garminctl's own session file
 		var s Session
 		if json.Unmarshal(b, &s) == nil && s.OAuth1 != nil {
 			c.sess = s
@@ -110,6 +112,7 @@ func New(store string) *Client {
 			}
 		}
 	}
+
 	return c
 }
 
@@ -117,6 +120,7 @@ func New(store string) *Client {
 func (c *Client) LoggedIn() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return c.sess.OAuth1 != nil && c.sess.OAuth1.Token != ""
 }
 
@@ -124,6 +128,7 @@ func (c *Client) LoggedIn() bool {
 func (c *Client) Email() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return c.sess.Email
 }
 
@@ -131,11 +136,14 @@ func (c *Client) Email() string {
 func (c *Client) Logout() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.sess = Session{}
+
 	c.pending = nil
 	if err := os.Remove(c.store); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+
 	return nil
 }
 
@@ -143,11 +151,14 @@ func (c *Client) save() error {
 	if c.store == "" {
 		return nil
 	}
+
 	if err := os.MkdirAll(filepath.Dir(c.store), 0o700); err != nil {
 		return err
 	}
+
 	c.sess.SavedAt = time.Now()
 	b, _ := json.MarshalIndent(c.sess, "", " ")
+
 	return os.WriteFile(c.store, b, 0o600)
 }
 
@@ -193,17 +204,21 @@ func (c *Client) Login(ctx context.Context, email, password string) (*LoginResul
 	signin := c.sso("/mobile/sso/en/sign-in") + "?" + params.Encode()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, signin, nil)
 	ssoHeaders(req, "none")
+
 	if resp, err := hc.Do(req); err == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close() // the answer is not used; only the cookies matter
 	} else {
 		return nil, fmt.Errorf("sso: %w", err)
 	}
+
 	body, _ := json.Marshal(map[string]any{"username": email, "password": password, "rememberMe": false, "captchaToken": ""})
+
 	var r ssoResponse
 	if err := c.ssoJSON(ctx, hc, c.sso("/mobile/api/login")+"?"+params.Encode(), signin, body, &r); err != nil {
 		return nil, err
 	}
+
 	switch r.ResponseStatus.Type {
 	case "SUCCESSFUL":
 		return &LoginResult{}, c.complete(ctx, hc, email, r.ServiceTicketID)
@@ -212,18 +227,23 @@ func (c *Client) Login(ctx context.Context, email, password string) (*LoginResul
 		if method == "" {
 			method = "email"
 		}
+
 		c.mu.Lock()
 		c.pending = &pendingLogin{http: hc, params: params, mfaMethod: method, email: email}
 		c.mu.Unlock()
+
 		return &LoginResult{NeedsMFA: true, MFAMethod: method}, nil
 	}
+
 	msg := r.ResponseStatus.Message
 	if msg == "" {
 		msg = r.ResponseStatus.Type
 	}
+
 	if msg == "" {
 		msg = "unexpected answer from Garmin sign-in"
 	}
+
 	return nil, fmt.Errorf("sign-in failed: %s", msg)
 }
 
@@ -232,24 +252,31 @@ func (c *Client) ResumeMFA(ctx context.Context, code string) error {
 	c.mu.Lock()
 	p := c.pending
 	c.mu.Unlock()
+
 	if p == nil {
 		return errors.New("no sign-in is waiting for a code; start again with Login")
 	}
+
 	body, _ := json.Marshal(map[string]any{"mfaMethod": p.mfaMethod, "mfaVerificationCode": strings.TrimSpace(code), "rememberMyBrowser": false, "reconsentList": []any{}, "mfaSetup": false})
+
 	var r ssoResponse
 	if err := c.ssoJSON(ctx, p.http, c.sso("/mobile/api/mfa/verifyCode")+"?"+p.params.Encode(), c.sso("/mobile/sso/en/sign-in"), body, &r); err != nil {
 		return err
 	}
+
 	if r.ResponseStatus.Type != "SUCCESSFUL" || r.ServiceTicketID == "" {
 		msg := r.ResponseStatus.Message
 		if msg == "" {
 			msg = r.ResponseStatus.Type
 		}
+
 		return fmt.Errorf("verification failed: %s", msg)
 	}
+
 	c.mu.Lock()
 	c.pending = nil
 	c.mu.Unlock()
+
 	return c.complete(ctx, p.http, p.email, r.ServiceTicketID)
 }
 
@@ -258,25 +285,31 @@ func (c *Client) ssoJSON(ctx context.Context, hc *http.Client, u, referer string
 	if err != nil {
 		return err
 	}
+
 	ssoHeaders(req, "same-origin")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Referer", referer)
+
 	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("sso: %w", err)
 	}
 	defer resp.Body.Close()
+
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusTooManyRequests {
-		return errors.New("Garmin sign-in is rate limiting this computer; wait a few minutes and try again")
+		return errors.New("sign-in rate limited by Garmin for this computer; wait a few minutes and try again")
 	}
+
 	if err := json.Unmarshal(b, out); err != nil {
 		if resp.StatusCode >= 400 {
 			return fmt.Errorf("sso answered %s", resp.Status)
 		}
+
 		return fmt.Errorf("sso: unexpected answer (%s)", resp.Status)
 	}
+
 	return nil
 }
 
@@ -284,22 +317,28 @@ func (c *Client) complete(ctx context.Context, hc *http.Client, email, ticket st
 	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.sso("/portal/sso/embed"), nil); err == nil {
 		ssoHeaders(req, "same-origin")
 		req.Header.Set("Referer", c.sso("/mobile/sso/en/sign-in"))
+
 		if resp, err := hc.Do(req); err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close() // the answer is not used; only the cookies matter
 		}
 	}
+
 	o1, err := c.preauthorized(ctx, ticket)
 	if err != nil {
 		return err
 	}
+
 	o2, err := c.exchange(ctx, o1, true)
 	if err != nil {
 		return err
 	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.sess = Session{Email: email, OAuth1: o1, OAuth2: o2}
+
 	return c.save()
 }
 
@@ -307,25 +346,31 @@ func (c *Client) loadConsumer(ctx context.Context) (*consumer, error) {
 	c.mu.Lock()
 	k := c.consumer
 	c.mu.Unlock()
+
 	if k != nil {
 		return k, nil
 	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, consumerURL, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("oauth consumer: %w", err)
 	}
 	defer resp.Body.Close()
+
 	var k2 consumer
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&k2); err != nil || k2.Key == "" {
 		return nil, errors.New("oauth consumer: unexpected answer")
 	}
+
 	c.mu.Lock()
 	c.consumer = &k2
 	c.mu.Unlock()
+
 	return &k2, nil
 }
 
@@ -334,26 +379,33 @@ func (c *Client) preauthorized(ctx context.Context, ticket string) (*OAuth1Token
 	if err != nil {
 		return nil, err
 	}
+
 	q := url.Values{"ticket": {ticket}, "login-url": {"https://mobile.integration." + c.Domain + "/gcm/android"}, "accepts-mfa-tokens": {"true"}}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.api("/oauth-service/oauth/preauthorized")+"?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("User-Agent", oauthUA)
 	signOAuth1(req, nil, k.Key, k.Secret, "", "")
+
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("oauth1: %w", err)
 	}
 	defer resp.Body.Close()
+
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oauth1 token request answered %s", resp.Status)
 	}
+
 	vals, err := url.ParseQuery(string(b))
 	if err != nil || vals.Get("oauth_token") == "" {
 		return nil, errors.New("oauth1: unexpected answer")
 	}
+
 	return &OAuth1Token{Token: vals.Get("oauth_token"), Secret: vals.Get("oauth_token_secret"), MFAToken: vals.Get("mfa_token"), MFAExpiration: vals.Get("mfa_expiration_timestamp"), Domain: c.Domain}, nil
 }
 
@@ -362,36 +414,45 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 	if err != nil {
 		return nil, err
 	}
+
 	form := url.Values{}
 	if login {
 		form.Set("audience", "GARMIN_CONNECT_MOBILE_ANDROID_DI")
 	}
+
 	if o1.MFAToken != "" {
 		form.Set("mfa_token", o1.MFAToken)
 	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.api("/oauth-service/oauth/exchange/user/2.0"), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("User-Agent", oauthUA)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	signOAuth1(req, form, k.Key, k.Secret, o1.Token, o1.Secret)
+
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("oauth2: %w", err)
 	}
 	defer resp.Body.Close()
+
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oauth2 exchange answered %s", resp.Status)
 	}
+
 	var t OAuth2Token
 	if err := json.Unmarshal(b, &t); err != nil || t.AccessToken == "" {
 		return nil, errors.New("oauth2: unexpected answer")
 	}
+
 	now := time.Now().Unix()
 	t.ExpiresAt = now + t.ExpiresIn
 	t.RefreshExpiresAt = now + t.RefreshExpiresIn
+
 	return &t, nil
 }
 
@@ -400,27 +461,34 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	o1, o2 := c.sess.OAuth1, c.sess.OAuth2
 	c.mu.Unlock()
+
 	if o1 == nil || o1.Token == "" {
 		return "", ErrNotLoggedIn
 	}
+
 	if !o2.expired() {
 		return o2.TokenType + " " + o2.AccessToken, nil
 	}
+
 	n2, err := c.exchange(ctx, o1, false)
 	if err != nil {
 		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
 			_ = c.Logout()
 			return "", fmt.Errorf("%w: the saved session was rejected, sign in again", ErrNotLoggedIn)
 		}
+
 		return "", err
 	}
+
 	c.mu.Lock()
 	c.sess.OAuth2 = n2
 	err = c.save()
 	c.mu.Unlock()
+
 	if err != nil {
 		return "", err
 	}
+
 	return n2.TokenType + " " + n2.AccessToken, nil
 }
 
@@ -429,10 +497,19 @@ func (c *Client) URL(p string) string {
 	if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
 		return p
 	}
+
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
+
 	return c.api(p)
+}
+
+// garminHost reports whether u is on Garmin's domain (garmin.com, or
+// garmin.cn for a Chinese account), the only place the session token belongs.
+func (c *Client) garminHost(u *url.URL) bool {
+	h := strings.ToLower(u.Hostname())
+	return h == c.Domain || strings.HasSuffix(h, "."+c.Domain)
 }
 
 // HTTPError is a non-2xx answer.
@@ -447,37 +524,51 @@ func (e *HTTPError) Error() string {
 	if len(b) > 200 {
 		b = b[:200] + "…"
 	}
+
 	if b == "" {
 		return fmt.Sprintf("Garmin answered HTTP %d for %s", e.Status, e.URL)
 	}
+
 	return fmt.Sprintf("Garmin answered HTTP %d: %s", e.Status, b)
 }
 
-// Do performs an authenticated request and returns status and body.
-func (c *Client) Do(ctx context.Context, method, p string, contentType string, body io.Reader) (int, []byte, error) {
-	auth, err := c.bearer(ctx)
-	if err != nil {
-		return 0, nil, err
-	}
+// Do performs an authenticated request and returns status and body. The
+// session token is sent to Garmin hosts only: Connect hands out absolute
+// URLs (message downloads, for one), and a signed link elsewhere is
+// fetched without the credential.
+func (c *Client) Do(ctx context.Context, method, p, contentType string, body io.Reader) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.URL(p), body)
 	if err != nil {
 		return 0, nil, err
 	}
-	req.Header.Set("Authorization", auth)
+
+	if c.garminHost(req.URL) {
+		auth, err := c.bearer(ctx)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		req.Header.Set("Authorization", auth)
+	}
+
 	req.Header.Set("User-Agent", apiUserAgent)
 	req.Header.Set("Accept", "application/json, */*")
+
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
+
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
 	if err != nil {
 		return resp.StatusCode, nil, err
 	}
+
 	return resp.StatusCode, b, nil
 }
 
@@ -487,29 +578,38 @@ func (c *Client) DoOAuth1(ctx context.Context, method, absURL, contentType strin
 	c.mu.Lock()
 	o1 := c.sess.OAuth1
 	c.mu.Unlock()
+
 	if o1 == nil {
 		return 0, nil, errors.New("not signed in to Garmin Connect")
 	}
+
 	cons, err := c.loadConsumer(ctx)
 	if err != nil {
 		return 0, nil, err
 	}
+
 	req, err := http.NewRequestWithContext(ctx, method, absURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
 	}
+
 	req.Header.Set("User-Agent", apiUserAgent)
 	req.Header.Set("Accept", "application/json, */*")
+
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+
 	signOAuth1(req, nil, cons.Key, cons.Secret, o1.Token, o1.Secret)
+
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
+
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+
 	return resp.StatusCode, b, err
 }
 
@@ -519,32 +619,40 @@ func (c *Client) GetJSON(ctx context.Context, p string, out any) error {
 	if err != nil {
 		return err
 	}
+
 	if st < 200 || st > 299 {
 		return &HTTPError{Status: st, Body: string(b), URL: p}
 	}
+
 	if out == nil || len(b) == 0 {
 		return nil
 	}
+
 	return json.Unmarshal(b, out)
 }
 
 // SendJSON sends a JSON body with the given method and decodes the answer.
-func (c *Client) SendJSON(ctx context.Context, method, p string, in any, out any) error {
+func (c *Client) SendJSON(ctx context.Context, method, p string, in, out any) error {
 	var body io.Reader
+
 	if in != nil {
 		b, _ := json.Marshal(in)
 		body = bytes.NewReader(b)
 	}
+
 	st, b, err := c.Do(ctx, method, p, "application/json", body)
 	if err != nil {
 		return err
 	}
+
 	if st < 200 || st > 299 {
 		return &HTTPError{Status: st, Body: string(b), URL: p}
 	}
+
 	if out != nil && len(b) > 0 {
 		return json.Unmarshal(b, out)
 	}
+
 	return nil
 }
 
@@ -554,21 +662,27 @@ func (c *Client) Download(ctx context.Context, p string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if st < 200 || st > 299 {
 		return nil, &HTTPError{Status: st, Body: string(b), URL: p}
 	}
+
 	return b, nil
 }
 
 // Upload posts one file as multipart form field "file".
 func (c *Client) Upload(ctx context.Context, p, filename string, data []byte) (int, []byte, error) {
 	var buf bytes.Buffer
+
 	w := multipart.NewWriter(&buf)
+
 	fw, err := w.CreateFormFile("file", filename)
 	if err != nil {
 		return 0, nil, err
 	}
+
 	_, _ = fw.Write(data)
 	_ = w.Close()
+
 	return c.Do(ctx, http.MethodPost, p, w.FormDataContentType(), &buf)
 }

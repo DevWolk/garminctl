@@ -82,17 +82,21 @@ func ParseDeviceXML(b []byte) (*DeviceXML, error) {
 	if err := xml.Unmarshal(b, &x); err != nil {
 		return nil, fmt.Errorf("GarminDevice.xml: %w", err)
 	}
+
 	d := &DeviceXML{PartNumber: x.Model.PartNumber, SoftwareVersion: x.Model.SoftwareVersion, Description: x.Model.Description, UnitID: x.ID}
 	for _, dt := range x.MassStorageMode.DataType {
 		t := DataType{Name: dt.Name}
 		for _, f := range dt.File {
 			t.Files = append(t.Files, DataTypeFile{Path: f.Location.Path, BaseName: f.Location.BaseName, Extension: f.Location.FileExtension, Direction: f.TransferDirection})
 		}
+
 		d.DataTypes = append(d.DataTypes, t)
 	}
+
 	for _, a := range x.Apps {
 		d.Apps = append(d.Apps, XMLApp{Name: a.AppName, StoreID: a.StoreID, AppID: a.AppID, Type: a.AppType, Version: a.Version, FileName: a.FileName, MediaCacheBytes: a.MediaCacheSize})
 	}
+
 	return d, nil
 }
 

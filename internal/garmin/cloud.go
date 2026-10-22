@@ -14,10 +14,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
-	"garminctl/internal/device"
-	"garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/paths"
 )
 
 // Cloud wires a Garmin Connect session to the watch: it uploads what the
@@ -35,11 +35,7 @@ type Cloud struct {
 
 // NewCloud attaches a Garmin Connect client to a service.
 func NewCloud(svc *Service, client *gc.Client) *Cloud {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	return &Cloud{svc: svc, gc: client, cacheDir: filepath.Join(dir, "garminctl")}
+	return &Cloud{svc: svc, gc: client, cacheDir: paths.Cache()}
 }
 
 // Client exposes the session for login handling.
@@ -70,46 +66,83 @@ func (c *Cloud) Status(ctx context.Context) *CloudStatus {
 	if !st.LoggedIn {
 		return st
 	}
+
+	p, err := c.cachedProfile(ctx)
+	if err != nil {
+		st.Error = err.Error()
+		if errors.Is(err, gc.ErrNotLoggedIn) {
+			st.LoggedIn = false
+		}
+
+		return st
+	}
+
+	st.Profile = p
+
+	if c.svc != nil {
+		c.registration(ctx, st)
+	}
+
+	return st
+}
+
+// cachedProfile returns the signed-in user's profile, fetching it once.
+func (c *Cloud) cachedProfile(ctx context.Context) (*CloudProfile, error) {
 	c.mu.Lock()
 	p := c.profile
 	c.mu.Unlock()
-	if p == nil {
-		var sp CloudProfile
-		if err := c.gc.GetJSON(ctx, "/userprofile-service/socialProfile", &sp); err != nil {
-			st.Error = err.Error()
-			if errors.Is(err, gc.ErrNotLoggedIn) {
-				st.LoggedIn = false
-			}
-			return st
-		}
-		sp.Name = sp.FullName
-		if sp.Name == "" {
-			sp.Name = sp.UserName
-		}
-		if sp.Name == "" && !strings.Contains(sp.DisplayName, "-") {
-			sp.Name = sp.DisplayName
-		}
-		p = &sp
-		c.mu.Lock()
-		c.profile = p
-		c.mu.Unlock()
+
+	if p != nil {
+		return p, nil
 	}
-	st.Profile = p
-	if c.svc != nil {
-		if dx, err := c.svc.DeviceXML(ctx); err == nil {
-			if b, err := c.gc.Download(ctx, fmt.Sprintf("/device-service/deviceregistration/device/name/%d", dx.UnitID)); err == nil {
-				st.DeviceName, st.Registered = strings.Trim(strings.TrimSpace(string(b)), `"`), true
-			} else {
-				var he *gc.HTTPError
-				if errors.As(err, &he) && (he.Status == 404 || he.Status == 403) {
-					st.Registered = false
-				} else {
-					st.Error = err.Error()
-				}
-			}
-		}
+
+	var sp CloudProfile
+	if err := c.gc.GetJSON(ctx, "/userprofile-service/socialProfile", &sp); err != nil {
+		return nil, err
 	}
-	return st
+
+	sp.Name = profileName(sp)
+
+	c.mu.Lock()
+	c.profile = &sp
+	c.mu.Unlock()
+
+	return &sp, nil
+}
+
+// profileName picks the best human label of a profile.
+func profileName(sp CloudProfile) string {
+	switch {
+	case sp.FullName != "":
+		return sp.FullName
+	case sp.UserName != "":
+		return sp.UserName
+	case !strings.Contains(sp.DisplayName, "-"):
+		return sp.DisplayName
+	default:
+		return ""
+	}
+}
+
+// registration fills in whether the connected watch is on the account.
+func (c *Cloud) registration(ctx context.Context, st *CloudStatus) {
+	dx, err := c.svc.DeviceXML(ctx)
+	if err != nil {
+		return
+	}
+
+	b, err := c.gc.Download(ctx, fmt.Sprintf("/device-service/deviceregistration/device/name/%d", dx.UnitID))
+	if err == nil {
+		st.DeviceName, st.Registered = strings.Trim(strings.TrimSpace(string(b)), `"`), true
+		return
+	}
+
+	if he, ok := errors.AsType[*gc.HTTPError](err); ok && (he.Status == http.StatusNotFound || he.Status == http.StatusForbidden) {
+		st.Registered = false
+		return
+	}
+
+	st.Error = err.Error()
 }
 
 // Forget drops cached profile data (after logout).
@@ -150,11 +183,24 @@ var cloudSettingHints = map[string]string{
 
 var cloudSettingSkip = map[string]bool{"deviceId": true, "supportedLanguages": true, "supportedAlarmModes": true, "supportedAudioPromptDialects": true, "enabledScreens": true, "visibleScreens": true, "screenLists": true}
 
+// cloudFixedOptions are the enum spellings Connect uses for a few keys. They
+// are offered only when the current value is among them, because the
+// spellings vary by device.
+var cloudFixedOptions = map[string][]CloudOption{
+	"timeFormat":       {{Value: "time_twelve_hr", Label: "12-hour"}, {Value: "time_twenty_four_hr", Label: "24-hour"}},
+	"dateFormat":       {{Value: "date_month_day", Label: "Month/Day"}, {Value: "date_day_month", Label: "Day/Month"}},
+	"measurementUnits": {{Value: "metric", Label: "Metric"}, {Value: "statute_us", Label: "Statute (US)"}, {Value: "statute_uk", Label: "Statute (UK)"}},
+	"mountingSide":     {{Value: "LEFT", Label: "Left wrist"}, {Value: "RIGHT", Label: "Right wrist"}},
+	"startOfWeek":      {{Value: "MONDAY", Label: "Monday"}, {Value: "SATURDAY", Label: "Saturday"}, {Value: "SUNDAY", Label: "Sunday"}},
+	"dataRecording":    {{Value: "SMART", Label: "Smart"}, {Value: "EVERY_SECOND", Label: "Every second"}},
+}
+
 func (c *Cloud) deviceID(ctx context.Context) (uint64, error) {
 	dx, err := c.svc.DeviceXML(ctx)
 	if err != nil {
 		return 0, err
 	}
+
 	return dx.UnitID, nil
 }
 
@@ -165,77 +211,103 @@ func (c *Cloud) Settings(ctx context.Context) ([]CloudSetting, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var raw map[string]any
 	if err := c.gc.GetJSON(ctx, fmt.Sprintf("/device-service/deviceservice/device-info/settings/%d", id), &raw); err != nil {
 		return nil, err
 	}
-	var langs []CloudOption
-	if ls, ok := raw["supportedLanguages"].([]any); ok {
-		for _, l := range ls {
-			if m, ok := l.(map[string]any); ok {
-				langs = append(langs, CloudOption{Value: m["id"], Label: fmt.Sprint(m["name"])})
-			}
-		}
-	}
+
+	langs := languageOptions(raw["supportedLanguages"])
+
 	keys := make([]string, 0, len(raw))
 	for k := range raw {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	var out []CloudSetting
+
 	for _, k := range keys {
 		v := raw[k]
-		if v == nil || cloudSettingSkip[k] || strings.HasPrefix(k, "supported") {
+		if skipCloudSetting(k, v) {
 			continue
 		}
-		if m, ok := v.(map[string]any); ok && len(m) == 0 {
-			continue
-		}
-		s := CloudSetting{Key: k, Value: v, Hint: cloudSettingHints[k]}
-		switch v.(type) {
-		case bool:
-			s.Type = "bool"
-		case float64:
-			s.Type = "number"
-		case string:
-			s.Type = "string"
-		case []any:
-			s.Type = "list"
-		case map[string]any:
-			s.Type = "object"
-		}
-		if k == "language" && len(langs) > 0 {
-			s.Options = langs
-		}
-		switch k {
-		case "timeFormat":
-			s.Options = []CloudOption{{"time_twelve_hr", "12-hour"}, {"time_twenty_four_hr", "24-hour"}}
-		case "dateFormat":
-			s.Options = []CloudOption{{"date_month_day", "Month/Day"}, {"date_day_month", "Day/Month"}}
-		case "measurementUnits":
-			s.Options = []CloudOption{{"metric", "Metric"}, {"statute_us", "Statute (US)"}, {"statute_uk", "Statute (UK)"}}
-		case "mountingSide":
-			s.Options = []CloudOption{{"LEFT", "Left wrist"}, {"RIGHT", "Right wrist"}}
-		case "startOfWeek":
-			s.Options = []CloudOption{{"MONDAY", "Monday"}, {"SATURDAY", "Saturday"}, {"SUNDAY", "Sunday"}}
-		case "dataRecording":
-			s.Options = []CloudOption{{"SMART", "Smart"}, {"EVERY_SECOND", "Every second"}}
-		}
-		// Only trust an option list that contains the current value; Connect's enum spellings vary by device.
-		if len(s.Options) > 0 && k != "language" {
-			found := false
-			for _, o := range s.Options {
-				if fmt.Sprint(o.Value) == fmt.Sprint(v) {
-					found = true
-				}
-			}
-			if !found {
-				s.Options = nil
-			}
-		}
-		out = append(out, s)
+
+		out = append(out, CloudSetting{Key: k, Value: v, Type: cloudValueType(v), Options: cloudSettingOptions(k, v, langs), Hint: cloudSettingHints[k]})
 	}
+
 	return out, nil
+}
+
+// languageOptions turns Connect's supportedLanguages list into options.
+func languageOptions(v any) []CloudOption {
+	ls, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+
+	var langs []CloudOption
+
+	for _, l := range ls {
+		if m, ok := l.(map[string]any); ok {
+			langs = append(langs, CloudOption{Value: m["id"], Label: fmt.Sprint(m["name"])})
+		}
+	}
+
+	return langs
+}
+
+// skipCloudSetting hides keys the device does not support or that are not settings.
+func skipCloudSetting(k string, v any) bool {
+	if v == nil || cloudSettingSkip[k] || strings.HasPrefix(k, "supported") {
+		return true
+	}
+
+	m, ok := v.(map[string]any)
+
+	return ok && len(m) == 0
+}
+
+func cloudValueType(v any) string {
+	switch v.(type) {
+	case bool:
+		return "bool"
+	case float64:
+		return "number"
+	case string:
+		return "string"
+	case []any:
+		return "list"
+	case map[string]any:
+		return "object"
+	default:
+		return ""
+	}
+}
+
+// cloudSettingOptions lists the selectable values of a key, if known.
+func cloudSettingOptions(k string, v any, langs []CloudOption) []CloudOption {
+	if k == "language" {
+		return langs
+	}
+
+	opts := cloudFixedOptions[k]
+	if !optionsContain(opts, v) {
+		return nil
+	}
+
+	return opts
+}
+
+func optionsContain(opts []CloudOption, v any) bool {
+	for _, o := range opts {
+		if fmt.Sprint(o.Value) == fmt.Sprint(v) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // CloudApplyResult reports a settings change pushed through Connect.
@@ -252,44 +324,76 @@ func (c *Cloud) SetSettings(ctx context.Context, changes map[string]any) (*Cloud
 	if len(changes) == 0 {
 		return nil, errors.New("nothing to change")
 	}
+
 	id, err := c.deviceID(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	body := map[string]any{"deviceId": id}
+
 	var keys []string
+
 	for k, v := range changes {
 		if cloudSettingSkip[k] {
 			return nil, fmt.Errorf("%s cannot be changed", k)
 		}
+
 		body[k] = v
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	p := fmt.Sprintf("/device-service/deviceservice/device-info/settings/%d", id)
 	if err := c.gc.SendJSON(ctx, http.MethodPut, p, body, nil); err != nil {
 		return nil, err
 	}
+
 	res := &CloudApplyResult{Applied: keys}
-	// Connect queues a settings-change file for the watch; give it a moment.
-	for attempt := 0; attempt < 4; attempt++ {
-		pulled, err := c.Pull(ctx, func(m DeviceMessage) bool { return m.MessageType == "settings-change" })
-		if err != nil {
-			res.Note = "Saved in Garmin Connect, but the settings file could not be fetched: " + err.Error()
-			return res, nil
-		}
-		res.Pulled = append(res.Pulled, pulled...)
-		if len(pulled) > 0 {
-			break
-		}
-		time.Sleep(1500 * time.Millisecond)
+
+	pulled, err := c.pullQueued(ctx, "settings-change")
+	res.Pulled = pulled
+
+	if err != nil {
+		res.Note = "Saved in Garmin Connect, but the settings file could not be fetched: " + err.Error()
+
+		return res, nil //nolint:nilerr // partial success: Connect saved the settings; the pull problem is reported in Note
 	}
+
 	if len(res.Pulled) == 0 {
 		res.Note = "Saved in Garmin Connect. Connect has not queued a settings file yet; press Sync later or let the phone sync."
 	} else {
 		res.Note = "Saved in Garmin Connect and written to GARMIN/NewFiles; unplug the watch to apply."
 	}
+
 	return res, nil
+}
+
+// pullQueued fetches what Connect queued for the watch under one message
+// type. Connect queues the file a moment after the request that caused it,
+// so this tries a few times. What was pulled before an error is returned
+// with it.
+func (c *Cloud) pullQueued(ctx context.Context, messageType string) ([]PulledFile, error) {
+	var pulled []PulledFile
+
+	for range 4 {
+		p, err := c.Pull(ctx, func(m DeviceMessage) bool { return m.MessageType == messageType })
+		if err != nil {
+			return pulled, err
+		}
+
+		pulled = append(pulled, p...)
+		if len(p) > 0 {
+			break
+		}
+
+		if err := sleepCtx(ctx, pullRetryDelay); err != nil {
+			return pulled, err
+		}
+	}
+
+	return pulled, nil
 }
 
 // ---------- device messages (what Connect queued for the watch) ----------
@@ -317,12 +421,14 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var r struct {
 		Messages []DeviceMessage `json:"messages"`
 	}
 	if err := c.gc.GetJSON(ctx, fmt.Sprintf("/device-service/devicemessage/messages?device_id=%d", id), &r); err != nil {
 		return nil, err
 	}
+
 	return r.Messages, nil
 }
 
@@ -343,72 +449,92 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 	if err != nil {
 		return nil, err
 	}
+
 	dx, err := c.svc.DeviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	var out []PulledFile
+
 	for _, m := range msgs {
 		if m.MessageStatus != "new" && m.MessageStatus != "" {
 			continue
 		}
+
 		if match != nil && !match(m) {
 			continue
 		}
+
 		pf := PulledFile{MessageID: m.MessageID, Type: m.MessageType, Name: m.MetaData.MessageName}
+
 		data, err := c.gc.Download(ctx, m.MetaData.MessageURL)
 		if err != nil {
 			pf.Error = err.Error()
 			out = append(out, pf)
+
 			continue
 		}
+
 		target := targetFor(dx, m)
 		if target == "" {
 			pf.Error = fmt.Sprintf("no place on the watch for %s files (%s); left in Connect's queue", m.MetaData.FileType, m.DeviceXMLDataType)
 			out = append(out, pf)
+
 			continue
 		}
-		if strings.HasPrefix(target, AppFolder+"/") {
-			if _, err := c.svc.WriteAppFile(ctx, path.Base(target), data); err != nil {
-				pf.Error = err.Error()
-				out = append(out, pf)
-				continue
-			}
-		} else {
-			if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
-				pf.Error = err.Error()
-				out = append(out, pf)
-				continue
-			}
-			if err := c.svc.dev.Write(ctx, target, data); err != nil {
-				pf.Error = err.Error()
-				out = append(out, pf)
-				continue
-			}
+
+		if err := c.deliver(ctx, target, data); err != nil {
+			pf.Error = err.Error()
+			out = append(out, pf)
+
+			continue
 		}
+
 		pf.Path, pf.Bytes = target, len(data)
 		if err := c.ack(ctx, m.MessageID); err != nil {
 			pf.Error = "written, but Connect was not told: " + err.Error()
 		}
+
 		out = append(out, pf)
 	}
+
 	c.svc.invalidate(PathAppsConfig)
+
 	return out, nil
+}
+
+// deliver writes a pulled file where the watch expects it; app binaries go
+// through the (possibly hidden) app folder.
+func (c *Cloud) deliver(ctx context.Context, target string, data []byte) error {
+	if strings.HasPrefix(target, AppFolder+"/") {
+		_, err := c.svc.WriteAppFile(ctx, path.Base(target), data)
+
+		return err
+	}
+
+	if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
+		return err
+	}
+
+	return c.svc.dev.Write(ctx, target, data)
 }
 
 func (c *Cloud) ack(ctx context.Context, id int64) error {
 	p := fmt.Sprintf("/device-service/devicemessage/message/%d?status=received", id)
 	err := c.gc.SendJSON(ctx, http.MethodPut, p, nil, nil)
-	var he *gc.HTTPError
-	if errors.As(err, &he) && (he.Status == 405 || he.Status == 404) {
+
+	if he, ok := errors.AsType[*gc.HTTPError](err); ok && (he.Status == http.StatusMethodNotAllowed || he.Status == http.StatusNotFound) {
 		err = c.gc.SendJSON(ctx, http.MethodPost, p, nil, nil)
 	}
+
 	return err
 }
 
 func randomName(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
+
 	return strings.ToUpper(hex.EncodeToString(b))
 }
 
@@ -418,13 +544,16 @@ func targetFor(dx *DeviceXML, m DeviceMessage) string {
 	if ft == "BRAIN" || ft == "PRG" {
 		return AppFolder + "/" + randomName(4) + ".PRG"
 	}
+
 	if ft == "FIT" {
 		return PathNewFiles + "/" + newUUID() + ".FIT"
 	}
+
 	for _, dt := range dx.DataTypes {
 		if !strings.EqualFold(dt.Name, m.DeviceXMLDataType) {
 			continue
 		}
+
 		for _, f := range dt.Files {
 			if f.Direction == "InputToUnit" || f.Direction == "InputOutput" {
 				ext := strings.TrimPrefix(f.Extension, ".")
@@ -432,36 +561,47 @@ func targetFor(dx *DeviceXML, m DeviceMessage) string {
 			}
 		}
 	}
+
 	return ""
 }
 
 // ---------- uploads (what the watch recorded) ----------
 
-// uploadTargets maps the device XML data type to Garmin's upload endpoint,
-// as the Garmin Express upload configuration lists them. Types that need a
-// privacy consent in Connect are marked; Garmin answers 403 without it.
-var uploadTargets = map[string]struct {
+// uploadTarget is one of Garmin's upload endpoints.
+type uploadTarget struct {
 	URL     string
-	Consent bool
+	Consent bool // needs a privacy consent in Connect; Garmin answers 403 without it
 	What    string
-}{
-	"FIT_TYPE_4":  {"/upload-service/upload/activity", false, "activities"},
-	"FIT_TYPE_9":  {"/upload-service/upload/weight", false, "weight"},
-	"FIT_TYPE_32": {"/upload-service/upload/wellness", false, "daily monitoring"},
-	"FIT_TYPE_35": {"/upload-service/upload/segment-list", false, "segments"},
-	"FIT_TYPE_38": {"https://golf.garmin.com/gcs-golfcommunity/api/v2/scorecard/fit", false, "golf scorecards"},
-	"FIT_TYPE_41": {"/upload-service/upload/changelog", false, "settings change log"},
-	"FIT_TYPE_44": {"/upload-service/upload/metrics", false, "fitness metrics"},
-	"FIT_TYPE_49": {"/upload-service/upload/wellness", false, "sleep"},
-	"FIT_TYPE_57": {"/upload-service/upload/sport-backup", false, "sport profiles backup"},
-	"FIT_TYPE_68": {"/upload-service/upload/hrvstatus", true, "HRV status"},
-	"FIT_TYPE_70": {"/upload-service/upload/partner", false, "health snapshot"},
-	"FIT_TYPE_72": {"/upload-service/upload/lha-backup", false, "training backup"},
-	"FIT_TYPE_73": {"/upload-service/upload/skintemp", true, "skin temperature"},
-	"FIT_TYPE_74": {"/upload-service/upload/primary-training-backup", true, "primary training device backup"},
-	"FIT_TYPE_77": {"/upload-service/upload/adaptive-coaching-schedule", true, "coaching schedule"},
-	"FIT_TYPE_79": {"/upload-service/upload/sleep-disruptions", true, "sleep disruptions"},
 }
+
+// uploadTargets maps the device XML data type to Garmin's upload endpoint,
+// as the Garmin Express upload configuration lists them.
+var uploadTargets = map[string]uploadTarget{
+	"FIT_TYPE_4":  {URL: "/upload-service/upload/activity", What: "activities"},
+	"FIT_TYPE_9":  {URL: "/upload-service/upload/weight", What: "weight"},
+	"FIT_TYPE_32": {URL: "/upload-service/upload/wellness", What: "daily monitoring"},
+	"FIT_TYPE_35": {URL: "/upload-service/upload/segment-list", What: "segments"},
+	"FIT_TYPE_38": {URL: "https://golf.garmin.com/gcs-golfcommunity/api/v2/scorecard/fit", What: "golf scorecards"},
+	"FIT_TYPE_41": {URL: "/upload-service/upload/changelog", What: "settings change log"},
+	"FIT_TYPE_44": {URL: "/upload-service/upload/metrics", What: "fitness metrics"},
+	"FIT_TYPE_49": {URL: "/upload-service/upload/wellness", What: "sleep"},
+	"FIT_TYPE_57": {URL: "/upload-service/upload/sport-backup", What: "sport profiles backup"},
+	"FIT_TYPE_68": {URL: "/upload-service/upload/hrvstatus", Consent: true, What: "HRV status"},
+	"FIT_TYPE_70": {URL: "/upload-service/upload/partner", What: "health snapshot"},
+	"FIT_TYPE_72": {URL: "/upload-service/upload/lha-backup", What: "training backup"},
+	"FIT_TYPE_73": {URL: "/upload-service/upload/skintemp", Consent: true, What: "skin temperature"},
+	"FIT_TYPE_74": {URL: "/upload-service/upload/primary-training-backup", Consent: true, What: "primary training device backup"},
+	"FIT_TYPE_77": {URL: "/upload-service/upload/adaptive-coaching-schedule", Consent: true, What: "coaching schedule"},
+	"FIT_TYPE_79": {URL: "/upload-service/upload/sleep-disruptions", Consent: true, What: "sleep disruptions"},
+}
+
+// Upload statuses of one file.
+const (
+	uploadStatusUploaded  = "uploaded"
+	uploadStatusDuplicate = "duplicate"
+	uploadStatusFailed    = "failed"
+	uploadStatusSkipped   = "skipped"
+)
 
 // UploadedFile is one file sent to Connect.
 type UploadedFile struct {
@@ -491,6 +631,7 @@ func (c *Cloud) loadLedger(unit uint64) ledger {
 	if b, err := os.ReadFile(c.ledgerPath(unit)); err == nil {
 		_ = json.Unmarshal(b, &l)
 	}
+
 	return l
 }
 
@@ -503,6 +644,15 @@ func (c *Cloud) saveLedger(unit uint64, l ledger) {
 // Progress receives one line per file during Upload.
 type Progress func(msg string)
 
+// uploadRun is the state of one Upload call.
+type uploadRun struct {
+	c             *Cloud
+	led           ledger
+	res           *UploadResult
+	consentDenied map[string]bool // data types Garmin refused with 403 in this run
+	progress      Progress
+}
+
 // Upload sends every file the watch recorded that has not been sent from
 // this computer before. Files Garmin already has (synced by the phone) come
 // back as duplicates and are remembered too. Nothing is deleted from the
@@ -512,96 +662,138 @@ func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, e
 	if err != nil {
 		return nil, err
 	}
+
 	if progress == nil {
 		progress = func(string) {}
 	}
-	led := c.loadLedger(dx.UnitID)
-	res := &UploadResult{}
-	consentDenied := map[string]bool{}
+
+	run := &uploadRun{c: c, led: c.loadLedger(dx.UnitID), res: &UploadResult{}, consentDenied: map[string]bool{}, progress: progress}
+
 	for _, dt := range dx.DataTypes {
 		t, ok := uploadTargets[dt.Name]
 		if !ok {
 			continue
 		}
+
 		for _, f := range dt.Files {
 			if f.Direction != "OutputFromUnit" && f.Direction != "InputOutput" {
 				continue
 			}
-			dir := strings.TrimRight(f.Path, "/")
-			entries, err := c.svc.dev.List(ctx, dir)
-			if err != nil {
-				if errors.Is(err, device.ErrNotFound) {
-					continue
-				}
-				res.Files = append(res.Files, UploadedFile{Path: dir, Kind: t.What, Status: "failed", Detail: err.Error()})
-				res.Failed++
-				continue
-			}
-			sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-			for _, e := range entries {
-				if e.Dir || !strings.EqualFold(strings.TrimPrefix(path.Ext(e.Name), "."), strings.TrimPrefix(f.Extension, ".")) {
-					continue
-				}
-				p := dir + "/" + e.Name
-				stamp := fmt.Sprintf("%d|%s", e.Size, e.Modified)
-				if led[p] == stamp {
-					res.Skipped++
-					continue
-				}
-				uf := UploadedFile{Path: p, Kind: t.What}
-				if consentDenied[dt.Name] {
-					uf.Status, uf.Detail = "skipped", "needs a privacy consent in Garmin Connect"
-					res.Files = append(res.Files, uf)
-					res.Skipped++
-					continue
-				}
-				data, err := c.svc.dev.Read(ctx, p)
-				if err != nil {
-					uf.Status, uf.Detail = "failed", err.Error()
-					res.Files = append(res.Files, uf)
-					res.Failed++
-					continue
-				}
-				st, body, err := c.gc.Upload(ctx, t.URL, e.Name, data)
-				switch {
-				case err != nil:
-					if errors.Is(err, gc.ErrNotLoggedIn) {
-						return res, err
-					}
-					uf.Status, uf.Detail = "failed", err.Error()
-					res.Failed++
-				case st == 200 || st == 201 || st == 202:
-					uf.Status = "uploaded"
-					if msg := importMessage(body); msg != "" {
-						uf.Detail = msg
-					}
-					res.Uploaded++
-					led[p] = stamp
-				case st == 409:
-					uf.Status, uf.Detail = "duplicate", "Garmin already has it"
-					res.Duplicate++
-					led[p] = stamp
-				case st == 403 && t.Consent:
-					uf.Status, uf.Detail = "skipped", "needs a privacy consent in Garmin Connect (Settings → Data & privacy)"
-					consentDenied[dt.Name] = true
-					res.Skipped++
-				default:
-					uf.Status, uf.Detail = "failed", (&gc.HTTPError{Status: st, Body: string(body), URL: t.URL}).Error()
-					res.Failed++
-				}
-				res.Files = append(res.Files, uf)
-				progress(fmt.Sprintf("%s: %s%s", p, uf.Status, ifs(uf.Detail != "", " ("+uf.Detail+")", "")))
+
+			if err := run.folder(ctx, dt.Name, t, f); err != nil {
+				return run.res, err
 			}
 		}
-		c.saveLedger(dx.UnitID, led)
+
+		c.saveLedger(dx.UnitID, run.led)
 	}
-	return res, nil
+
+	return run.res, nil
+}
+
+// folder uploads the new files of one data-type location. It returns an
+// error only when the Connect session is gone; other failures are recorded.
+func (r *uploadRun) folder(ctx context.Context, dtName string, t uploadTarget, f DataTypeFile) error {
+	dir := strings.TrimRight(f.Path, "/")
+
+	entries, err := r.c.svc.dev.List(ctx, dir)
+	if err != nil {
+		if !errors.Is(err, device.ErrNotFound) {
+			r.fail(UploadedFile{Path: dir, Kind: t.What}, err.Error())
+		}
+
+		return nil
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+
+	for _, e := range entries {
+		if e.Dir || !strings.EqualFold(strings.TrimPrefix(path.Ext(e.Name), "."), strings.TrimPrefix(f.Extension, ".")) {
+			continue
+		}
+
+		p := dir + "/" + e.Name
+
+		stamp := fmt.Sprintf("%d|%s", e.Size, e.Modified)
+		if r.led[p] == stamp {
+			r.res.Skipped++
+			continue
+		}
+
+		if err := r.file(ctx, dtName, t, p, e.Name, stamp); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// file uploads one file and records the outcome.
+func (r *uploadRun) file(ctx context.Context, dtName string, t uploadTarget, p, name, stamp string) error {
+	uf := UploadedFile{Path: p, Kind: t.What}
+	if r.consentDenied[dtName] {
+		uf.Status, uf.Detail = uploadStatusSkipped, "needs a privacy consent in Garmin Connect"
+		r.res.Files = append(r.res.Files, uf)
+		r.res.Skipped++
+
+		return nil
+	}
+
+	data, err := r.c.svc.dev.Read(ctx, p)
+	if err != nil {
+		r.fail(uf, err.Error())
+
+		return nil
+	}
+
+	st, body, err := r.c.gc.Upload(ctx, t.URL, name, data)
+	switch {
+	case err != nil:
+		if errors.Is(err, gc.ErrNotLoggedIn) {
+			return err
+		}
+
+		uf.Status, uf.Detail = uploadStatusFailed, err.Error()
+		r.res.Failed++
+	case st == http.StatusOK || st == http.StatusCreated || st == http.StatusAccepted:
+		uf.Status = uploadStatusUploaded
+		if msg := importMessage(body); msg != "" {
+			uf.Detail = msg
+		}
+
+		r.res.Uploaded++
+		r.led[p] = stamp
+	case st == http.StatusConflict:
+		uf.Status, uf.Detail = uploadStatusDuplicate, "Garmin already has it"
+		r.res.Duplicate++
+		r.led[p] = stamp
+	case st == http.StatusForbidden && t.Consent:
+		uf.Status, uf.Detail = uploadStatusSkipped, "needs a privacy consent in Garmin Connect (Settings → Data & privacy)"
+		r.consentDenied[dtName] = true
+		r.res.Skipped++
+	default:
+		uf.Status, uf.Detail = uploadStatusFailed, (&gc.HTTPError{Status: st, Body: string(body), URL: t.URL}).Error()
+		r.res.Failed++
+	}
+
+	r.res.Files = append(r.res.Files, uf)
+	r.progress(fmt.Sprintf("%s: %s%s", p, uf.Status, ifs(uf.Detail != "", " ("+uf.Detail+")", "")))
+
+	return nil
+}
+
+// fail records a file that could not be uploaded.
+func (r *uploadRun) fail(uf UploadedFile, detail string) {
+	uf.Status, uf.Detail = uploadStatusFailed, detail
+	r.res.Files = append(r.res.Files, uf)
+	r.res.Failed++
 }
 
 func ifs(cond bool, a, b string) string {
 	if cond {
 		return a
 	}
+
 	return b
 }
 
@@ -624,6 +816,7 @@ func importMessage(body []byte) string {
 	if json.Unmarshal(body, &r) != nil {
 		return ""
 	}
+
 	for _, s := range r.DetailedImportResult.Successes {
 		for _, m := range s.Messages {
 			if m.Content != "" {
@@ -631,6 +824,7 @@ func importMessage(body []byte) string {
 			}
 		}
 	}
+
 	for _, f := range r.DetailedImportResult.Failures {
 		for _, m := range f.Messages {
 			if m.Content != "" {
@@ -638,6 +832,7 @@ func importMessage(body []byte) string {
 			}
 		}
 	}
+
 	return ""
 }
 
@@ -653,35 +848,50 @@ func (c *Cloud) Sync(ctx context.Context, upload, download bool, progress Progre
 	if !c.gc.LoggedIn() {
 		return nil, gc.ErrNotLoggedIn
 	}
+
 	res := &SyncResult{}
+
 	if upload {
 		up, err := c.Upload(ctx, progress)
 		if err != nil {
 			if errors.Is(err, gc.ErrNotLoggedIn) {
 				return nil, err
 			}
+
 			res.Errors = append(res.Errors, "upload: "+err.Error())
 		}
+
 		res.Upload = up
 	}
+
 	if download {
 		pulled, err := c.Pull(ctx, nil)
 		if err != nil {
 			if errors.Is(err, gc.ErrNotLoggedIn) {
 				return nil, err
 			}
+
 			res.Errors = append(res.Errors, "download: "+err.Error())
 		}
+
 		res.Pulled = pulled
-		for _, p := range pulled {
-			if progress != nil {
-				if p.Error != "" {
-					progress(fmt.Sprintf("%s (%s): %s", p.Name, p.Type, p.Error))
-				} else {
-					progress(fmt.Sprintf("%s (%s) -> %s", p.Name, p.Type, p.Path))
-				}
-			}
+		reportPulled(progress, pulled)
+	}
+
+	return res, nil
+}
+
+// reportPulled tells the progress callback about each delivered message.
+func reportPulled(progress Progress, pulled []PulledFile) {
+	if progress == nil {
+		return
+	}
+
+	for _, p := range pulled {
+		if p.Error != "" {
+			progress(fmt.Sprintf("%s (%s): %s", p.Name, p.Type, p.Error))
+		} else {
+			progress(fmt.Sprintf("%s (%s) -> %s", p.Name, p.Type, p.Path))
 		}
 	}
-	return res, nil
 }

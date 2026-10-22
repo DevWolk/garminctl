@@ -6,6 +6,7 @@
 package ciqstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,11 +15,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
+
+	"github.com/DevWolk/garminctl/internal/paths"
 )
 
 // Option is one dropdown choice.
@@ -49,6 +54,7 @@ func (s *Setting) OptionLabel(value string) string {
 			return o.Label
 		}
 	}
+
 	return ""
 }
 
@@ -61,8 +67,11 @@ func (s *Setting) OptionValue(input string) (string, error) {
 			return o.Value, nil
 		}
 	}
+
 	lower := strings.ToLower(in)
+
 	var exact, partial []Option
+
 	for _, o := range s.Options {
 		l := strings.ToLower(o.Label)
 		if l == lower {
@@ -71,20 +80,25 @@ func (s *Setting) OptionValue(input string) (string, error) {
 			partial = append(partial, o)
 		}
 	}
+
 	if len(exact) == 1 {
 		return exact[0].Value, nil
 	}
+
 	if len(exact) == 0 && len(partial) == 1 {
 		return partial[0].Value, nil
 	}
-	cands := append(exact, partial...)
+
+	cands := slices.Concat(exact, partial)
 	if len(cands) > 1 {
 		var names []string
 		for _, o := range cands {
 			names = append(names, fmt.Sprintf("%q (%s)", o.Label, o.Value))
 		}
+
 		return "", fmt.Errorf("%s: %q matches several options: %s", s.Key, input, strings.Join(names, ", "))
 	}
+
 	return "", fmt.Errorf("%s: no option matches %q", s.Key, input)
 }
 
@@ -99,19 +113,52 @@ type Schema struct {
 	byKey      map[string]*Setting
 }
 
-// Get returns the setting with the given key.
+// Get returns the setting with the given key. Schemas from Parse and Load
+// are indexed and safe for concurrent reads; a literal Schema is scanned.
 func (s *Schema) Get(key string) (*Setting, bool) {
-	if s.byKey == nil {
-		s.byKey = map[string]*Setting{}
-		for i := range s.Settings {
-			s.byKey[s.Settings[i].Key] = &s.Settings[i]
+	if s.byKey != nil {
+		st, ok := s.byKey[key]
+		return st, ok
+	}
+
+	for i := range s.Settings {
+		if s.Settings[i].Key == key {
+			return &s.Settings[i], true
 		}
 	}
-	st, ok := s.byKey[key]
-	return st, ok
+
+	return nil, false
+}
+
+// index builds the key lookup; call it once the settings are final.
+func (s *Schema) index() *Schema {
+	s.byKey = make(map[string]*Setting, len(s.Settings))
+	for i := range s.Settings {
+		s.byKey[s.Settings[i].Key] = &s.Settings[i]
+	}
+
+	return s
+}
+
+// reID is what an app id (a UUID) and a watch part number (006-B4426-00)
+// may contain. Both go into a URL path and a cache file name, and the part
+// number comes from the device's own XML.
+var reID = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+
+func checkIDs(appID, partNumber string) error {
+	if !reID.MatchString(appID) {
+		return fmt.Errorf("app id %q: only letters, digits and dashes are allowed", appID)
+	}
+
+	if !reID.MatchString(partNumber) {
+		return fmt.Errorf("part number %q: only letters, digits and dashes are allowed", partNumber)
+	}
+
+	return nil
 }
 
 // PageURL is the public settings page for an app version on a device.
+// Callers validate appID and partNumber with checkIDs first.
 func PageURL(appID string, version int, partNumber string) string {
 	return fmt.Sprintf("https://apps.garmin.com/en-US/appSettings2/%s/versions/%d/devices/%s/edit?singlePage=true", appID, version, partNumber)
 }
@@ -121,138 +168,179 @@ var HTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // Fetch downloads and parses the settings form.
 func Fetch(ctx context.Context, appID string, version int, partNumber string) (*Schema, error) {
+	if err := checkIDs(appID, partNumber); err != nil {
+		return nil, err
+	}
+
 	url := PageURL(appID, version, partNumber)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("User-Agent", "garminctl/0.1 (+https://github.com)")
+
 	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
 		return nil, err
 	}
+
 	schema, err := Parse(body)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", url, err)
 	}
+
 	schema.AppID, schema.Version, schema.PartNumber = appID, version, partNumber
 	schema.Source = url
 	schema.FetchedAt = time.Now().UTC().Format(time.RFC3339)
+
 	return schema, nil
 }
 
 // CacheDir returns where schemas are cached.
-func CacheDir() string {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		base = os.TempDir()
-	}
-	return filepath.Join(base, "garminctl", "appsettings")
-}
+func CacheDir() string { return filepath.Join(paths.Cache(), "appsettings") }
 
 // Load returns the schema from the cache, fetching it when missing.
 func Load(ctx context.Context, appID string, version int, partNumber string) (*Schema, error) {
+	if err := checkIDs(appID, partNumber); err != nil {
+		return nil, err
+	}
+
 	path := filepath.Join(CacheDir(), fmt.Sprintf("%s-v%d-%s.json", strings.ToLower(appID), version, partNumber))
-	if b, err := os.ReadFile(path); err == nil {
+	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // path is inside garminctl's cache directory
 		var s Schema
 		if json.Unmarshal(b, &s) == nil && len(s.Settings) > 0 {
-			return &s, nil
+			return s.index(), nil
 		}
 	}
+
 	s, err := Fetch(ctx, appID, version, partNumber)
 	if err != nil {
 		return nil, err
 	}
+
 	if b, err := json.MarshalIndent(s, "", " "); err == nil {
-		_ = os.MkdirAll(CacheDir(), 0o755)
-		_ = os.WriteFile(path, b, 0o644)
+		_ = os.MkdirAll(CacheDir(), 0o750)
+		_ = os.WriteFile(path, b, 0o600)
 	}
+
 	return s, nil
 }
 
 // Parse extracts the settings from the page HTML.
 func Parse(page []byte) (*Schema, error) {
-	doc, err := html.Parse(strings.NewReader(string(page)))
+	doc, err := html.Parse(bytes.NewReader(page))
 	if err != nil {
 		return nil, err
 	}
-	labels := map[string]string{}
-	var controls []Setting
-	var walk func(n *html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode {
-			switch n.Data {
-			case "label":
-				if k := attr(n, "for"); k != "" {
-					labels[k] = strings.TrimSpace(text(n))
-				}
-			case "select":
-				if k := attr(n, "name"); k != "" {
-					st := Setting{Key: k, Type: "select"}
-					for c := n.FirstChild; c != nil; c = c.NextSibling {
-						if c.Type == html.ElementNode && c.Data == "option" {
-							o := Option{Value: attr(c, "value"), Label: strings.TrimSpace(text(c))}
-							st.Options = append(st.Options, o)
-							if hasAttr(c, "selected") {
-								st.Default = o.Value
-							}
-						}
-					}
-					controls = append(controls, st)
-				}
-			case "input":
-				k := attr(n, "name")
-				if k == "" {
-					break
-				}
-				st := Setting{Key: k, Default: attr(n, "value")}
-				switch attr(n, "type") {
-				case "checkbox":
-					st.Type = "toggle"
-					st.Default = strconv.FormatBool(hasAttr(n, "checked"))
-				case "number":
-					st.Type = "number"
-					st.Min, st.Max, st.Step = attr(n, "min"), attr(n, "max"), attr(n, "step")
-				case "hidden", "submit", "button":
-					k = ""
-				default:
-					st.Type = "text"
-					if ml := attr(n, "maxlength"); ml != "" {
-						st.MaxLength, _ = strconv.Atoi(ml)
-					}
-				}
-				if k == "" {
-					break
-				}
-				st.ReadOnly = hasAttr(n, "readonly")
-				st.Required = hasAttr(n, "required")
-				controls = append(controls, st)
-			case "textarea":
-				if k := attr(n, "name"); k != "" {
-					controls = append(controls, Setting{Key: k, Type: "text", Default: strings.TrimSpace(text(n)), ReadOnly: hasAttr(n, "readonly")})
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	walk(doc)
-	if len(controls) == 0 {
+
+	c := &formCollector{labels: map[string]string{}}
+	c.walk(doc)
+
+	if len(c.controls) == 0 {
 		return nil, errors.New("no settings controls found in page")
 	}
-	for i := range controls {
-		controls[i].Label = labels[controls[i].Key]
+
+	for i := range c.controls {
+		c.controls[i].Label = c.labels[c.controls[i].Key]
 	}
-	return &Schema{Settings: controls}, nil
+
+	return (&Schema{Settings: c.controls}).index(), nil
+}
+
+// formCollector gathers the form controls and the labels of the settings page.
+type formCollector struct {
+	labels   map[string]string
+	controls []Setting
+}
+
+func (c *formCollector) walk(n *html.Node) {
+	if n.Type == html.ElementNode {
+		c.element(n)
+	}
+
+	for ch := n.FirstChild; ch != nil; ch = ch.NextSibling {
+		c.walk(ch)
+	}
+}
+
+func (c *formCollector) element(n *html.Node) {
+	switch n.Data {
+	case "label":
+		if k := attr(n, "for"); k != "" {
+			c.labels[k] = strings.TrimSpace(text(n))
+		}
+	case "select":
+		if k := attr(n, "name"); k != "" {
+			c.controls = append(c.controls, parseSelect(k, n))
+		}
+	case "input":
+		if st, ok := parseInput(n); ok {
+			c.controls = append(c.controls, st)
+		}
+	case "textarea":
+		if k := attr(n, "name"); k != "" {
+			c.controls = append(c.controls, Setting{Key: k, Type: "text", Default: strings.TrimSpace(text(n)), ReadOnly: hasAttr(n, "readonly")})
+		}
+	}
+}
+
+func parseSelect(key string, n *html.Node) Setting {
+	st := Setting{Key: key, Type: "select"}
+
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.Data != "option" {
+			continue
+		}
+
+		o := Option{Value: attr(c, "value"), Label: strings.TrimSpace(text(c))}
+		st.Options = append(st.Options, o)
+
+		if hasAttr(c, "selected") {
+			st.Default = o.Value
+		}
+	}
+
+	return st
+}
+
+// parseInput describes an <input>; hidden inputs and buttons are not settings.
+func parseInput(n *html.Node) (Setting, bool) {
+	k := attr(n, "name")
+	if k == "" {
+		return Setting{}, false
+	}
+
+	st := Setting{Key: k, Default: attr(n, "value"), ReadOnly: hasAttr(n, "readonly"), Required: hasAttr(n, "required")}
+
+	switch attr(n, "type") {
+	case "checkbox":
+		st.Type = "toggle"
+		st.Default = strconv.FormatBool(hasAttr(n, "checked"))
+	case "number":
+		st.Type = "number"
+		st.Min, st.Max, st.Step = attr(n, "min"), attr(n, "max"), attr(n, "step")
+	case "hidden", "submit", "button":
+		return Setting{}, false
+	default:
+		st.Type = "text"
+		if ml := attr(n, "maxlength"); ml != "" {
+			st.MaxLength, _ = strconv.Atoi(ml)
+		}
+	}
+
+	return st, true
 }
 
 func attr(n *html.Node, name string) string {
@@ -261,6 +349,7 @@ func attr(n *html.Node, name string) string {
 			return a.Val
 		}
 	}
+
 	return ""
 }
 
@@ -270,21 +359,27 @@ func hasAttr(n *html.Node, name string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
 func text(n *html.Node) string {
-	var sb strings.Builder
-	var f func(*html.Node)
+	var (
+		sb strings.Builder
+		f  func(*html.Node)
+	)
+
 	f = func(n *html.Node) {
 		if n.Type == html.TextNode {
 			sb.WriteString(n.Data)
 		}
+
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			f(c)
 		}
 	}
 	f(n)
+
 	return sb.String()
 }
 
@@ -292,27 +387,33 @@ func text(n *html.Node) string {
 // number of an app (the number used in settings page URLs).
 func LatestVersion(ctx context.Context, appID string) (int, error) {
 	url := "https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/" + appID
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return 0, err
 	}
+
 	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
+
 	var info struct {
 		LatestInternalVersion int `json:"latestInternalVersion"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		return 0, err
 	}
+
 	if info.LatestInternalVersion == 0 {
 		return 0, errors.New("store returned no version")
 	}
+
 	return info.LatestInternalVersion, nil
 }
 
@@ -328,18 +429,22 @@ type AppInfoResult struct {
 // AppInfo fetches the public store record of an app.
 func AppInfo(ctx context.Context, appID string) (*AppInfoResult, error) {
 	url := "https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/" + appID
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := HTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("store answered %s", resp.Status)
 	}
+
 	var raw struct {
 		ID                    string `json:"id"`
 		LatestExternalVersion string `json:"latestExternalVersion"`
@@ -354,9 +459,11 @@ func AppInfo(ctx context.Context, appID string) (*AppInfoResult, error) {
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&raw); err != nil {
 		return nil, err
 	}
+
 	r := &AppInfoResult{ID: raw.ID, LatestExternalVersion: raw.LatestExternalVersion, LatestInternalVersion: raw.LatestInternalVersion, DeveloperName: raw.Developer.DeveloperDisplayName}
 	if len(raw.AppLocalizations) > 0 {
 		r.Name = raw.AppLocalizations[0].Name
 	}
+
 	return r, nil
 }

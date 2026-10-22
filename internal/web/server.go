@@ -9,30 +9,35 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"garminctl/internal/ciqstore"
-	"garminctl/internal/device"
-	"garminctl/internal/garmin"
-	"garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/gc"
 )
 
 //go:embed ui
 var uiFS embed.FS
 
-// Opener connects to the device on demand.
-type Opener func(ctx context.Context) (device.Device, error)
+const (
+	shutdownTimeout = 3 * time.Second
+	maxUploadBytes  = 64 << 20
+	maxTrackBytes   = 512 << 20
+	maxJSONBody     = 1 << 20
+	noteKey         = "note" // human-readable remark on a result object
+	rangeDays       = 14     // beyond this the range endpoints replace one request per day
+)
 
 // Server holds the lazily connected device service.
 type Server struct {
-	open  Opener
-	mu    sync.Mutex
-	svc   *garmin.Service
+	svc   *garmin.Lazy
 	cloud *gc.Client
 	job   syncJob
 	auto  autoState
@@ -52,17 +57,80 @@ type syncJob struct {
 func (j *syncJob) snapshot() map[string]any {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return map[string]any{"running": j.Running, "startedAt": j.StartedAt, "endedAt": j.EndedAt, "log": append([]string(nil), j.Log...), "result": j.Result, "error": j.Error}
+
+	return map[string]any{
+		"running": j.Running, "startedAt": j.StartedAt, "endedAt": j.EndedAt,
+		"log": append([]string(nil), j.Log...), "result": j.Result, "error": j.Error,
+	}
+}
+
+// statusResponse is the connection state the UI polls.
+type statusResponse struct {
+	Connected bool           `json:"connected"`
+	Summary   any            `json:"summary,omitempty"`
+	Auto      map[string]any `json:"auto,omitempty"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // Serve runs the HTTP server until ctx ends.
-func Serve(ctx context.Context, addr string, open Opener, autoSync bool) error {
-	s := &Server{open: open, cloud: gc.New(gc.DefaultStorePath())}
-	s.auto.Enabled = autoSync
+func Serve(ctx context.Context, addr string, open garmin.Opener, autoSync bool) error {
+	s := newServer(open, autoSync)
 	if autoSync {
 		go s.watch(ctx)
 	}
+
+	h, err := s.handler(addr)
+	if err != nil {
+		return err
+	}
+
+	// No read or write timeout on purpose: track uploads and syncs run for minutes.
+	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+
+	go func() {
+		<-ctx.Done()
+
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		defer cancel()
+
+		_ = srv.Shutdown(sctx)
+
+		s.svc.Drop()
+	}()
+
+	slog.Info("garminctl web UI listening", "url", "http://"+addr)
+
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	return nil
+}
+
+func newServer(open garmin.Opener, autoSync bool) *Server {
+	s := &Server{svc: garmin.NewLazy(open), cloud: gc.New(gc.DefaultStorePath())}
+	s.auto.Enabled = autoSync
+
+	return s
+}
+
+// handler builds the routes. addr is the listen address browsers are
+// expected to use; requests from other origins are refused.
+func (s *Server) handler(addr string) (http.Handler, error) {
 	mux := http.NewServeMux()
+	s.routes(mux)
+
+	sub, err := fs.Sub(uiFS, "ui")
+	if err != nil {
+		return nil, err
+	}
+
+	mux.Handle("/", http.FileServer(http.FS(sub)))
+
+	return logRequests(localOnly(addr, mux)), nil
+}
+
+func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health/activities", s.healthActivities)
 	mux.HandleFunc("GET /api/health/activities/{name}", s.healthActivity)
 	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
@@ -91,7 +159,7 @@ func Serve(ctx context.Context, addr string, open Opener, autoSync bool) error {
 	mux.HandleFunc("PUT /api/cloud/settings", s.cloudSettingsPut)
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("POST /api/connect", s.connect)
-	mux.HandleFunc("POST /api/disconnect", s.disconnect)
+	mux.HandleFunc("POST /api/disconnect", s.disconnectHandler)
 	mux.HandleFunc("POST /api/refresh", s.refresh)
 	mux.HandleFunc("GET /api/files", s.files)
 	mux.HandleFunc("GET /api/file", s.fileGet)
@@ -114,67 +182,131 @@ func Serve(ctx context.Context, addr string, open Opener, autoSync bool) error {
 	mux.HandleFunc("PUT /api/apps/{ref}/hidden", s.appHidden)
 	mux.HandleFunc("GET /api/apps/pending", s.appPending)
 	mux.HandleFunc("DELETE /api/apps/pending", s.appPendingCancel)
-	sub, err := fs.Sub(uiFS, "ui")
+}
+
+// localOnly refuses requests that did not come from a page this server
+// served. The server has no authentication: anything that can reach it can
+// write to the watch, so a web page from elsewhere must not be able to call
+// the API through the browser (cross-site requests, DNS rebinding).
+func localOnly(addr string, next http.Handler) http.Handler {
+	listenHost, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return err
+		listenHost, port = "", ""
 	}
-	mux.Handle("/", http.FileServer(http.FS(sub)))
-	srv := &http.Server{Addr: addr, Handler: logRequests(mux), ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(sctx)
-		s.disconnectLocked()
-	}()
-	log.Printf("garminctl web UI on http://%s", addr)
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !hostAllowed(r.Host, listenHost, port) {
+			http.Error(w, "forbidden: unexpected Host", http.StatusForbidden)
+			return
+		}
+
+		if origin := r.Header.Get("Origin"); origin != "" && !sameOrigin(origin, r.Host) {
+			http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
+			return
+		}
+
+		if crossSiteCall(r) {
+			http.Error(w, "forbidden: cross-site request", http.StatusForbidden)
+			return
+		}
+
+		// Another site must not frame the UI and click its buttons.
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// crossSiteCall reports a browser request made by another site's page. A
+// plain navigation into the UI (the user following a link) is fine: it
+// carries no body and only renders the page. A navigation straight to an
+// API path is not: some GET endpoints act (connect to the watch, wait for
+// a file, send the device XML to Garmin), and a link is enough to fire
+// them. Everything else from another site, fetches as well as form posts,
+// is refused.
+func crossSiteCall(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+	default:
+		return false
 	}
-	return nil
+
+	isNavigation := r.Header.Get("Sec-Fetch-Mode") == "navigate"
+	isRead := r.Method == http.MethodGet || r.Method == http.MethodHead
+	isPage := !strings.HasPrefix(r.URL.Path, "/api/")
+
+	return !isNavigation || !isRead || !isPage
+}
+
+// hostAllowed accepts a Host header that names this server on its port:
+// localhost, any IP literal (the address the user typed, on the LAN too) or
+// the name the server was told to listen on. DNS rebinding always arrives
+// under some other name, which is what this refuses.
+func hostAllowed(host, listenHost, port string) bool {
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		h, p = host, ""
+	}
+
+	if port != "" && p != port {
+		return false
+	}
+
+	h = strings.Trim(h, "[]")
+	if h == "localhost" || (listenHost != "" && strings.EqualFold(h, strings.Trim(listenHost, "[]"))) {
+		return true
+	}
+
+	return net.ParseIP(h) != nil
+}
+
+func sameOrigin(origin, host string) bool {
+	return origin == "http://"+host
 }
 
 func logRequests(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+
 		h.ServeHTTP(w, r)
+
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			log.Printf("%s %s %s", r.Method, r.URL.RequestURI(), time.Since(start).Round(time.Millisecond))
+			slog.Info("api", "method", r.Method, "uri", r.URL.RequestURI(), "took", time.Since(start).Round(time.Millisecond))
 		}
 	})
-}
-
-func (s *Server) service(ctx context.Context) (*garmin.Service, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.svc != nil {
-		return s.svc, nil
-	}
-	octx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	dev, err := s.open(octx)
-	if err != nil {
-		return nil, err
-	}
-	s.svc = garmin.New(dev)
-	return s.svc, nil
-}
-
-func (s *Server) disconnectLocked() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.svc != nil {
-		_ = s.svc.Close()
-		s.svc = nil
-	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", " ")
 	_ = enc.Encode(v)
+}
+
+// readBody reads an upload of at most limit bytes. A larger one is refused
+// with 413; cutting it short would write a truncated file to the watch.
+func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("body larger than %d bytes", limit))
+			return nil, false
+		}
+
+		writeError(w, http.StatusBadRequest, err.Error())
+
+		return nil, false
+	}
+
+	return data, true
+}
+
+// writeError answers with {"error": msg}.
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]any{"error": msg})
 }
 
 func writeErr(w http.ResponseWriter, err error) {
@@ -182,42 +314,63 @@ func writeErr(w http.ResponseWriter, err error) {
 	if errors.Is(err, device.ErrNotFound) {
 		status = http.StatusNotFound
 	}
-	writeJSON(w, status, map[string]any{"error": err.Error()})
+
+	writeError(w, status, err.Error())
 }
 
 // withService runs fn with a connected service; a bridge failure drops the
 // connection so the next call reconnects.
 func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(svc *garmin.Service) (any, error)) {
-	svc, err := s.service(r.Context())
+	svc, err := s.svc.Get(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error(), "connected": false})
+		writeJSON(w, http.StatusServiceUnavailable, statusResponse{Error: err.Error()})
 		return
 	}
+
 	v, err := fn(svc)
 	if err != nil {
 		if strings.Contains(err.Error(), "bridge") {
-			s.disconnectLocked()
+			s.svc.Drop()
 		}
+
 		writeErr(w, err)
+
 		return
 	}
+
 	writeJSON(w, http.StatusOK, v)
 }
 
+// decodeBody reads a JSON request body into v and answers 400 on failure.
+// The body is capped at maxJSONBody and must hold exactly one JSON value.
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	if err := dec.Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+
+	if err := dec.Decode(new(any)); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "trailing data after the JSON body")
+		return false
+	}
+
+	return true
+}
+
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	connected := s.svc != nil
-	s.mu.Unlock()
-	if !connected && r.URL.Query().Get("connect") == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "auto": s.autoSnapshot()})
+	if s.svc.Current() == nil && r.URL.Query().Get("connect") == "" {
+		writeJSON(w, http.StatusOK, statusResponse{Auto: s.autoSnapshot()})
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		sum, err := svc.Summary(r.Context())
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"connected": true, "summary": sum, "auto": s.autoSnapshot()}, nil
+
+		return statusResponse{Connected: true, Summary: sum, Auto: s.autoSnapshot()}, nil
 	})
 }
 
@@ -227,13 +380,14 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"connected": true, "summary": sum}, nil
+
+		return statusResponse{Connected: true, Summary: sum}, nil
 	})
 }
 
-func (s *Server) disconnect(w http.ResponseWriter, _ *http.Request) {
-	s.disconnectLocked()
-	writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+func (s *Server) disconnectHandler(w http.ResponseWriter, _ *http.Request) {
+	s.svc.Drop()
+	writeJSON(w, http.StatusOK, statusResponse{})
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
@@ -250,38 +404,45 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fileGet(w http.ResponseWriter, r *http.Request) {
-	svc, err := s.service(r.Context())
+	svc, err := s.svc.Get(r.Context())
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+
 	p := r.URL.Query().Get("path")
+
 	data, err := svc.Device().Read(r.Context(), p)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+
 	name := p
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		name = p[i+1:]
+	if _, after, ok := strings.CutLast(p, "/"); ok {
+		name = after
 	}
+
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
-	_, _ = w.Write(data)
+	_, _ = w.Write(data) //nolint:gosec // a download of a watch file: fixed binary content type, nosniff, attachment
 }
 
 func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
-	if err != nil {
-		writeErr(w, err)
+	data, ok := readBody(w, r, maxUploadBytes)
+	if !ok {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		p := r.URL.Query().Get("path")
 		if err := svc.Device().Write(r.Context(), p, data); err != nil {
 			return nil, err
 		}
+
 		svc.Refresh()
+
 		return map[string]any{"ok": true, "path": p, "bytes": len(data)}, nil
 	})
 }
@@ -292,7 +453,9 @@ func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
 		if err := svc.Device().Delete(r.Context(), p); err != nil {
 			return nil, err
 		}
+
 		svc.Refresh()
+
 		return map[string]any{"ok": true}, nil
 	})
 }
@@ -309,6 +472,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+
 		return map[string]any{"rows": view.Rows()}, nil
 	})
 }
@@ -317,10 +481,11 @@ func (s *Server) settingsApply(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Changes []garmin.Change `json:"changes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.ApplyChanges(r.Context(), body.Changes)
 	})
@@ -360,10 +525,16 @@ func (s *Server) updatesInstall(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PartNumber string `json:"partNumber"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PartNumber == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "partNumber required"})
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
+	if body.PartNumber == "" {
+		writeError(w, http.StatusBadRequest, "partNumber required")
+		return
+	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.InstallSoftwareUpdate(r.Context(), body.PartNumber)
 	})
@@ -385,16 +556,18 @@ func (s *Server) appHidden(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Hidden bool `json:"hidden"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeErr(w, err)
+
+	if !decodeBody(w, r, &in) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		backup, err := svc.SetAppHidden(r.Context(), r.PathValue("ref"), in.Hidden)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"hidden": in.Hidden, "backup": backup, "note": "Applied when the USB session ends; unplug the watch."}, nil
+
+		return map[string]any{"hidden": in.Hidden, "backup": backup, noteKey: "Applied when the USB session ends; unplug the watch."}, nil
 	})
 }
 
@@ -407,6 +580,7 @@ func (s *Server) appPendingCancel(w http.ResponseWriter, r *http.Request) {
 		if err := svc.CancelAppChanges(r.Context()); err != nil {
 			return nil, err
 		}
+
 		return map[string]any{"ok": true}, nil
 	})
 }
@@ -417,22 +591,24 @@ func (s *Server) appRemove(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"removed": removed, "note": "The watch drops the app from its list when the USB session ends; unplug it."}, nil
+
+		return map[string]any{"removed": removed, noteKey: "The watch drops the app from its list when the USB session ends; unplug it."}, nil
 	})
 }
 
 func (s *Server) appsInstall(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
-	if err != nil {
-		writeErr(w, err)
+	data, ok := readBody(w, r, maxUploadBytes)
+	if !ok {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		p, err := svc.InstallPRG(r.Context(), data)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"path": p, "bytes": len(data), "note": "The watch registers the app when the USB session ends; unplug it."}, nil
+
+		return map[string]any{"path": p, "bytes": len(data), noteKey: "The watch registers the app when the USB session ends; unplug it."}, nil
 	})
 }
 
@@ -440,10 +616,11 @@ func (s *Server) appSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Values map[string]any `json:"values"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.SetAppSettings(r.Context(), r.PathValue("ref"), body.Values)
 	})
@@ -452,44 +629,61 @@ func (s *Server) appSettingsPut(w http.ResponseWriter, r *http.Request) {
 // ---------- Garmin Connect ----------
 
 func (s *Server) cloudStatus(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	svc := s.svc
-	s.mu.Unlock()
-	writeJSON(w, http.StatusOK, garmin.NewCloud(svc, s.cloud).Status(r.Context()))
+	writeJSON(w, http.StatusOK, garmin.NewCloud(s.svc.Current(), s.cloud).Status(r.Context()))
 }
 
 func (s *Server) cloudLogin(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Email, Password string }
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" || body.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "email and password required"})
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
+	if body.Email == "" || body.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password required")
+		return
+	}
+
 	res, err := s.cloud.Login(r.Context(), strings.TrimSpace(body.Email), body.Password)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
+		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) cloudMFA(w http.ResponseWriter, r *http.Request) {
-	var body struct{ Code string }
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Code == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "code required"})
+	var body struct {
+		Code string `json:"code"`
+	}
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
+	if body.Code == "" {
+		writeError(w, http.StatusBadRequest, "code required")
+		return
+	}
+
 	if err := s.cloud.ResumeMFA(r.Context(), body.Code); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
+		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (s *Server) cloudLogout(w http.ResponseWriter, r *http.Request) {
+func (s *Server) cloudLogout(w http.ResponseWriter, _ *http.Request) {
 	if err := s.cloud.Logout(); err != nil {
 		writeErr(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -498,26 +692,37 @@ func (s *Server) cloudSyncStart(w http.ResponseWriter, r *http.Request) {
 		Upload   *bool `json:"upload"`
 		Download *bool `json:"download"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	// An empty body means both directions; anything else must be valid JSON.
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	up := body.Upload == nil || *body.Upload
 	down := body.Download == nil || *body.Download
-	svc, err := s.service(r.Context())
+
+	svc, err := s.svc.Get(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
+
 	if !s.cloud.LoggedIn() {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": gc.ErrNotLoggedIn.Error()})
+		writeError(w, http.StatusUnauthorized, gc.ErrNotLoggedIn.Error())
 		return
 	}
-	if !s.startSync(svc, up, down) {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "a sync is already running"})
+
+	if _, started := s.startSync(r.Context(), svc, up, down); !started {
+		writeError(w, http.StatusConflict, "a sync is already running")
 		return
 	}
+
 	writeJSON(w, http.StatusAccepted, s.job.snapshot())
 }
 
-func (s *Server) cloudSyncState(w http.ResponseWriter, r *http.Request) {
+func (s *Server) cloudSyncState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.job.snapshot())
 }
 
@@ -537,10 +742,16 @@ func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Changes map[string]any `json:"changes"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Changes) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "changes required"})
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
+	if len(body.Changes) == 0 {
+		writeError(w, http.StatusBadRequest, "changes required")
+		return
+	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return garmin.NewCloud(svc, s.cloud).SetSettings(r.Context(), body.Changes)
 	})
@@ -552,15 +763,15 @@ const defaultPart = "006-B4426-00" // vívoactive 5 firmware part; replaced by t
 
 // storeSvc returns the connected service (or nil) and the watch's part number.
 func (s *Server) storeSvc(ctx context.Context) (*garmin.Service, string) {
-	s.mu.Lock()
-	svc := s.svc
-	s.mu.Unlock()
+	svc := s.svc.Current()
 	part := defaultPart
+
 	if svc != nil {
 		if dx, err := svc.DeviceXML(ctx); err == nil && dx.PartNumber != "" {
 			part = dx.PartNumber
 		}
 	}
+
 	return svc, part
 }
 
@@ -568,21 +779,27 @@ func (s *Server) storeBrowse(w http.ResponseWriter, r *http.Request) {
 	svc, part := s.storeSvc(r.Context())
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
-	view, err := svc.BrowseStore(r.Context(), part, ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 24})
+
+	query := ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 0} // the store's default page
+
+	view, err := svc.BrowseStore(r.Context(), part, query)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) storeApp(w http.ResponseWriter, r *http.Request) {
 	svc, part := s.storeSvc(r.Context())
+
 	d, err := svc.StoreApp(r.Context(), part, r.PathValue("id"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+
 	writeJSON(w, http.StatusOK, d)
 }
 
@@ -596,16 +813,18 @@ func (s *Server) healthActivities(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) healthActivity(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.Activity(r.Context(), r.PathValue("name"), 1500)
+		return svc.Activity(r.Context(), r.PathValue("name"), 0) // default track resolution
 	})
 }
 
 func (s *Server) healthDaily(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		if days > 14 { // range endpoints: a few requests for a year instead of one per day
+		if days > rangeDays {
 			return garmin.NewCloud(svc, s.cloud).History(r.Context(), days)
 		}
+
 		return garmin.NewCloud(svc, s.cloud).Daily(r.Context(), days)
 	})
 }
@@ -620,14 +839,16 @@ func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Kg float64 `json:"kg"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeErr(w, err)
+
+	if !decodeBody(w, r, &in) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		if err := garmin.NewCloud(svc, s.cloud).LogWeight(r.Context(), in.Kg, time.Time{}); err != nil {
 			return nil, err
 		}
+
 		return map[string]any{"ok": true, "kg": in.Kg}, nil
 	})
 }
@@ -642,7 +863,7 @@ func (s *Server) healthDay(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) workoutsList(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Workouts(r.Context(), 50)
+		return garmin.NewCloud(svc, s.cloud).Workouts(r.Context(), 0) // default page
 	})
 }
 
@@ -654,66 +875,85 @@ type workoutReq struct {
 
 func (s *Server) workoutsPreview(w http.ResponseWriter, r *http.Request) {
 	var req workoutReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+	if !decodeBody(w, r, &req) {
 		return
 	}
+
 	doc, err := req.Spec.ConnectJSON()
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"spec": req.Spec, "connect": doc})
 }
 
 func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
 	var req workoutReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+	if !decodeBody(w, r, &req) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		if req.Local {
 			p, err := svc.WriteWorkoutToWatch(r.Context(), &req.Spec)
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"path": p, "note": "Workout file written to GARMIN/NewFiles; unplug the watch and find it under Training > Workouts."}, nil
+
+			return map[string]any{"path": p, noteKey: "Workout file written to GARMIN/NewFiles; unplug the watch and find it under Training > Workouts."}, nil
 		}
+
 		cloud := garmin.NewCloud(svc, s.cloud)
+
 		wk, err := cloud.CreateWorkout(r.Context(), &req.Spec)
 		if err != nil {
 			return nil, err
 		}
-		res := map[string]any{"workout": wk, "note": "Saved in Garmin Connect."}
-		if req.Send {
-			pulled, err := cloud.SendWorkout(r.Context(), wk.ID, wk.Name)
-			if err != nil {
-				res["note"] = "Saved in Garmin Connect, but sending to the watch failed: " + err.Error()
-			} else {
-				res["pulled"] = pulled
-				if len(pulled) > 0 {
-					res["note"] = "Saved in Garmin Connect and written to the watch; unplug it to see the workout under Training > Workouts."
-				} else {
-					res["note"] = "Saved in Garmin Connect and queued for the watch; Sync later or let the phone deliver it."
-				}
-			}
+
+		res := map[string]any{"workout": wk}
+		if !req.Send {
+			res[noteKey] = "Saved in Garmin Connect."
+
+			return res, nil
 		}
+
+		pulled, err := cloud.SendWorkout(r.Context(), wk.ID, wk.Name)
+		if err != nil {
+			res[noteKey] = "Saved in Garmin Connect, but sending to the watch failed: " + err.Error()
+
+			return res, nil //nolint:nilerr // partial success: the workout is saved in Connect; the send failure is reported in the note
+		}
+
+		res["pulled"] = pulled
+		res[noteKey] = sendNote(len(pulled))
+
 		return res, nil
 	})
+}
+
+// sendNote describes what happened after Connect was asked to queue a workout.
+func sendNote(pulled int) string {
+	if pulled > 0 {
+		return "Saved in Garmin Connect and written to the watch; unplug it to see the workout under Training > Workouts."
+	}
+
+	return "Saved in Garmin Connect and queued for the watch; Sync later or let the phone deliver it."
 }
 
 func (s *Server) workoutsSend(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad workout id"})
+		writeError(w, http.StatusBadRequest, "bad workout id")
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		pulled, err := garmin.NewCloud(svc, s.cloud).SendWorkout(r.Context(), id, r.URL.Query().Get("name"))
 		if err != nil {
 			return nil, err
 		}
+
 		return map[string]any{"pulled": pulled}, nil
 	})
 }
@@ -721,9 +961,10 @@ func (s *Server) workoutsSend(w http.ResponseWriter, r *http.Request) {
 func (s *Server) workoutsDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad workout id"})
+		writeError(w, http.StatusBadRequest, "bad workout id")
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(r.Context(), id)
 	})
@@ -736,11 +977,11 @@ func (s *Server) musicList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) musicAdd(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(io.LimitReader(r.Body, 512<<20))
-	if err != nil {
-		writeErr(w, err)
+	data, ok := readBody(w, r, maxTrackBytes)
+	if !ok {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.AddTrack(r.Context(), r.URL.Query().Get("folder"), r.URL.Query().Get("name"), data)
 	})
@@ -756,10 +997,11 @@ func (s *Server) musicPlaylist(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Tracks []string `json:"tracks"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+
+	if !decodeBody(w, r, &body) {
 		return
 	}
+
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.WritePlaylist(r.Context(), r.PathValue("name"), body.Tracks)
 	})

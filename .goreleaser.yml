@@ -1,0 +1,40 @@
+version: 2
+
+project_name: garminctl
+
+builds:
+  - main: ./cmd/garminctl
+    env:
+      - CGO_ENABLED=0
+    # The watch is reached through Windows (natively or from WSL), so only
+    # those two targets are useful.
+    goos:
+      - windows
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - docs/*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

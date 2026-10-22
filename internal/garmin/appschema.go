@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"garminctl/internal/ciq"
-	"garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/ciq"
+	"github.com/DevWolk/garminctl/internal/ciqstore"
 )
 
 // AppSettingItem is one setting with its label and current value.
@@ -28,40 +28,51 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 	if app.ID == "" || app.FileName == "" {
 		return nil, fmt.Errorf("%s is not a Connect IQ store app", app.Name)
 	}
+
 	s.mu.Lock()
 	if sc, ok := s.schemas[app.ID]; ok {
 		s.mu.Unlock()
 		return sc, nil
 	}
 	s.mu.Unlock()
+
 	dx, err := s.DeviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	var firstErr error
+
 	versions := []int{app.Version}
 	if latest, err := ciqstore.LatestVersion(ctx, app.ID); err == nil && latest != app.Version {
 		versions = append(versions, latest)
 	}
+
 	for _, v := range versions {
 		if v == 0 {
 			continue
 		}
+
 		sc, err := ciqstore.Load(ctx, app.ID, v, dx.PartNumber)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
+
 			continue
 		}
+
 		s.mu.Lock()
 		s.schemas[app.ID] = sc
 		s.mu.Unlock()
+
 		return sc, nil
 	}
+
 	if firstErr == nil {
 		firstErr = fmt.Errorf("no settings definition for %s", app.Name)
 	}
+
 	return nil, firstErr
 }
 
@@ -71,6 +82,7 @@ func (s *Service) AppSchema(ctx context.Context, ref string) (*ciqstore.Schema, 
 	if err != nil {
 		return nil, err
 	}
+
 	return s.appSchema(ctx, app)
 }
 
@@ -81,8 +93,10 @@ func (s *Service) decorate(ctx context.Context, as *AppSettings) {
 	} else {
 		as.SchemaSource = sc.Source
 	}
+
 	for _, k := range as.Order {
 		v := as.Values[k]
+
 		item := AppSettingItem{Key: k, Value: v, Type: goTypeName(v)}
 		if sc != nil {
 			if st, ok := sc.Get(k); ok {
@@ -92,6 +106,7 @@ func (s *Service) decorate(ctx context.Context, as *AppSettings) {
 				}
 			}
 		}
+
 		as.Items = append(as.Items, item)
 	}
 }
@@ -107,6 +122,7 @@ func goTypeName(v any) string {
 	case nil:
 		return "null"
 	}
+
 	return "int"
 }
 
@@ -121,6 +137,7 @@ func valueString(v any) string {
 	case nil:
 		return ""
 	}
+
 	return fmt.Sprint(v)
 }
 
@@ -131,50 +148,75 @@ func convertWithSchema(st *ciqstore.Setting, existing, input any) (any, error) {
 	if st.ReadOnly {
 		return nil, fmt.Errorf("%s is read-only (informational)", st.Key)
 	}
+
 	in := valueString(input)
+
 	switch st.Type {
 	case "select":
-		if _, isNum := input.(float64); !isNum {
-			v, err := st.OptionValue(in)
-			if err != nil {
-				return nil, err
-			}
-			in = v
-		} else if st.OptionLabel(in) == "" {
-			return nil, fmt.Errorf("%s: %s is not one of the allowed values", st.Key, in)
-		}
-		return ciq.Coerce(existing, in)
+		return convertSelect(st, existing, input, in)
 	case "toggle":
-		switch strings.ToLower(in) {
-		case "true", "1", "on", "yes", "enabled":
-			return ciq.Coerce(existing, true)
-		case "false", "0", "off", "no", "disabled":
-			return ciq.Coerce(existing, false)
-		}
-		return nil, fmt.Errorf("%s: expected on/off, got %q", st.Key, in)
+		return convertToggle(st, existing, in)
 	case "number":
-		f, err := strconv.ParseFloat(in, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%s: number expected, got %q", st.Key, in)
-		}
-		if st.Min != "" {
-			if mn, err := strconv.ParseFloat(st.Min, 64); err == nil && f < mn {
-				return nil, fmt.Errorf("%s: %v is below the minimum %s", st.Key, f, st.Min)
-			}
-		}
-		if st.Max != "" {
-			if mx, err := strconv.ParseFloat(st.Max, 64); err == nil && f > mx {
-				return nil, fmt.Errorf("%s: %v is above the maximum %s", st.Key, f, st.Max)
-			}
-		}
-		if _, isInt := existing.(int32); isInt && f != math.Trunc(f) {
-			return nil, fmt.Errorf("%s: whole number expected", st.Key)
-		}
-		return ciq.Coerce(existing, f)
+		return convertNumber(st, existing, in)
 	default:
 		if st.MaxLength > 0 && len([]rune(in)) > st.MaxLength {
 			return nil, fmt.Errorf("%s: longer than %d characters", st.Key, st.MaxLength)
 		}
+
 		return ciq.Coerce(existing, in)
 	}
+}
+
+// convertSelect accepts an option label or one of the option values.
+func convertSelect(st *ciqstore.Setting, existing, input any, in string) (any, error) {
+	if _, isNum := input.(float64); !isNum {
+		v, err := st.OptionValue(in)
+		if err != nil {
+			return nil, err
+		}
+
+		return ciq.Coerce(existing, v)
+	}
+
+	if st.OptionLabel(in) == "" {
+		return nil, fmt.Errorf("%s: %s is not one of the allowed values", st.Key, in)
+	}
+
+	return ciq.Coerce(existing, in)
+}
+
+func convertToggle(st *ciqstore.Setting, existing any, in string) (any, error) {
+	switch strings.ToLower(in) {
+	case "true", "1", "on", "yes", "enabled":
+		return ciq.Coerce(existing, true)
+	case "false", "0", "off", "no", "disabled":
+		return ciq.Coerce(existing, false)
+	}
+
+	return nil, fmt.Errorf("%s: expected on/off, got %q", st.Key, in)
+}
+
+func convertNumber(st *ciqstore.Setting, existing any, in string) (any, error) {
+	f, err := strconv.ParseFloat(in, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s: number expected, got %q", st.Key, in)
+	}
+
+	if st.Min != "" {
+		if mn, err := strconv.ParseFloat(st.Min, 64); err == nil && f < mn {
+			return nil, fmt.Errorf("%s: %v is below the minimum %s", st.Key, f, st.Min)
+		}
+	}
+
+	if st.Max != "" {
+		if mx, err := strconv.ParseFloat(st.Max, 64); err == nil && f > mx {
+			return nil, fmt.Errorf("%s: %v is above the maximum %s", st.Key, f, st.Max)
+		}
+	}
+
+	if _, isInt := existing.(int32); isInt && f != math.Trunc(f) {
+		return nil, fmt.Errorf("%s: whole number expected", st.Key)
+	}
+
+	return ciq.Coerce(existing, f)
 }

@@ -3,6 +3,8 @@ package fit
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
+	"math"
 	"strconv"
 	"sync"
 )
@@ -57,7 +59,9 @@ func (p *Profile) EnumName(typeName string, v int64) (string, bool) {
 	if !ok {
 		return "", false
 	}
+
 	n, ok := vals[v]
+
 	return n, ok
 }
 
@@ -67,26 +71,29 @@ func (p *Profile) EnumValue(typeName, name string) (int64, bool) {
 	if !ok {
 		return 0, false
 	}
+
 	for v, n := range vals {
 		if n == name {
 			return v, true
 		}
 	}
+
 	return 0, false
 }
 
 var (
 	profileOnce sync.Once
 	profileVal  *Profile
-	profileErr  error
+	errProfile  error
 )
 
 // DefaultProfile returns the embedded FIT profile.
 func DefaultProfile() (*Profile, error) {
 	profileOnce.Do(func() {
-		profileVal, profileErr = parseProfile(profileJSON)
+		profileVal, errProfile = parseProfile(profileJSON)
 	})
-	return profileVal, profileErr
+
+	return profileVal, errProfile
 }
 
 // MustProfile returns the embedded profile or panics.
@@ -95,6 +102,7 @@ func MustProfile() *Profile {
 	if err != nil {
 		panic(err)
 	}
+
 	return p
 }
 
@@ -124,6 +132,7 @@ func parseProfile(data []byte) (*Profile, error) {
 	if err := json.Unmarshal(data, &jp); err != nil {
 		return nil, err
 	}
+
 	p := &Profile{
 		Version:  strconv.Itoa(jp.Version.Major) + "." + strconv.Itoa(jp.Version.Minor) + "." + strconv.Itoa(jp.Version.Patch),
 		Messages: map[uint16]*MesgProfile{},
@@ -131,8 +140,16 @@ func parseProfile(data []byte) (*Profile, error) {
 		byName:   map[string]*MesgProfile{},
 	}
 	for _, jm := range jp.Messages {
+		if jm.Num < 0 || jm.Num > math.MaxUint16 {
+			return nil, fmt.Errorf("profile: message %s has number %d, outside uint16", jm.Name, jm.Num)
+		}
+
 		m := &MesgProfile{Num: uint16(jm.Num), Name: jm.Name, Fields: map[uint8]*FieldProfile{}, byName: map[string]*FieldProfile{}}
 		for _, jf := range jm.Fields {
+			if jf.Num < 0 || jf.Num > math.MaxUint8 {
+				return nil, fmt.Errorf("profile: field %s.%s has number %d, outside uint8", jm.Name, jf.Name, jf.Num)
+			}
+
 			f := &FieldProfile{
 				Num: uint8(jf.Num), Name: jf.Name, Type: jf.Type, BaseType: jf.BaseType, Array: jf.Array,
 				Scale: numberOr(jf.Scale, 1), Offset: numberOr(jf.Offset, 0), Units: stringOr(jf.Units),
@@ -140,22 +157,28 @@ func parseProfile(data []byte) (*Profile, error) {
 			m.Fields[f.Num] = f
 			m.byName[f.Name] = f
 		}
+
 		p.Messages[m.Num] = m
 		p.byName[m.Name] = m
 	}
+
 	for tn, vals := range jp.Types {
 		tm := map[int64]string{}
+
 		for k, v := range vals {
 			iv, err := strconv.ParseInt(k, 10, 64)
 			if err != nil {
 				continue
 			}
+
 			if s, ok := v.(string); ok {
 				tm[iv] = s
 			}
 		}
+
 		p.Types[tn] = tm
 	}
+
 	return p, nil
 }
 
@@ -165,6 +188,7 @@ func numberOr(v any, def float64) float64 {
 		if x == 0 && def == 1 {
 			return 1
 		}
+
 		return x
 	case []any:
 		if len(x) > 0 {
@@ -173,6 +197,7 @@ func numberOr(v any, def float64) float64 {
 			}
 		}
 	}
+
 	return def
 }
 
@@ -187,5 +212,6 @@ func stringOr(v any) string {
 			}
 		}
 	}
+
 	return ""
 }

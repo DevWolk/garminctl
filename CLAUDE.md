@@ -16,4 +16,10 @@ web UI and MCP server over the watch's MTP file system.
   `go test ./internal/ciq` guards that.
 - Byte-exact tests exist for every format (`go test ./...`); keep them green
   and add a sample to `testdata/` for any new file type.
+- `make check` (golangci-lint per `.golangci.yml` with govet inside,
+  `go test -race`, govulncheck) must pass before a commit. Fix findings rather than silence
+  them; a `//nolint` names its linter and gives the reason.
+- For Go work load the `cc-skills-golang:golang-how-to` skill first; it
+  routes to the lint, testing, security and concurrency guidance this
+  project follows.
 - Close Garmin Express before writing to the watch.

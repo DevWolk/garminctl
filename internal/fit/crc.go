@@ -11,6 +11,7 @@ func CRC(data []byte) uint16 {
 	for _, b := range data {
 		crc = crcByte(crc, b)
 	}
+
 	return crc
 }
 
@@ -21,5 +22,6 @@ func crcByte(crc uint16, b byte) uint16 {
 	tmp = crcTable[crc&0xF]
 	crc = (crc >> 4) & 0x0FFF
 	crc = crc ^ tmp ^ crcTable[(b>>4)&0xF]
+
 	return crc
 }

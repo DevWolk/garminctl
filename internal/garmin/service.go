@@ -1,3 +1,5 @@
+// Package garmin is the high-level API over one connected watch: files,
+// settings, apps, music, software updates and the Garmin Connect sync.
 package garmin
 
 import (
@@ -7,11 +9,12 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"unicode"
 
-	"garminctl/internal/ciq"
-	"garminctl/internal/ciqstore"
-	"garminctl/internal/device"
-	"garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ciq"
+	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
 )
 
 // Service is the high-level API over one connected watch.
@@ -19,6 +22,10 @@ type Service struct {
 	dev     device.Device
 	profile *fit.Profile
 	know    *Knowledge
+
+	// UpdatesURL is the software update service to ask; DefaultUpdatesURL
+	// unless a test points it at a fake server.
+	UpdatesURL string
 
 	mu      sync.Mutex
 	cache   map[string][]byte
@@ -28,7 +35,14 @@ type Service struct {
 
 // New wraps a device.
 func New(dev device.Device) *Service {
-	return &Service{dev: dev, profile: fit.MustProfile(), know: DefaultKnowledge(), cache: map[string][]byte{}, schemas: map[string]*ciqstore.Schema{}}
+	return &Service{
+		dev:        dev,
+		profile:    fit.MustProfile(),
+		know:       DefaultKnowledge(),
+		UpdatesURL: DefaultUpdatesURL,
+		cache:      map[string][]byte{},
+		schemas:    map[string]*ciqstore.Schema{},
+	}
 }
 
 // Device returns the underlying device.
@@ -52,21 +66,26 @@ func (s *Service) read(ctx context.Context, p string, cached bool) ([]byte, erro
 		}
 		s.mu.Unlock()
 	}
+
 	if cached {
 		s.mu.Lock()
 		b, ok := s.cache[strings.ToLower(p)]
 		s.mu.Unlock()
+
 		if ok {
 			return b, nil
 		}
 	}
+
 	b, err := s.dev.Read(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", p, err)
 	}
+
 	s.mu.Lock()
 	s.cache[strings.ToLower(p)] = b
 	s.mu.Unlock()
+
 	return b, nil
 }
 
@@ -92,6 +111,7 @@ func (s *Service) DeviceXML(ctx context.Context) (*DeviceXML, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return ParseDeviceXML(b)
 }
 
@@ -114,18 +134,22 @@ func (s *Service) Summary(ctx context.Context) (*Summary, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	sum := &Summary{Device: s.dev.Info(), Model: dx.Description, PartNumber: dx.PartNumber, UnitID: dx.UnitID, Software: dx.SoftwareVersionString(), ProfileVers: s.profile.Version}
 	if apps, err := s.Apps(ctx); err == nil {
 		sum.AppCount = len(apps)
 	}
+
 	if entries, err := s.dev.List(ctx, PathNewFiles); err == nil {
 		sum.NewFiles = len(entries)
 	}
+
 	if sr, ok := s.dev.(device.StorageReporter); ok {
 		if st, err := sr.Storage(ctx); err == nil && st.CapacityBytes > 0 {
 			sum.Storage = &st
 		}
 	}
+
 	return sum, nil
 }
 
@@ -135,6 +159,7 @@ func (s *Service) Apps(ctx context.Context) ([]App, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return ParseAppsConfig(b)
 }
 
@@ -144,10 +169,12 @@ func (s *Service) Settings(ctx context.Context) (*SettingsView, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	f, err := fit.Decode(b)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", PathSettings, err)
 	}
+
 	return &SettingsView{Path: PathSettings, Messages: s.profile.Describe(f), Knowledge: s.know}, nil
 }
 
@@ -157,10 +184,12 @@ func (s *Service) DecodeFIT(ctx context.Context, p string) ([]fit.NamedMessage, 
 	if err != nil {
 		return nil, err
 	}
+
 	f, err := fit.Decode(b)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
+
 	return s.profile.Describe(f), nil
 }
 
@@ -184,8 +213,11 @@ func (s *Service) FindApp(ctx context.Context, ref string) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	ref = strings.TrimSpace(ref)
+
 	var partial *App
+
 	for i := range apps {
 		a := &apps[i]
 		if strings.EqualFold(a.FileName, ref) || strings.EqualFold(a.ID, ref) || strings.EqualFold(a.Name, ref) {
@@ -193,13 +225,16 @@ func (s *Service) FindApp(ctx context.Context, ref string) (*App, error) {
 				return a, nil
 			}
 		}
+
 		if a.FileName != "" && partial == nil && strings.Contains(strings.ToLower(a.Name), strings.ToLower(ref)) {
 			partial = a
 		}
 	}
+
 	if partial != nil {
 		return partial, nil
 	}
+
 	return nil, fmt.Errorf("no Connect IQ app matches %q", ref)
 }
 
@@ -209,26 +244,33 @@ func (s *Service) AppSettings(ctx context.Context, ref string) (*AppSettings, er
 	if err != nil {
 		return nil, err
 	}
+
 	p := path.Join(PathAppSettings, app.FileName+".SET")
+
 	b, err := s.read(ctx, p, false)
 	if err != nil {
 		return nil, err
 	}
+
 	v, err := ciq.Decode(b)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
+
 	d, ok := v.(ciq.Dict)
 	if !ok {
 		return nil, fmt.Errorf("%s: settings are a %T, not a dictionary", p, v)
 	}
+
 	as := &AppSettings{App: *app, Path: p, Settings: d, Values: map[string]any{}, Hints: AppHintsFor(app.ID)}
 	for _, pair := range d {
 		k := fmt.Sprint(pair.Key)
 		as.Order = append(as.Order, k)
 		as.Values[k] = ciq.ToJSONValue(pair.Value)
 	}
+
 	s.decorate(ctx, as)
+
 	return as, nil
 }
 
@@ -239,40 +281,52 @@ func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[st
 	if err != nil {
 		return nil, err
 	}
+
 	sc, _ := s.appSchema(ctx, &as.App)
 	for k, v := range updates {
 		cur, ok := as.Settings.Get(k)
 		if !ok {
 			return nil, fmt.Errorf("%s has no setting %q", as.App.Name, k)
 		}
-		var nv any
-		var err error
+
+		var (
+			nv  any
+			err error
+		)
 		if st, found := schemaSetting(sc, k); found {
 			nv, err = convertWithSchema(st, cur, v)
 		} else {
 			nv, err = ciq.Coerce(cur, v)
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", k, err)
 		}
+
 		as.Settings.Set(k, nv)
 	}
+
 	data, err := ciq.Encode(as.Settings)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := s.dev.Write(ctx, as.Path, data); err != nil {
 		return nil, fmt.Errorf("write %s: %w", as.Path, err)
 	}
+
 	s.invalidate(as.Path)
+
 	return s.AppSettings(ctx, ref)
 }
 
 func newUUID() string {
 	var b [16]byte
+
 	_, _ = rand.Read(b[:])
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
@@ -280,5 +334,31 @@ func schemaSetting(sc *ciqstore.Schema, key string) (*ciqstore.Setting, bool) {
 	if sc == nil {
 		return nil, false
 	}
+
 	return sc.Get(key)
+}
+
+// titleCase upper-cases the first letter of every word and lower-cases the
+// rest; underscores count as word breaks ("trail_running" -> "Trail Running").
+func titleCase(s string) string {
+	var b strings.Builder
+
+	startWord := true
+
+	for _, r := range strings.ReplaceAll(s, "_", " ") {
+		switch {
+		case unicode.IsSpace(r):
+			startWord = true
+
+			b.WriteRune(r)
+		case startWord:
+			startWord = false
+
+			b.WriteRune(unicode.ToUpper(r))
+		default:
+			b.WriteRune(unicode.ToLower(r))
+		}
+	}
+
+	return b.String()
 }

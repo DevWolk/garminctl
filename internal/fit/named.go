@@ -36,36 +36,44 @@ func (m *NamedMessage) FieldByName(name string) (*NamedField, bool) {
 			return &m.Fields[i], true
 		}
 	}
+
 	return nil, false
 }
 
 // Describe decodes every data record of f with the profile.
 func (p *Profile) Describe(f *File) []NamedMessage {
 	counts := map[uint16]int{}
+
 	var out []NamedMessage
+
 	for _, m := range f.Messages() {
 		nm := p.DescribeMessage(m)
 		nm.Index = counts[m.Def.GlobalNum]
 		counts[m.Def.GlobalNum]++
+
 		out = append(out, nm)
 	}
+
 	return out
 }
 
 // DescribeMessage decodes one data record with the profile.
 func (p *Profile) DescribeMessage(m *Message) NamedMessage {
 	nm := NamedMessage{Num: m.Def.GlobalNum}
+
 	mp, ok := p.Messages[m.Def.GlobalNum]
 	if ok {
 		nm.Name = mp.Name
 		nm.Known = true
 	}
+
 	for i := range m.Fields {
 		fld := &m.Fields[i]
 		nf := NamedField{Num: fld.Def.Num, Base: fld.Def.BaseType.String()}
 		raw := fld.Value(m.Def.BigEndian)
 		nf.Raw = raw
 		nf.Value = raw
+
 		if ok {
 			if fp, ok := mp.Fields[fld.Def.Num]; ok {
 				nf.Name = fp.Name
@@ -75,8 +83,10 @@ func (p *Profile) DescribeMessage(m *Message) NamedMessage {
 				nf.Value = p.applyProfile(fp, raw)
 			}
 		}
+
 		nm.Fields = append(nm.Fields, nf)
 	}
+
 	return nm
 }
 
@@ -89,23 +99,29 @@ func (p *Profile) applyProfile(fp *FieldProfile, raw any) any {
 		for i, e := range v {
 			out[i] = p.applyProfile(fp, e)
 		}
+
 		return out
 	}
+
 	if _, isEnum := p.Types[fp.Type]; isEnum {
 		if iv, err := toInt(raw); err == nil {
 			if name, ok := p.EnumName(fp.Type, iv); ok {
 				return name
 			}
 		}
+
 		return raw
 	}
+
 	if fp.Scale != 1 || fp.Offset != 0 {
 		fv, err := toFloat(raw)
 		if err != nil {
 			return raw
 		}
+
 		return fv/fp.Scale - fp.Offset
 	}
+
 	return raw
 }
 
@@ -116,37 +132,60 @@ func (p *Profile) ParseValue(fp *FieldProfile, v any) (any, error) {
 	if fp == nil {
 		return v, nil
 	}
+
 	if s, ok := v.(string); ok {
-		if _, isEnum := p.Types[fp.Type]; isEnum {
-			if ev, ok := p.EnumValue(fp.Type, s); ok {
-				return ev, nil
-			}
+		parsed, final, err := p.parseString(fp, s)
+		if err != nil || final {
+			return parsed, err
 		}
-		if fp.BaseType == "string" {
-			return s, nil
-		}
-		if iv, err := strconv.ParseInt(s, 10, 64); err == nil {
-			v = iv
-		} else if fv, err := strconv.ParseFloat(s, 64); err == nil {
-			v = fv
-		} else if s == "true" {
-			v = int64(1)
-		} else if s == "false" {
-			v = int64(0)
-		} else {
-			return nil, fmt.Errorf("%s: cannot parse %q", fp.Name, s)
-		}
+
+		v = parsed
 	}
+
 	if fp.Scale != 1 || fp.Offset != 0 {
 		fv, err := toFloat(v)
 		if err != nil {
 			return nil, err
 		}
+
 		scaled := (fv + fp.Offset) * fp.Scale
 		if fp.BaseType == "float32" || fp.BaseType == "float64" {
 			return scaled, nil
 		}
+
 		return int64(scaled + 0.5), nil
 	}
+
 	return v, nil
+}
+
+// parseString reads a textual value: an enum name or a string field value is
+// final; a number or true/false still has the field's scale to apply.
+func (p *Profile) parseString(fp *FieldProfile, s string) (parsed any, final bool, err error) {
+	if _, isEnum := p.Types[fp.Type]; isEnum {
+		if ev, ok := p.EnumValue(fp.Type, s); ok {
+			return ev, true, nil
+		}
+	}
+
+	if fp.BaseType == "string" {
+		return s, true, nil
+	}
+
+	switch s {
+	case "true":
+		return int64(1), false, nil
+	case "false":
+		return int64(0), false, nil
+	}
+
+	if iv, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return iv, false, nil
+	}
+
+	if fv, err := strconv.ParseFloat(s, 64); err == nil {
+		return fv, false, nil
+	}
+
+	return nil, false, fmt.Errorf("%s: cannot parse %q", fp.Name, s)
 }

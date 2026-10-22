@@ -33,18 +33,23 @@ func AppHintsFor(appID string) *AppHints {
 		if err := json.Unmarshal(ciqAppsKnowledge, &raw); err != nil {
 			panic("knowledge/ciq_apps.json: " + err.Error())
 		}
+
 		appHintsVal = map[string]*AppHints{}
+
 		for k, v := range raw {
 			if strings.HasPrefix(k, "_") {
 				continue
 			}
+
 			var h AppHints
 			if err := json.Unmarshal(v, &h); err != nil {
 				panic("knowledge/ciq_apps.json: " + k + ": " + err.Error())
 			}
+
 			appHintsVal[strings.ToLower(k)] = &h
 		}
 	})
+
 	return appHintsVal[strings.ToLower(appID)]
 }
 
@@ -72,6 +77,7 @@ func (k *Knowledge) ManagedByConnect(mesg uint16, field uint8) bool {
 			k.managed[key] = true
 		}
 	}
+
 	return k.managed[fmt.Sprintf("%d.%d", mesg, field)]
 }
 
@@ -87,7 +93,9 @@ func DefaultKnowledge() *Knowledge {
 		if err := json.Unmarshal(deviceSettingsKnowledge, &k); err != nil {
 			panic("knowledge/device_settings.json: " + err.Error())
 		}
+
 		knowledgeVal = &k
 	})
+
 	return knowledgeVal
 }

@@ -22,6 +22,26 @@ The first call compiles the bridge (about a second); later calls are fast.
 Garmin Express may stay installed, but close it while using garminctl so the
 two do not write to the watch at the same time.
 
+Pre-built binaries for Windows and Linux are attached to each
+[release](https://github.com/DevWolk/garminctl/releases); `garminctl
+version` prints the version a binary was built from. From source:
+
+```sh
+go install github.com/DevWolk/garminctl/cmd/garminctl@latest
+```
+
+`make` builds both binaries. Development targets:
+
+```sh
+make check        # golangci-lint (govet included), go test -race, govulncheck
+make lint-fix     # apply the auto-fixable lint findings and formatting
+```
+
+`.golangci.yml` is the source of truth for the linters. golangci-lint and
+govulncheck are pinned in `tools.mod` and run through `go tool`, so nothing
+has to be installed by hand. Every `//nolint` names its linter and gives
+the reason.
+
 ## CLI
 
 ```sh
@@ -191,6 +211,13 @@ notifications work the way Garmin Express did without a terminal;
 bin/garminctl serve            # http://127.0.0.1:8787
 ```
 
+The API has no login, so the server only answers browser requests that come
+from its own pages: a request with another `Origin`, a cross-site
+`Sec-Fetch-Site`, or a `Host` that is not the loopback address on the listen
+port is refused with 403. That keeps a web page open in another tab from
+writing to the watch through the browser (cross-site requests, DNS
+rebinding). Tools such as `curl` on the same machine are unaffected.
+
 Health & activities also shows what else Connect knows: VO2 max, fitness
 age, HRV status, personal records (linked to the activity in Connect),
 earned badges, weight history and a form to log a weigh-in; ranges above
@@ -249,30 +276,66 @@ Claude Code configuration (`.mcp.json` or `claude mcp add`):
 { "mcpServers": { "garmin": { "command": "/home/ubuntu/projects/garmin/bin/garminctl", "args": ["mcp"] } } }
 ```
 
-Tools: `watch_info`, `watch_list_files`, `watch_decode_fit`,
+Tools (33): `watch_info`, `watch_list_files`, `watch_decode_fit`,
 `watch_delete_file`, `watch_settings`, `watch_settings_schema`,
 `watch_set_settings`, `watch_apps`, `watch_app_settings`,
 `watch_app_settings_schema`, `watch_set_app_settings`, `watch_check_updates`,
-`watch_install_update`, `cloud_status`, `cloud_sync`, `cloud_settings`,
-`cloud_set_settings` (sign in first via the web UI or CLI; MCP never handles
-the password), `store_search`, `store_app`, `activities_list`,
-`activity_detail`, `health_daily`, `health_day`, `workouts_list`,
-`workout_create`, `workout_send`, `music_list`, `music_playlist`.
+`watch_set_app_hidden`, `watch_remove_app`, `watch_install_update`,
+`cloud_status`, `cloud_sync`, `cloud_settings`, `cloud_set_settings` (sign in
+first via the web UI or CLI; MCP never handles the password), `store_search`,
+`store_app`, `activities_list`, `activity_detail`, `health_daily`,
+`health_history`, `health_extras`, `health_log_weight`, `health_day`,
+`workouts_list`, `workout_create`, `workout_send`, `music_list`,
+`music_playlist`. Every tool carries a title, read-only/destructive and
+open-world hints and a typed output schema; list results are wrapped in an
+object (`entries`, `rows`, `apps`, `days`, ...).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `cmd/garminctl` | CLI entry point |
+| `cmd/garminctl` | CLI: `main.go` holds the command table, one file per command group (`files.go`, `settings.go`, `cloud.go`, `health.go`, ...) |
 | `internal/device` | device abstraction; `wpd/` is the Windows MTP bridge, `DirFS` serves a directory |
 | `internal/fit` | lossless FIT codec, embedded FIT profile 21.218, builder for new files |
 | `internal/ciq` | Connect IQ serialization (`.SET` files) |
 | `internal/prg` | Connect IQ `.PRG` section reader |
 | `internal/ciqstore` | fetches and parses the public app-settings page (labels, options) |
-| `internal/garmin` | service layer: settings view, settings-change files, apps, knowledge notes |
+| `internal/garmin` | service layer: settings view, settings-change files, apps, knowledge notes; `Lazy` is the one lazily opened watch the servers share |
+| `internal/paths` | where garminctl keeps its cache (`~/.cache/garminctl`) |
+| `internal/testdump` | builds a watch dump from the fixtures for tests |
 | `internal/web` | HTTP API and the embedded UI |
 | `internal/mcpserver` | MCP tools |
+| `tools/expresswatch` | the daily Garmin Express release check behind the `express-watch` workflow |
 | `docs/formats.md` | what was reverse engineered and how it fits together |
+| `Makefile`, `.golangci.yml` | build and quality targets; the linter configuration |
 
 Run the tests with `go test ./...`. The `testdata` directories hold files
 pulled from the author's watch (they include personal profile data).
+
+## Keeping up with Garmin Express
+
+garminctl replaces Garmin Express, so a new Express release is the one
+"dependency" that can make it fall behind. The `Garmin Express watch`
+workflow (`.github/workflows/express-watch.yml`) runs once a day: it asks
+Garmin's download server about the installer and reads the newest
+release-notes thread on Garmin's forum. When either changes it records the
+release in `docs/express-release.json` and opens a pull request with
+Garmin's change notes. `go run ./tools/expresswatch` does the same by hand.
+
+With a repository secret `EXPRESS_WATCH_TOKEN` (a personal access token
+with the `repo` scope, or a fine-grained one with contents, pull requests,
+issues and actions read/write) the pull request also triggers CI, and the
+workflow starts a Copilot coding-agent task that reads the notes, decides
+whether garminctl has to follow, implements what is needed and records the
+assessment in `docs/express-parity.md` in a pull request of its own. Copilot
+coding agent has to be enabled for the repository (Settings → Copilot).
+Without the secret the pull request still opens; CI then has to be started
+by hand, and Copilot is not asked.
+
+`Update pinned tools` (`tools-update.yml`) is the matching weekly bump for
+`tools.mod`, which Dependabot does not read; Dependabot itself covers
+`go.mod` and the GitHub Actions pins.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

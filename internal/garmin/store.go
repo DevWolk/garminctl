@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/ciqstore"
 )
 
 // StoreView is a store page merged with what the watch has installed.
@@ -33,13 +33,17 @@ func storeDeviceType(ctx context.Context, part string) string {
 	deviceTypeMu.Lock()
 	id, ok := deviceTypeCache[part]
 	deviceTypeMu.Unlock()
+
 	if ok {
 		return id
 	}
+
 	id, _ = ciqstore.DeviceTypeID(ctx, part)
+
 	deviceTypeMu.Lock()
 	deviceTypeCache[part] = id
 	deviceTypeMu.Unlock()
+
 	return id
 }
 
@@ -49,20 +53,24 @@ func (s *Service) installedMap(ctx context.Context) map[string]App {
 	if s == nil {
 		return m
 	}
+
 	apps, err := s.Apps(ctx)
 	if err != nil {
 		return m
 	}
+
 	for _, a := range apps {
 		if a.FileName != "" {
 			m[strings.ToLower(a.ID)] = a
 		}
 	}
+
 	return m
 }
 
 func (s *Service) decorateStore(ctx context.Context, apps []ciqstore.StoreApp) []StoreViewApp {
 	inst := s.installedMap(ctx)
+
 	out := make([]StoreViewApp, 0, len(apps))
 	for _, a := range apps {
 		v := StoreViewApp{StoreApp: a}
@@ -70,8 +78,10 @@ func (s *Service) decorateStore(ctx context.Context, apps []ciqstore.StoreApp) [
 			v.Installed, v.InstalledVersion = true, ia.Version
 			v.UpdateAvailable = a.InternalVersion > ia.Version
 		}
+
 		out = append(out, v)
 	}
+
 	return out
 }
 
@@ -80,10 +90,12 @@ func (s *Service) decorateStore(ctx context.Context, apps []ciqstore.StoreApp) [
 func (s *Service) BrowseStore(ctx context.Context, part string, q ciqstore.StoreQuery) (*StoreView, error) {
 	q.PartNumber = part
 	q.DeviceTypeID = storeDeviceType(ctx, part)
+
 	page, err := ciqstore.Browse(ctx, q)
 	if err != nil {
 		return nil, err
 	}
+
 	return &StoreView{Total: page.Total, Apps: s.decorateStore(ctx, page.Apps), Types: ciqstore.StoreTypeList(), Sorts: ciqstore.StoreSortList()}, nil
 }
 
@@ -99,7 +111,9 @@ func (s *Service) StoreApp(ctx context.Context, part, id string) (*StoreDetail, 
 	if err != nil {
 		return nil, err
 	}
+
 	rv, _ := ciqstore.Reviews(ctx, id, 8)
 	v := s.decorateStore(ctx, []ciqstore.StoreApp{*d})[0]
+
 	return &StoreDetail{StoreViewApp: v, Reviews: rv}, nil
 }
