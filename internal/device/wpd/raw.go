@@ -337,3 +337,25 @@ func (d *Device) Storage(ctx context.Context) (device.Storage, error) {
 	}
 	return st, nil
 }
+
+// Battery reads the MTP device property BatteryLevel (0x5001). On the
+// vívoactive 5 it is a placeholder: the descriptor's factory default and the
+// current value are both 50 whatever the real charge, so nothing shows it.
+// Kept for devices that may report it properly.
+func (d *Device) Battery(ctx context.Context) (int, bool, error) {
+	data, code, _, err := d.MtpRead(ctx, 0x1015, []uint32{0x5001}) // GetDevicePropValue
+	if err != nil {
+		return 0, false, err
+	}
+	if code != ptpOK || len(data) == 0 {
+		return 0, false, nil
+	}
+	v := int(data[0])
+	if len(data) >= 2 && data[1] != 0 { // u16 form
+		v = int(binary.LittleEndian.Uint16(data))
+	}
+	if v < 0 || v > 100 {
+		return 0, false, nil
+	}
+	return v, true, nil
+}

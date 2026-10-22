@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -154,6 +155,29 @@ func run(args []string) error {
 		return c.mkdir(ctx, svc, rest)
 	case "hidden":
 		return c.hidden(ctx, svc, rest)
+	case "mtp": // raw PTP operation with a data phase from the device, for exploring: mtp OPCODE [PARAM...] (hex ok)
+		dev, ok := svc.Device().(*wpd.Device)
+		if !ok || len(rest) < 1 {
+			return errors.New("usage: mtp OPCODE [PARAM...]  (needs the MTP bridge)")
+		}
+		var nums []uint64
+		for _, a := range rest {
+			n, err := strconv.ParseUint(strings.TrimPrefix(a, "0x"), 16, 32)
+			if err != nil {
+				return fmt.Errorf("%q: %w", a, err)
+			}
+			nums = append(nums, n)
+		}
+		prms := make([]uint32, 0, len(nums)-1)
+		for _, n := range nums[1:] {
+			prms = append(prms, uint32(n))
+		}
+		data, code, rp, err := dev.MtpRead(ctx, uint32(nums[0]), prms)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("response 0x%04X params %v, %d bytes\n%s", code, rp, len(data), hex.Dump(data))
+		return nil
 	case "decode":
 		return c.decode(ctx, svc, rest)
 	case "settings":

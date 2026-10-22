@@ -667,7 +667,7 @@ $('#upload-file').addEventListener('change', async () => {
 
 // ---------- updates ----------
 state.updates = { software: null, apps: null, inventory: null, checkedAt: null, busy: false, written: new Set() };
-function fmtSize(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' kB'; }
+function fmtSize(n) { return n >= 1e9 ? (n / 1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.round(n / 1e3) + ' kB'; }
 async function loadUpdates() {
   if (state.updates.busy) return;
   if (!state.connected) { toast('Connect the watch first', 'warn'); return; }
