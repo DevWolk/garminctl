@@ -13,7 +13,7 @@ type App struct {
 	Type     int    `json:"type"`
 	TypeName string `json:"typeName"`
 	Name     string `json:"name"`
-	Enabled  bool   `json:"enabled"`
+	Hidden   bool   `json:"hidden"` // field 4: removed from the user's activity list / glance loop (verified on the watch)
 	Version  int    `json:"version,omitempty"`
 	FileName string `json:"fileName,omitempty"` // Connect IQ apps only, e.g. G5RG4154
 	Size     int    `json:"size,omitempty"`
@@ -100,7 +100,7 @@ func parseApp(b []byte) (App, error) {
 		case 3:
 			a.Name = string(f.data)
 		case 4:
-			a.Enabled = f.varint != 0
+			a.Hidden = f.varint != 0
 		case 5:
 			a.Version = int(f.varint)
 		case 6:

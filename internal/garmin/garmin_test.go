@@ -105,7 +105,7 @@ func TestRewriteAppsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, a := range apps {
-		if a.Name == "Easy+" && a.Enabled {
+		if a.Name == "Easy+" && a.Hidden {
 			t.Fatal("flag not flipped")
 		}
 	}

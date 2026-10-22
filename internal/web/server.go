@@ -111,6 +111,9 @@ func Serve(ctx context.Context, addr string, open Opener, autoSync bool) error {
 	mux.HandleFunc("GET /api/software", s.software)
 	mux.HandleFunc("POST /api/apps/install", s.appsInstall)
 	mux.HandleFunc("DELETE /api/apps/{ref}", s.appRemove)
+	mux.HandleFunc("PUT /api/apps/{ref}/hidden", s.appHidden)
+	mux.HandleFunc("GET /api/apps/pending", s.appPending)
+	mux.HandleFunc("DELETE /api/apps/pending", s.appPendingCancel)
 	sub, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		return err
@@ -375,6 +378,36 @@ func (s *Server) updatesApps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) software(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.SoftwareInventory(r.Context())
+	})
+}
+
+func (s *Server) appHidden(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Hidden bool `json:"hidden"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		backup, err := svc.SetAppHidden(r.Context(), r.PathValue("ref"), in.Hidden)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"hidden": in.Hidden, "backup": backup, "note": "Applied when the USB session ends; unplug the watch."}, nil
+	})
+}
+
+func (s *Server) appPending(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) { return svc.PendingAppChanges(r.Context()) })
+}
+
+func (s *Server) appPendingCancel(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		if err := svc.CancelAppChanges(r.Context()); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, nil
 	})
 }
 

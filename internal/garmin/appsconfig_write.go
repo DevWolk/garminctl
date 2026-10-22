@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"garminctl/internal/device"
 )
 
 // PathAppsIn is the registry the host hands back to the watch: the same
@@ -95,26 +97,29 @@ func rewriteApps(out []byte, edit func(app App, fields []pbField) ([]pbField, er
 	return pbEncode(root), nil
 }
 
-// SetAppFlag writes IN.BIN with one app's field-4 flag changed and nothing
-// else, after saving a copy of OUT.BIN next to the other caches. The watch
-// applies it when unplugged. ref matches the app's name, file id or store id.
-func (s *Service) SetAppFlag(ctx context.Context, ref string, value bool) (backup string, err error) {
-	if _, err := s.dev.Stat(ctx, PathAppsIn); err == nil {
-		return "", errors.New("GARMIN/Apps/IN.BIN is already waiting for the watch; unplug it first")
-	}
+// SetAppHidden hides an activity, glance or app from the watch's lists or
+// shows it again, by writing IN.BIN with that one flag changed. A pending
+// IN.BIN is used as the base, so several changes can be queued before the
+// unplug that applies them. A copy of OUT.BIN is kept next to the caches.
+// ref matches the app's name, file id or store id.
+func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (backup string, err error) {
 	out, err := s.read(ctx, PathAppsConfig, false)
 	if err != nil {
 		return "", err
 	}
-	identity, err := rewriteApps(out, func(_ App, f []pbField) ([]pbField, error) { return f, nil })
+	base := out
+	if pending, err := s.dev.Read(ctx, PathAppsIn); err == nil && len(pending) > 0 {
+		base = pending
+	}
+	identity, err := rewriteApps(base, func(_ App, f []pbField) ([]pbField, error) { return f, nil })
 	if err != nil {
 		return "", err
 	}
-	if string(identity) != string(out) {
-		return "", errors.New("OUT.BIN does not re-encode byte for byte; refusing to write a registry the watch might not recognise")
+	if string(identity) != string(base) {
+		return "", errors.New("the app registry does not re-encode byte for byte; refusing to write one the watch might not recognise")
 	}
 	hits := 0
-	in, err := rewriteApps(out, func(app App, f []pbField) ([]pbField, error) {
+	in, err := rewriteApps(base, func(app App, f []pbField) ([]pbField, error) {
 		if !(strings.EqualFold(app.Name, ref) || strings.EqualFold(app.FileName, ref) || strings.EqualFold(app.ID, ref)) {
 			return f, nil
 		}
@@ -122,7 +127,7 @@ func (s *Service) SetAppFlag(ctx context.Context, ref string, value bool) (backu
 		found := false
 		for i := range f {
 			if f[i].num == 4 && f[i].wire == 0 {
-				f[i].varint = map[bool]uint64{true: 1, false: 0}[value]
+				f[i].varint = map[bool]uint64{true: 1, false: 0}[hidden]
 				found = true
 			}
 		}
@@ -138,7 +143,7 @@ func (s *Service) SetAppFlag(ctx context.Context, ref string, value bool) (backu
 		return "", fmt.Errorf("%q is not in the watch's app registry", ref)
 	}
 	if hits > 1 {
-		return "", fmt.Errorf("%q matches %d registry entries (a glance and an app share names); use the file id or store id", ref, hits)
+		return "", fmt.Errorf("%q matches %d registry entries (a glance and an app share the name); use the store id", ref, hits)
 	}
 	dir, err := os.UserCacheDir()
 	if err == nil {
@@ -152,4 +157,52 @@ func (s *Service) SetAppFlag(ctx context.Context, ref string, value bool) (backu
 		return backup, err
 	}
 	return backup, nil
+}
+
+// AppChange is one difference between the registry and the pending IN.BIN.
+type AppChange struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	TypeName string `json:"typeName"`
+	Hidden   bool   `json:"hidden"` // the value that applies on unplug
+}
+
+// PendingAppChanges lists what IN.BIN will change when the watch is unplugged.
+func (s *Service) PendingAppChanges(ctx context.Context) ([]AppChange, error) {
+	pending, err := s.dev.Read(ctx, PathAppsIn)
+	if err != nil {
+		if errors.Is(err, device.ErrNotFound) || strings.Contains(err.Error(), "not found") {
+			return []AppChange{}, nil
+		}
+		return nil, err
+	}
+	out, err := s.read(ctx, PathAppsConfig, true)
+	if err != nil {
+		return nil, err
+	}
+	cur, err := ParseAppsConfig(out)
+	if err != nil {
+		return nil, err
+	}
+	next, err := ParseAppsConfig(pending)
+	if err != nil {
+		return nil, err
+	}
+	key := func(a App) string { return a.ID + "/" + a.TypeName }
+	was := map[string]App{}
+	for _, a := range cur {
+		was[key(a)] = a
+	}
+	changes := []AppChange{}
+	for _, a := range next {
+		if w, ok := was[key(a)]; ok && w.Hidden != a.Hidden {
+			changes = append(changes, AppChange{ID: a.ID, Name: a.Name, TypeName: a.TypeName, Hidden: a.Hidden})
+		}
+	}
+	return changes, nil
+}
+
+// CancelAppChanges deletes the pending IN.BIN.
+func (s *Service) CancelAppChanges(ctx context.Context) error {
+	return s.dev.Delete(ctx, PathAppsIn)
 }

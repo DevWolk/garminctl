@@ -220,10 +220,20 @@ async function loadNewFiles() {
   const ul = $('#newfiles');
   try {
     const entries = await api('GET', '/api/files?path=' + encodeURIComponent('GARMIN/NewFiles'));
-    $('#badge-pending').hidden = entries.length === 0;
-    $('#badge-pending').textContent = entries.length;
-    if (!entries.length) { ul.innerHTML = '<li class="muted">Nothing waiting. The watch is up to date with this computer.</li>'; return; }
+    const changes = await api('GET', '/api/apps/pending').catch(() => []);
+    const total = entries.length + (changes.length ? 1 : 0);
+    $('#badge-pending').hidden = total === 0;
+    $('#badge-pending').textContent = total;
+    if (!total) { ul.innerHTML = '<li class="muted">Nothing waiting. The watch is up to date with this computer.</li>'; return; }
     ul.innerHTML = '';
+    if (changes.length) {
+      const li = el(`<li><div><div class="what">App list: ${changes.length} change${changes.length === 1 ? '' : 's'}</div><div class="meta">${esc(changes.map((c) => `${c.name} → ${c.hidden ? 'hidden' : 'shown'}`).join(', '))} · <span class="mono">GARMIN/Apps/IN.BIN</span></div></div><button class="btn small danger">Cancel</button></li>`);
+      li.querySelector('button').onclick = async () => {
+        if (!await confirmDialog({ title: 'Cancel the app-list changes?', body: '<p>The watch keeps its current activity list and glance loop.</p>', ok: 'Cancel changes' })) return;
+        try { await api('DELETE', '/api/apps/pending'); toast('App-list changes cancelled'); state.installed.pending = []; loadNewFiles(); if (state.tab === 'installed') renderInstalled(); } catch (err) { toast(err.message, 'bad'); }
+      };
+      ul.appendChild(li);
+    }
     for (const e of entries) {
       const li = el(`<li><div><div class="what">Reading…</div><div class="meta">${esc((e.modified || '').replace('T', ' '))} · ${e.size.toLocaleString()} B · <span class="mono">${esc(e.name)}</span></div></div><button class="btn small danger">Remove</button></li>`);
       li.querySelector('button').onclick = async () => {
@@ -997,9 +1007,9 @@ const kindPlural = { activity: 'Activities', glance: 'Glances', app: 'Apps', wat
 const kindOrder = Object.keys(kindLabel);
 async function loadInstalled() {
   const tb = $('#inst-table tbody');
-  if (!state.apps.length) tb.innerHTML = '<tr><td colspan="5" class="muted">Reading the app registry…</td></tr>';
-  try { await fetchApps(); renderInstalled(); }
-  catch (e) { tb.innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message)}</td></tr>`; }
+  if (!state.apps.length) tb.innerHTML = '<tr><td colspan="6" class="muted">Reading the app registry…</td></tr>';
+  try { await fetchApps(); state.installed.pending = await api('GET', '/api/apps/pending').catch(() => []); renderInstalled(); }
+  catch (e) { tb.innerHTML = `<tr><td colspan="6" class="muted">${esc(e.message)}</td></tr>`; }
 }
 function renderInstalled() {
   const apps = state.apps, q = $('#inst-filter').value.trim().toLowerCase();
@@ -1015,10 +1025,20 @@ function renderInstalled() {
   }
   const rows = apps.filter((a) => (state.installed.type === 'all' || a.typeName === state.installed.type) && (!q || `${a.name} ${a.typeName} ${a.fileName || ''}`.toLowerCase().includes(q)));
   rows.sort((a, b) => kindOrder.indexOf(a.typeName) - kindOrder.indexOf(b.typeName)); // stable: keeps the watch's own order within a kind
+  const pending = new Map((state.installed.pending || []).map((c) => [c.id + '/' + c.typeName, c.hidden]));
   const tb = $('#inst-table tbody'); tb.innerHTML = '';
   for (const a of rows) {
-    const tr = el(`<tr><td><b>${esc(a.name)}</b></td><td>${esc(kindLabel[a.typeName] || a.typeName)}</td><td>${a.native ? '<span class="muted">Built-in</span>' : `Connect IQ <span class="muted">v${a.version}</span>`}</td><td class="num">${a.size ? fmtSize(a.size) : ''}</td><td class="actions"></td></tr>`);
+    const listed = ['activity', 'glance', 'app', 'widget', 'datafield'].includes(a.typeName);
+    const pend = pending.get(a.id + '/' + a.typeName);
+    const stateCell = !listed ? '' : pend !== undefined ? `<span class="tag new" style="margin:0" title="Applied when the watch is unplugged">${pend ? 'Hidden' : 'Shown'} on unplug</span>` : a.hidden ? '<span class="tag" style="margin:0">Hidden</span>' : '<span class="tag ok" style="margin:0">Shown</span>';
+    const tr = el(`<tr><td><b>${esc(a.name)}</b></td><td>${esc(kindLabel[a.typeName] || a.typeName)}</td><td>${a.native ? '<span class="muted">Built-in</span>' : `Connect IQ <span class="muted">v${a.version}</span>`}</td><td>${stateCell}</td><td class="num">${a.size ? fmtSize(a.size) : ''}</td><td class="actions"></td></tr>`);
     const act = tr.querySelector('.actions');
+    if (listed) {
+      const target = pend !== undefined ? !pend : !a.hidden; // what the button will set
+      const b = el(`<button class="btn small" type="button">${target ? 'Hide' : 'Show'}</button>`);
+      b.onclick = () => setAppHidden(a, target);
+      act.appendChild(b);
+    }
     if (a.fileName) {
       const b = el('<button class="btn small" type="button">Settings</button>');
       b.onclick = () => { showTab('apps'); setTimeout(() => { const item = document.querySelector(`.app-item[data-file="${CSS.escape(a.fileName)}"]`); if (item) item.click(); }, 400); };
@@ -1032,9 +1052,18 @@ function renderInstalled() {
     }
     tb.appendChild(tr);
   }
-  if (!rows.length) tb.innerHTML = '<tr><td colspan="5" class="muted">Nothing matches.</td></tr>';
+  if (!rows.length) tb.innerHTML = '<tr><td colspan="6" class="muted">Nothing matches.</td></tr>';
   const ciq = rows.filter((a) => !a.native).length;
-  $('#inst-status').textContent = `${rows.length} of ${apps.length} · ${ciq} from Connect IQ, ${rows.length - ciq} built in`;
+  const hidden = rows.filter((a) => a.hidden && ['activity', 'glance', 'app'].includes(a.typeName)).length;
+  $('#inst-status').textContent = `${rows.length} of ${apps.length} · ${ciq} from Connect IQ, ${rows.length - ciq} built in · ${hidden} hidden from the lists${pending.size ? ` · ${pending.size} change${pending.size === 1 ? '' : 's'} waiting for unplug` : ''}`;
+}
+async function setAppHidden(a, hidden) {
+  try {
+    const r = await api('PUT', `/api/apps/${encodeURIComponent(a.fileName || a.id)}/hidden`, { hidden });
+    toast(`${a.name}: ${hidden ? 'hidden from' : 'shown in'} the watch's lists after the next unplug.`);
+    state.installed.pending = await api('GET', '/api/apps/pending').catch(() => state.installed.pending);
+    renderInstalled(); loadNewFiles();
+  } catch (e) { toast(e.message, 'bad'); }
 }
 $('#inst-filter').addEventListener('input', () => { if (state.apps.length) renderInstalled(); });
 

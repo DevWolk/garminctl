@@ -259,6 +259,23 @@ func Serve(ctx context.Context, open Opener) error {
 	type installIn struct {
 		PartNumber string `json:"partNumber" jsonschema:"part number of an update returned by watch_check_updates, e.g. 006-B4426-00"`
 	}
+	type hideIn struct {
+		App    string `json:"app" jsonschema:"the entry's name, file id or store id from watch_apps"`
+		Hidden bool   `json:"hidden" jsonschema:"true removes it from the watch's activity list / glance loop / apps, false puts it back"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "watch_set_app_hidden", Description: "Hide a built-in or Connect IQ activity, glance or app from the watch's lists, or show it again, by queuing an app-list change (IN.BIN) that the watch applies when unplugged. Several changes can be queued; a copy of the registry is kept."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in hideIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			backup, err := svc.SetAppHidden(ctx, in.App, in.Hidden)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(map[string]any{"hidden": in.Hidden, "backup": backup, "note": "Applied when the USB session ends; ask the user to unplug the watch."}, nil)
+		})
+
 	type rmIn struct {
 		App string `json:"app" jsonschema:"the app's name, file id or store id from watch_apps"`
 	}

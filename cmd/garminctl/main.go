@@ -59,7 +59,8 @@ Commands:
   app-settings set APP K=V [...]  change Connect IQ app settings (V may be an option label)
   app-schema APP [KEY]            show labels and dropdown options of an app's settings
   app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
-  app-flag APP on|off             experimental: set an app's registry flag through IN.BIN
+  app-hide APP | app-show APP     hide a built-in activity, glance or app from the watch's lists, or show it (applied on unplug)
+  app-pending                     app-list changes waiting for the next unplug
   updates                         check Garmin for firmware/data updates and app updates
   updates install PART            download and write one update (e.g. 006-DA094-00)
   software                        installed software components (device.fit)
@@ -155,15 +156,30 @@ func run(args []string) error {
 		return c.settings(ctx, svc, rest)
 	case "apps":
 		return c.apps(ctx, svc)
-	case "app-flag":
-		if len(rest) != 2 || (rest[1] != "on" && rest[1] != "off") {
-			return errors.New("usage: app-flag APP on|off   (experimental: writes IN.BIN with one registry flag changed)")
+	case "app-hide", "app-show":
+		if len(rest) != 1 {
+			return fmt.Errorf("usage: %s APP", cmd)
 		}
-		backup, err := svc.SetAppFlag(ctx, rest[0], rest[1] == "on")
+		backup, err := svc.SetAppHidden(ctx, rest[0], cmd == "app-hide")
 		if err != nil {
 			return err
 		}
-		fmt.Printf("wrote GARMIN/Apps/IN.BIN; copy of OUT.BIN saved as %s\nthe watch applies it when you unplug it\n", backup)
+		fmt.Printf("queued in GARMIN/Apps/IN.BIN (copy of the registry: %s); the watch applies it when you unplug it\n", backup)
+		return nil
+	case "app-pending":
+		ch, err := svc.PendingAppChanges(ctx)
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(ch)
+		}
+		for _, x := range ch {
+			fmt.Printf("%-10s %-28s -> %s\n", x.TypeName, x.Name, map[bool]string{true: "hidden", false: "shown"}[x.Hidden])
+		}
+		if len(ch) == 0 {
+			fmt.Println("no app-list changes waiting")
+		}
 		return nil
 	case "app-rm":
 		if len(rest) != 1 {
@@ -540,9 +556,9 @@ func (c *cli) apps(ctx context.Context, svc *garmin.Service) error {
 		return c.printJSON(apps)
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "TYPE\tNAME\tFILE\tVERSION\tENABLED\tID")
+	fmt.Fprintln(tw, "TYPE\tNAME\tFILE\tVERSION\tON WATCH\tID")
 	for _, a := range apps {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%v\t%s\n", a.TypeName, a.Name, a.FileName, a.Version, a.Enabled, a.ID)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n", a.TypeName, a.Name, a.FileName, a.Version, map[bool]string{true: "hidden", false: "shown"}[a.Hidden], a.ID)
 	}
 	return tw.Flush()
 }

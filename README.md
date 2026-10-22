@@ -48,6 +48,7 @@ bin/garminctl workouts create plan.json -send   # build a structured workout, sa
 bin/garminctl workouts create plan.json -local  # or write the workout FIT straight to the watch
 bin/garminctl music ls | music add song.mp3 | music playlist Run track1 track2
 bin/garminctl app-rm "Simply Large"        # remove a Connect IQ app (finished on unplug)
+bin/garminctl app-hide Archery | app-show Archery | app-pending
 bin/garminctl health extras | health history 365 | health weight 80.5
 bin/garminctl hidden GARMIN/Apps/Media      # list a folder the MTP listing hides
 bin/garminctl serve -autosync=false         # web UI without the USB watcher
@@ -188,10 +189,13 @@ earned badges, weight history and a form to log a weigh-in; ranges above
 14 days come from Connect's daily-range endpoints, so a year of steps,
 resting heart rate, stress, body battery and sleep loads in a few requests.
 Connect IQ apps can be removed from App settings or Apps & glances (the
-watch finishes the removal on unplug). `app-flag` writes `IN.BIN` with one
-registry flag changed, with a copy of `OUT.BIN` kept in
-`~/.cache/garminctl`; the flag's meaning is still being verified, so it
-stays a CLI-only experiment for now.
+watch finishes the removal on unplug). Apps & glances also shows which
+built-in activities, glances and apps are in your lists on the watch and
+lets you hide or show them (`app-hide`, `app-show`, `app-pending` on the
+CLI, `watch_set_app_hidden` for MCP): the change is queued in the watch's
+app list and applied on unplug, with a copy of the list kept in
+`~/.cache/garminctl`. The Overview lists queued app-list changes next to
+the pending files and can cancel them.
 
 Sections: Overview (the watch with its Easy+ face drawn from the settings
 file as it is right now, today's steps, resting heart rate, sleep, body

@@ -147,8 +147,8 @@
         <div class="chips" id="inst-types"></div>
         <span class="spacer"></span><span class="hint" id="inst-status"></span>
       </div>
-      <div class="table-wrap tall"><table class="files" id="inst-table"><thead><tr><th>Name</th><th>Kind</th><th>Source</th><th class="num">Size</th><th class="actions"></th></tr></thead><tbody><tr><td colspan="5" class="muted">Connect the watch to list apps.</td></tr></tbody></table></div>
-      <p class="hint">The list comes from the watch's own app registry, so it includes every built-in activity and glance whether or not it is in your activity list or glance loop; the registry does not say which ones are.</p>
+      <div class="table-wrap tall"><table class="files" id="inst-table"><thead><tr><th>Name</th><th>Kind</th><th>Source</th><th title="Whether it is in your activity list, glance loop or app list on the watch">On watch</th><th class="num">Size</th><th class="actions"></th></tr></thead><tbody><tr><td colspan="6" class="muted">Connect the watch to list apps.</td></tr></tbody></table></div>
+      <p class="hint">Shown means the entry is in your activity list, glance loop or app list on the watch; Hidden means it is not. Hide and Show queue a change in the watch's app list that it applies when you unplug it; a copy of the list is kept in <code>~/.cache/garminctl</code>.</p>
     </section>
 
     <section id="tab-health" class="tab">

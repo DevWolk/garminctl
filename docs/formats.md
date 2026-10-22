@@ -141,22 +141,23 @@ Built-in apps use ids like `c0ffee15-600d-20d9-...`. The user's watch lists
 Music); the registry has no "in the activity list / glance loop" marker.
 
 `IN.BIN` is the same protobuf handed back by the host; the watch applies it
-on unplug and deletes it. `garminctl app-flag APP on|off` re-encodes
-OUT.BIN byte for byte with one field-4 value changed (identity re-encoding
-is checked first, a copy of OUT.BIN is kept in `~/.cache/garminctl`) and
-writes it as IN.BIN; openExpress toggles built-in activities and glances
-the same way. Installing a `.PRG` needs no IN.BIN entry: the watch
+on unplug and deletes it (verified: IN.BIN gone and OUT.BIN updated after
+the replug). `SetAppHidden` re-encodes the registry byte for byte with one
+field-4 value changed (identity re-encoding is checked first, a copy of
+OUT.BIN is kept in `~/.cache/garminctl`) and writes it as IN.BIN, using a
+pending IN.BIN as the base so several changes queue up; openExpress
+toggles built-in activities and glances the same way. Installing a `.PRG` needs no IN.BIN entry: the watch
 registered Simply Large from the file alone.
 
-Field 4 is exposed as `enabled` but does not mean "visible": on 2026-10-22
-it was clear for Walk, Boxing, Yoga, Strength, Bike, Pool Swim, Komoot
-(activities the user has in his list) and for the Steps, Weather, Heart
-Rate, Body Battery, Stress glances, while set for Run, Treadmill, Baseball,
-Cricket, Archery, the Last Run/Ride/Swim glances and all Connect IQ apps
-(Easy+, Hydration, Connect IQ Store, YouTube Music). The pattern fits
-"removed from the user's list" for built-in entries, which is why the
-Apps & glances tab does not show the bit; confirm against the watch before
-renaming it.
+Field 4 means "hidden": set when the entry is not in the user's activity
+list, glance loop or app list. Verified 2026-10-22: `app-show Archery`
+cleared the bit in IN.BIN, after the unplug Archery appeared in the activity
+list on the watch and OUT.BIN carried the cleared bit. On the user's watch
+the built-in entries he uses (Walk, Boxing, Yoga, the Steps/Weather/Heart
+Rate/Body Battery glances, Komoot) have it clear; unused ones and the
+Connect IQ watch face and music provider have it set. The Apps & glances
+tab shows it as Shown/Hidden with Hide/Show buttons; `app-hide`,
+`app-show`, `app-pending` on the CLI; `watch_set_app_hidden` for MCP.
 
 ## Software updates (OMT)
 
