@@ -407,7 +407,7 @@ async function loadApps() {
     for (const a of state.apps) {
       if (!a.fileName || seen.has(a.fileName)) continue;
       seen.add(a.fileName);
-      const b = el(`<button class="app-item" data-file="${esc(a.fileName)}"><span class="app-ico">${esc(a.name.slice(0, 2).toUpperCase())}</span><span><div class="app-name">${esc(a.name)}</div><div class="app-sub">${esc(a.typeName)} · v${a.version}</div></span></button>`);
+      const b = el(`<button class="app-item" data-file="${esc(a.fileName)}"><span class="app-ico">${esc(a.name.slice(0, 2).toUpperCase())}</span><span class="body"><span class="app-name">${esc(a.name)}</span><span class="app-sub">${esc(a.typeName)} · v${a.version}</span></span></button>`);
       b.onclick = () => { document.querySelectorAll('.app-item').forEach((x) => x.classList.remove('active')); b.classList.add('active'); loadAppSettings(a); };
       root.appendChild(b);
     }
@@ -1250,9 +1250,9 @@ function renderStore() {
     const badge = a.updateAvailable ? '<span class="tag new">Update</span>' : a.installed ? '<span class="tag ok">Installed</span>' : !a.compatible ? '<span class="tag">Not for this watch</span>' : '';
     const card = el(`<button class="store-card${state.store.selected === a.id ? ' active' : ''}" data-id="${esc(a.id)}">
       ${a.iconUrl ? `<img src="${esc(a.iconUrl)}" alt="" loading="lazy">` : '<span class="app-ico">?</span>'}
-      <span><div class="name">${esc(a.name)}</div><div class="dev">${esc(a.developer)}</div>
-      <div class="meta"><b>${stars(a.rating)}</b> (${a.reviewCount}) · ${fmtCount(a.downloads)} downloads</div>
-      <div class="meta">${esc(a.price || 'Free')}${a.trialMode ? ' · trial' : ''} ${badge}</div></span></button>`);
+      <span class="body"><span class="name">${esc(a.name)}</span><span class="dev">${esc(a.developer)}</span>
+      <span class="meta"><b>${stars(a.rating)}</b> (${a.reviewCount}) · ${fmtCount(a.downloads)} downloads</span>
+      <span class="meta">${esc(a.price || 'Free')}${a.trialMode ? ' · trial' : ''} ${badge}</span></span></button>`);
     card.onclick = () => showStoreApp(a.id);
     grid.appendChild(card);
   }
