@@ -59,9 +59,10 @@ session ends (user unplugs or ejects the watch). Connect IQ app and watch-face s
 Easy+ watch face) are edited with watch_app_settings / watch_set_app_settings and take effect immediately.
 watch_check_updates asks Garmin's update service (what Garmin Express uses) for firmware and data updates
 and compares installed Connect IQ apps with the store; watch_install_update downloads one update, verifies
-it and writes it to the watch (installed on unplug; firmware restarts the watch). App binaries cannot be
-downloaded without a Garmin login: tell the user to update apps from the Connect IQ phone app or sideload a
-.PRG in the web UI.
+it and writes it to the watch (installed on unplug; firmware restarts the watch). Connect IQ apps and updates reach
+the watch through Garmin Connect's queue (cloud_sync writes queued .PRG files into the hidden app folder over
+raw PTP; the watch registers them on unplug) or as a sideloaded .PRG from the web UI; the store website itself
+no longer queues installs, the Connect IQ phone app does.
 Garmin Connect (the cloud) is reachable once the user has signed in through the web UI or "garminctl cloud login"
 (never ask for the password here): cloud_status, cloud_sync (upload recorded activities/health files, pull what
 Connect queued for the watch: settings changes, Connect IQ app installs/updates, workouts, courses), cloud_settings

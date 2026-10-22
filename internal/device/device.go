@@ -19,6 +19,15 @@ type Entry struct {
 	Modified string `json:"modified,omitempty"`
 }
 
+// HiddenFS is implemented by devices that can reach folders the ordinary
+// listing hides, such as the Connect IQ app folder on the vívoactive 5 and the
+// fēnix 8. Paths are the same slash-separated watch paths as elsewhere.
+type HiddenFS interface {
+	ListHidden(ctx context.Context, dir string) ([]Entry, error)
+	WriteHidden(ctx context.Context, dir, name string, data []byte) error
+	DeleteHidden(ctx context.Context, dir, name string) error
+}
+
 // Info identifies a device.
 type Info struct {
 	ID           string `json:"id"`

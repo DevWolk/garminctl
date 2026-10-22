@@ -305,15 +305,50 @@ func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
 	if len(data) < 16 || data[0] != 0 || data[1] != 0 || data[2] != 0 {
 		return "", errors.New("this does not look like a Connect IQ .PRG file")
 	}
-	if _, err := s.dev.Stat(ctx, "GARMIN/APPS/MEDIA"); err != nil {
-		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
-	}
 	var b [4]byte
 	_, _ = rand.Read(b[:])
-	name := fmt.Sprintf("GARMIN/APPS/MEDIA/%s.PRG", strings.ToUpper(hex.EncodeToString(b[:])))
-	if err := s.dev.Write(ctx, name, data); err != nil {
-		return "", fmt.Errorf("write %s: %w", name, err)
+	name := strings.ToUpper(hex.EncodeToString(b[:])) + ".PRG"
+	p, err := s.WriteAppFile(ctx, name, data)
+	if err != nil {
+		return "", err
 	}
 	s.invalidate(PathAppsConfig)
-	return name, nil
+	return p, nil
+}
+
+// AppFolder is where Connect IQ binaries live. The vívoactive 5 hides it from
+// the ordinary MTP listing; see WriteAppFile.
+const AppFolder = "GARMIN/APPS/MEDIA"
+
+// WriteAppFile puts a Connect IQ binary (or STM store message) into the app
+// folder and returns the watch path. When the folder is hidden from the
+// ordinary listing it goes through the device's raw PTP path; the watch
+// registers the app when the USB session ends.
+func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (string, error) {
+	target := AppFolder + "/" + name
+	if _, err := s.dev.Stat(ctx, AppFolder); err == nil {
+		if err := s.dev.Write(ctx, target, data); err != nil {
+			return "", fmt.Errorf("write %s: %w", target, err)
+		}
+		return target, nil
+	}
+	h, ok := s.dev.(device.HiddenFS)
+	if !ok {
+		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
+	}
+	if err := h.WriteHidden(ctx, AppFolder, name, data); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// AppFiles lists the app folder, hidden or not.
+func (s *Service) AppFiles(ctx context.Context) ([]device.Entry, error) {
+	if entries, err := s.dev.List(ctx, AppFolder); err == nil {
+		return entries, nil
+	}
+	if h, ok := s.dev.(device.HiddenFS); ok {
+		return h.ListHidden(ctx, AppFolder)
+	}
+	return nil, device.ErrNotFound
 }

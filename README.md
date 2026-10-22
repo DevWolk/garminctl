@@ -75,10 +75,10 @@ Updates come from the same service Garmin Express uses
 `GarminDevice.xml` without a login. `updates install` downloads the file,
 checks its MD5 and writes it where Garmin says (for example
 `Garmin/RemoteSW/<name>.db`); the watch installs it when the USB session
-ends, and firmware updates restart it. Connect IQ app binaries cannot be
-downloaded without a Garmin login, so the tool only reports which installed
-apps have a newer store version; update those from the Connect IQ phone
-app, or sideload a `.PRG` through the web UI.
+ends, and firmware updates restart it. Connect IQ app updates arrive through
+Garmin Connect's queue (see below) or as a sideloaded `.PRG` through the
+web UI; the Updates tab reports which installed apps have a newer store
+version.
 
 Connect IQ app settings are written straight into the app's `.SET` file and
 take effect immediately. Labels, dropdown options and value ranges come from
@@ -130,10 +130,13 @@ The store website's own JSON API answers without a login, so the Store tab,
 the catalogue filtered to this watch, with ratings, downloads, price, size
 for this device, permissions, description, what's new and reviews, and mark
 what is installed or has a newer version. Installing goes through Garmin
-Connect: press Download on the store page while signed in there, then
-`cloud sync` pulls the queued app. This watch (like the fēnix 8) hides its
-app folder over USB, so a sideloaded `.PRG` cannot be written directly; the
-tool says so instead of failing silently.
+Connect's queue: the store website no longer takes installs, so queue the
+app in the Connect IQ phone app while the phone cannot reach the watch
+(Bluetooth off), then `cloud sync` pulls the queued `.PRG` and writes it to
+the watch. This watch (like the fēnix 8) hides its app folder from the
+ordinary MTP listing; the tool reaches it through Garmin's vendor PTP
+operation and raw SendObject, verified on 2026-10-22 with a watch face that
+the watch registered on unplug. Sideloaded `.PRG` files take the same path.
 
 ## Garmin Connect (cloud)
 

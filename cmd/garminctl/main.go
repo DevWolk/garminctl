@@ -45,6 +45,7 @@ Commands:
   cat [-o FILE] PATH              read a file (prints text or writes to FILE)
   put FILE PATH                   write a local file to the watch
   rm PATH                         delete a file on the watch
+  mkdir PATH                      create a folder on the watch
   decode PATH                     decode any FIT file on the watch
   settings [-all]                 show device settings (documented fields; -all includes unknown)
   settings set M.F=V [...]        change settings, e.g. deviceSettings.backlightMode=manual
@@ -138,6 +139,10 @@ func run(args []string) error {
 		return c.put(ctx, svc, rest)
 	case "rm":
 		return c.rm(ctx, svc, rest)
+	case "mkdir":
+		return c.mkdir(ctx, svc, rest)
+	case "hidden":
+		return c.hidden(ctx, svc, rest)
 	case "decode":
 		return c.decode(ctx, svc, rest)
 	case "settings":
@@ -318,6 +323,87 @@ func (c *cli) rm(ctx context.Context, svc *garmin.Service, args []string) error 
 		return errors.New("usage: rm PATH")
 	}
 	return svc.Device().Delete(ctx, args[0])
+}
+
+// hidden lists a folder through Garmin's vendor MTP operation, which also returns
+// what the ordinary listing hides (the app folder). With -write-test it writes a
+// small temporary file into the folder and deletes it again in the same session.
+func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) error {
+	fs := flag.NewFlagSet("hidden", flag.ContinueOnError)
+	writeTest := fs.Bool("write-test", false, "write and delete a temporary file in the folder")
+	if err := fs.Parse(flagsFirst(args)); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: hidden [-write-test] PATH")
+	}
+	dev, ok := svc.Device().(*wpd.Device)
+	if !ok {
+		return errors.New("hidden needs the MTP bridge, not -root")
+	}
+	parts := strings.Split(strings.Trim(fs.Arg(0), "/"), "/")
+	storage, handle, err := dev.Handles(ctx, "GARMIN")
+	if err != nil {
+		return err
+	}
+	cur := parts[0]
+	if !strings.EqualFold(cur, "GARMIN") {
+		storage, handle, err = dev.Handles(ctx, cur)
+		if err != nil {
+			return err
+		}
+	}
+	for _, p := range parts[1:] { // walk through hidden folders too
+		o, found, err := dev.FindChild(ctx, storage, handle, p)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("%s: no %q under handle 0x%08X", fs.Arg(0), p, handle)
+		}
+		handle = o.Handle
+	}
+	fmt.Printf("%s: storage 0x%08X handle 0x%08X\n", fs.Arg(0), storage, handle)
+	kids, err := dev.AllChildren(ctx, storage, handle)
+	if err != nil {
+		return err
+	}
+	for _, k := range kids {
+		fmt.Printf("  0x%08X  %-24s %s %d\n", k.Handle, k.Name, map[bool]string{true: "dir ", false: "file"}[k.IsDir()], k.Size)
+	}
+	if !*writeTest {
+		return nil
+	}
+	name := "GCTLTEST.TMP"
+	if old, found, err := dev.FindChild(ctx, storage, handle, name); err == nil && found {
+		fmt.Printf("leftover %s (handle 0x%08X, %d bytes) from an earlier run: deleting\n", name, old.Handle, old.Size)
+		if err := dev.DeleteHandle(ctx, old.Handle); err != nil {
+			return err
+		}
+	}
+	data := []byte(strings.Repeat("garminctl write test\n", 50))
+	h, err := dev.SendFile(ctx, storage, handle, name, data)
+	if err != nil {
+		return fmt.Errorf("write test: %w", err)
+	}
+	fmt.Printf("wrote %s as handle 0x%08X (%d bytes)\n", name, h, len(data))
+	o, found, err := dev.FindChild(ctx, storage, handle, name)
+	fmt.Printf("listed after write: found=%v size=%d err=%v\n", found, o.Size, err)
+	back, err := dev.ReadHandle(ctx, h)
+	fmt.Printf("read back: %d bytes, identical=%v, err=%v\n", len(back), string(back) == string(data), err)
+	if err := dev.DeleteHandle(ctx, h); err != nil {
+		return fmt.Errorf("delete test file: %w", err)
+	}
+	_, found, err = dev.FindChild(ctx, storage, handle, name)
+	fmt.Printf("deleted; listed after delete: found=%v err=%v\n", found, err)
+	return nil
+}
+
+func (c *cli) mkdir(ctx context.Context, svc *garmin.Service, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: mkdir PATH")
+	}
+	return svc.Device().Mkdir(ctx, args[0])
 }
 
 func (c *cli) decode(ctx context.Context, svc *garmin.Service, args []string) error {

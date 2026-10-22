@@ -46,6 +46,10 @@ type response struct {
 	Entries []device.Entry  `json:"entries"`
 	Entry   *device.Entry   `json:"entry"`
 	B64     string          `json:"b64"`
+	Code    uint32          `json:"code"`
+	Params  []uint32        `json:"params"`
+	Object  string          `json:"objectId"`
+	Storage string          `json:"storage"`
 	Raw     json.RawMessage `json:"-"`
 }
 
@@ -389,6 +393,53 @@ func (d *Device) Delete(ctx context.Context, path string) error {
 func (d *Device) Mkdir(ctx context.Context, path string) error {
 	_, err := d.call(ctx, map[string]any{"op": "mkdir", "path": path})
 	return err
+}
+
+// ObjectID returns the WPD object id of a path and the storage id, as the
+// Windows MTP driver names them ("o<hex handle>", "s<hex storage id>").
+func (d *Device) ObjectID(ctx context.Context, path string) (object, storage string, err error) {
+	resp, err := d.call(ctx, map[string]any{"op": "objectid", "path": path})
+	if err != nil {
+		return "", "", err
+	}
+	return resp.Object, resp.Storage, nil
+}
+
+// ListByID enumerates the children of a raw WPD object id, bypassing path resolution.
+func (d *Device) ListByID(ctx context.Context, objectID string) ([]device.Entry, error) {
+	resp, err := d.call(ctx, map[string]any{"op": "listid", "objectId": objectID})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Entries, nil
+}
+
+// MtpRead runs a raw MTP operation that answers with a data phase.
+func (d *Device) MtpRead(ctx context.Context, opcode uint32, params []uint32) (data []byte, code uint32, rparams []uint32, err error) {
+	resp, err := d.call(ctx, map[string]any{"op": "mtpread", "opcode": opcode, "params": params})
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	b, err := base64.StdEncoding.DecodeString(resp.B64)
+	return b, resp.Code, resp.Params, err
+}
+
+// MtpWrite runs a raw MTP operation that sends a data phase to the device.
+func (d *Device) MtpWrite(ctx context.Context, opcode uint32, params []uint32, data []byte) (code uint32, rparams []uint32, err error) {
+	resp, err := d.call(ctx, map[string]any{"op": "mtpwrite", "opcode": opcode, "params": params, "b64": base64.StdEncoding.EncodeToString(data)})
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.Code, resp.Params, nil
+}
+
+// MtpNoData runs a raw MTP operation without a data phase.
+func (d *Device) MtpNoData(ctx context.Context, opcode uint32, params []uint32) (code uint32, rparams []uint32, err error) {
+	resp, err := d.call(ctx, map[string]any{"op": "mtpnodata", "opcode": opcode, "params": params})
+	if err != nil {
+		return 0, nil, err
+	}
+	return resp.Code, resp.Params, nil
 }
 
 func (d *Device) Close() error {

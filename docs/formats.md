@@ -227,10 +227,28 @@ numbering). Icons: `https://services.garmin.com/appsLibraryBusinessServices_v0/r
 (public PNG); the screenshot URL pattern was not found. `startPageIndex` is
 a record offset. Implemented in `internal/ciqstore/store.go`.
 
-The vívoactive 5 does not list `GARMIN/APPS/MEDIA` over MTP (the PRG files
-of installed apps are invisible, like on the fēnix 8), so app binaries
-cannot be written over USB from here; installs go through Garmin Connect
-and the phone.
+The vívoactive 5 keeps `GARMIN/Apps/Media` (the PRG files of installed
+apps) out of the ordinary MTP listing, like the fēnix 8, and refuses to
+create the folder (E_FAIL). Garmin's vendor PTP operation 0x9002
+`GetObjectIds(storage, parent)` returns the hidden handles (same array
+format as GetObjectHandles; the folder's own files answer only to 0x9002,
+the standard listing of the folder is empty). The Windows MTP driver passes
+raw operations through WPD's MTP extension commands
+(`WPD_COMMAND_MTP_EXT_EXECUTE_COMMAND_WITH_DATA_TO_READ/WRITE`, object ids
+are `o<hex handle>`, storage `s<hex id>`; the driver does not know the hidden
+handles itself, so `EnumObjects("o…")` fails). Writing is
+SendObjectInfo(storage, parent) with an ObjectInfo dataset (format and thumb
+format 0x3000, as Express sends it) followed by SendObject; the new file
+shows in the ordinary listing with its size, reads back transformed (not
+byte-identical), and DeleteObject(handle) removes it. Verified 2026-10-22:
+"Simply Large" queued from the Connect IQ phone app (install_app message,
+fileType BRAIN, deviceXmlDataType IQWatchFaces, binary from
+`services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/versions/<v>/binaries/vivoactive5?...`)
+was written as `57BF662A.PRG` and the watch registered it in OUT.BIN on
+unplug with no IN.BIN entry. Implemented in `internal/device/wpd/raw.go`
+(`device.HiddenFS`) and `Service.WriteAppFile`. The store website no longer
+offers a Download button (it points to the phone app); the phone app queues
+the install server-side when it cannot reach the watch.
 
 Audio content provider apps live in the same hidden area. The device XML's
 `Extensions/IQAppExt/Apps` list gives each Connect IQ app its

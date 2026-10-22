@@ -1086,7 +1086,7 @@ async function showStoreApp(id) {
         ${d.permissions && d.permissions.length ? `<dt>Permissions</dt><dd>${esc(d.permissions.join(', '))}</dd>` : ''}
       </dl>
       <div class="btns"><a class="btn primary" href="${esc(d.storeUrl)}" target="garmin-store" rel="noopener">Open in store ↗</a>${d.installed && d.hasSettings ? '<button class="btn" id="store-edit">Edit settings</button>' : ''}</div>
-      <p class="hint">${d.installed && !d.updateAvailable ? 'Installed and current.' : 'To install or update: press Download on the store page while signed in there (choose this watch), then Sync in the Garmin Connect tab, or let the phone deliver it.'}</p>
+      <p class="hint">${d.installed && !d.updateAvailable ? 'Installed and current.' : 'To install or update: queue it in the Connect IQ phone app (with Bluetooth off, so the phone cannot deliver it itself), then Sync in the Garmin Connect tab writes it to the watch over USB.'}</p>
       ${d.description ? `<h3>About</h3><div class="text">${esc(d.description)}</div>` : ''}
       ${d.whatsNew ? `<h3>What's new</h3><div class="text">${esc(d.whatsNew)}</div>` : ''}
       ${d.reviews && d.reviews.length ? `<h3>Reviews</h3>${d.reviews.filter((r) => r.text).slice(0, 6).map((r) => `<div class="review"><b>${'★'.repeat(r.rating)}</b> ${esc(r.reviewer)}${r.version ? ' · v' + esc(r.version) : ''}<div>${esc(r.text)}</div></div>`).join('')}` : ''}`;

@@ -368,21 +368,23 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			out = append(out, pf)
 			continue
 		}
-		if strings.HasPrefix(target, "GARMIN/APPS/") {
-			if _, err := c.svc.dev.Stat(ctx, path.Dir(target)); err != nil {
-				pf.Error = "this watch does not expose its app folder over USB; left in Connect's queue for the phone app to deliver"
+		if strings.HasPrefix(target, AppFolder+"/") {
+			if _, err := c.svc.WriteAppFile(ctx, path.Base(target), data); err != nil {
+				pf.Error = err.Error()
 				out = append(out, pf)
 				continue
 			}
-		} else if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
-			pf.Error = err.Error()
-			out = append(out, pf)
-			continue
-		}
-		if err := c.svc.dev.Write(ctx, target, data); err != nil {
-			pf.Error = err.Error()
-			out = append(out, pf)
-			continue
+		} else {
+			if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
+				pf.Error = err.Error()
+				out = append(out, pf)
+				continue
+			}
+			if err := c.svc.dev.Write(ctx, target, data); err != nil {
+				pf.Error = err.Error()
+				out = append(out, pf)
+				continue
+			}
 		}
 		pf.Path, pf.Bytes = target, len(data)
 		if err := c.ack(ctx, m.MessageID); err != nil {
@@ -414,7 +416,7 @@ func randomName(n int) string {
 func targetFor(dx *DeviceXML, m DeviceMessage) string {
 	ft := strings.ToUpper(m.MetaData.FileType)
 	if ft == "BRAIN" || ft == "PRG" {
-		return "GARMIN/APPS/MEDIA/" + randomName(4) + ".PRG"
+		return AppFolder + "/" + randomName(4) + ".PRG"
 	}
 	if ft == "FIT" {
 		return PathNewFiles + "/" + newUUID() + ".FIT"

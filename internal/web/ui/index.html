@@ -229,7 +229,7 @@
     <section id="tab-store" class="tab">
       <header class="page-head">
         <h1>Connect IQ store</h1>
-        <p class="lede">Watch faces, apps, widgets and data fields that fit this watch, from the store's public catalogue. Installing goes through Garmin Connect: press Download on the store page, then Sync.</p>
+        <p class="lede">Watch faces, apps, widgets and data fields that fit this watch, from the store's public catalogue. Installing goes through Garmin Connect's queue: the store website no longer takes installs, so queue the app in the Connect IQ app on the phone with Bluetooth off, then Sync here delivers it over USB.</p>
       </header>
       <div class="toolbar">
         <input id="store-q" type="search" placeholder="Search the store" aria-label="Search the store">
@@ -262,7 +262,7 @@
         </div>
         <div class="panel">
           <h2>Connect IQ apps</h2>
-          <p class="hint">Installed version against the store. App downloads need a Garmin login, so update them from the Connect IQ app on your phone, or drop a <code>.PRG</code> file here.</p>
+          <p class="hint">Installed version against the store. Updates arrive through Garmin Connect's queue (queue them in the Connect IQ phone app, then Sync), or drop a <code>.PRG</code> file here; it is written into the app folder over USB and registered when you unplug.</p>
           <ul class="pending updates" id="app-updates"><li class="muted">Press <b>Check for updates</b>.</li></ul>
           <label class="btn file-btn self-start">Install a .PRG file<input type="file" id="prg-file" accept=".prg,.PRG" hidden></label>
         </div>
@@ -314,7 +314,7 @@
           </div>
           <div class="panel">
             <h2>Queued for the watch</h2>
-            <p class="hint">What Garmin Connect is waiting to deliver. Installing or updating an app on the Connect IQ store website puts it here; Sync brings it down.</p>
+            <p class="hint">What Garmin Connect is waiting to deliver. An app queued in the Connect IQ phone app while the phone cannot reach the watch lands here; Sync writes it into the watch's app folder over USB and the watch registers it on unplug.</p>
             <ul class="pending" id="cloud-messages"><li class="muted">Loading…</li></ul>
           </div>
         </div>
