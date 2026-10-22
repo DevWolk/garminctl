@@ -1,0 +1,13 @@
+{
+  "version": "7.29.1",
+  "thread": "https://forums.garmin.com/apps-software/mac-windows-software/f/garmin-express-windows/440292/garmin-express-release-notes",
+  "notes": [
+    "Added support for the CIRQA Smart Band."
+  ],
+  "installer": {
+    "etag": "\"7fe2560-6572004fd501c\"",
+    "modified": "Tue, 21 Jul 2026 14:41:34 GMT",
+    "bytes": 134096224
+  },
+  "seen": "2026-10-22"
+}

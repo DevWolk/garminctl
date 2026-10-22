@@ -1,0 +1,44 @@
+# Dependabot does not read tools.mod, so the pinned golangci-lint and
+# govulncheck are bumped here once a week; the pull request runs CI.
+name: Update pinned tools
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Bump the tools
+        run: make tools-update
+
+      - name: Open a pull request when something changed
+        env:
+          # See express-watch.yml for why a personal token is preferred.
+          GH_TOKEN: ${{ secrets.EXPRESS_WATCH_TOKEN || github.token }}
+        run: |
+          if git diff --quiet -- tools.mod tools.sum; then
+            echo "tools are current"
+            exit 0
+          fi
+          branch="tools/update-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add tools.mod tools.sum
+          git commit -m "Bump the pinned tools"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" --title "Bump the pinned tools" --body "$(git diff HEAD~1 --stat; echo; echo 'golangci-lint and govulncheck from tools.mod, bumped by make tools-update.')"
