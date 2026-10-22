@@ -1,9 +1,14 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
+// Per-browser preferences (sort orders, filters); a blocked localStorage just means defaults.
+const prefs = {
+  get(key, fallback) { try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch (e) {} },
+};
 const state = {
   connected: false, summary: null,
   rows: [], pending: new Map(),
-  apps: [], app: null, appItems: [], appSchema: null, appValues: {}, appPending: new Map(), installed: { type: 'all', visibility: 'all', sort: 'watch' },
+  apps: [], app: null, appItems: [], appSchema: null, appValues: {}, appPending: new Map(), installed: { type: 'all', visibility: 'all', sort: prefs.get('instSort', 'watch') },
   path: '', tab: 'overview',
   preview: { screen: 1, aod: false, timer: null },
 };
@@ -60,10 +65,11 @@ function setConn(kind, text) {
 
 // ---------- tabs ----------
 document.querySelectorAll('.nav-item').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
-function showTab(tab) {
+function showTab(tab, fromRoute) {
   state.tab = tab;
   document.querySelectorAll('.nav-item').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + tab));
+  if (!fromRoute) { const [item, params] = tabRoute(tab); setRoute(tab, item, params); }
   if (state.connected) loadTab(tab); else if (tab === 'cloud') loadCloud(); else if (tab === 'store' && !state.store.loaded) loadStore();
   updateActionBar();
 }
@@ -79,6 +85,73 @@ function loadTab(tab) {
   if (tab === 'training') loadWorkouts();
   if (tab === 'music') loadMusic();
 }
+
+// ---------- routes ----------
+// The path says where you are (/tab, /tab/item, ?q= for the store search), so F5, Back,
+// Forward and a pasted link return to the same view; the server answers every tab path
+// with index.html. How you like to see it (sort orders, filters) lives in localStorage;
+// unsaved edits stay in memory behind the leave guard below.
+const tabNames = new Set([...document.querySelectorAll('.nav-item[data-tab]')].map((b) => b.dataset.tab));
+function parseRoute() {
+  const [tab, ...rest] = location.pathname.replace(/^\//, '').split('/');
+  let item = rest.join('/');
+  try { item = decodeURIComponent(item); } catch (e) { item = ''; }
+  return { tab: tabNames.has(tab) ? tab : 'overview', item, params: new URLSearchParams(location.search) };
+}
+function routePath(tab, item, params) {
+  let p = '/' + tab;
+  if (item) p += '/' + item.replace(/[%#?\s]/g, encodeURIComponent);
+  const q = params ? params.toString() : '';
+  if (q) p += '?' + q;
+  return p === '/overview' ? '/' : p;
+}
+// Puts the view in the URL: a new history entry, or the current one replaced (searches, default picks).
+function setRoute(tab, item, params, replace) {
+  const p = routePath(tab, item, params);
+  if (p === location.pathname + location.search) return;
+  history[replace ? 'replaceState' : 'pushState'](null, '', p);
+}
+// What a tab is showing right now: its open item and, for the store, the search.
+function tabRoute(tab) {
+  if (tab === 'apps') return [state.app ? state.app.name : ''];
+  if (tab === 'store') return [state.store.selected || '', storeParams()];
+  if (tab === 'health') return [state.health.selAct || ''];
+  if (tab === 'files') return [state.path];
+  return [''];
+}
+function storeParams() { const p = new URLSearchParams(); if (state.store.q) p.set('q', state.store.q); return p; }
+function go(tab, item) { setRoute(tab, item); applyRoute(); }
+// The app a URL names: by name, settings file or store id, case-insensitive, like the CLI's app-settings.
+function findApp(ref) {
+  const r = ref.toLowerCase();
+  return state.apps.find((a) => a.fileName && [a.name, a.fileName, a.id].some((v) => v && v.toLowerCase() === r));
+}
+// Drives the UI from the hash: on load, on Back/Forward and from go(). An item whose data is
+// not here yet is picked up by its loader (loadApps, loadActivities, loadFiles) when it arrives.
+function applyRoute() {
+  const r = parseRoute();
+  if (r.tab === 'apps' && r.item && $('#apps-list .app-item')) {
+    const a = findApp(r.item);
+    if (a && (!state.app || state.app.fileName !== a.fileName)) selectApp(a, true);
+  }
+  if (r.tab === 'health') {
+    state.health.selAct = r.item || null;
+    if (!r.item) { $('#act-detail').hidden = true; if (state.health.acts) renderActivities(); } else if (state.connected) showActivity(r.item);
+  }
+  if (r.tab === 'files') state.path = r.item;
+  if (r.tab === 'store') {
+    const q = r.params.get('q') || '';
+    if (q !== state.store.q) { state.store.q = q; $('#store-q').value = q; if (state.store.loaded) loadStore(); }
+    if (r.item && r.item !== state.store.selected) showStoreApp(r.item);
+    else if (!r.item) { state.store.selected = null; $('#store-detail').hidden = true; document.querySelectorAll('.store-card').forEach((c) => c.classList.remove('active')); }
+  }
+  showTab(r.tab, true);
+}
+window.addEventListener('popstate', applyRoute);
+// Unsaved edits live only in memory; the browser asks before F5 or a closed tab throws them away.
+window.addEventListener('beforeunload', (ev) => {
+  if (state.pending.size || state.appPending.size || state.cloudPending.size) { ev.preventDefault(); ev.returnValue = true; }
+});
 
 // ---------- connection + overview ----------
 async function connect() {
@@ -201,13 +274,13 @@ async function loadRecentActs() {
     for (const a of acts) {
       const li = el(`<li><span><span class="sport">${esc(humanize(a.sport))}</span> <span class="when">${esc(new Date(a.start).toLocaleDateString([], { month: 'short', day: 'numeric' }))}</span></span><span class="num">${a.distanceM ? (a.distanceM / 1000).toFixed(2) + ' km' : ''}</span><span class="num">${fmtDur(a.timerSec)}</span></li>`);
       li.style.cursor = 'pointer';
-      li.onclick = () => { showTab('health'); setTimeout(() => showActivity(a.file), 300); };
+      li.onclick = () => go('health', a.file);
       ul.appendChild(li);
     }
     if (list.pending) setTimeout(loadRecentActs, 3000);
   } catch (e) { ul.innerHTML = `<li class="muted">${esc(e.message)}</li>`; }
 }
-try { $('#nav-online').open = localStorage.getItem('navOnline') === '1'; $('#nav-online').addEventListener('toggle', () => { try { localStorage.setItem('navOnline', $('#nav-online').open ? '1' : '0'); } catch (e) {} }); } catch (e) {}
+$('#nav-online').open = prefs.get('navOnline', '0') === '1'; $('#nav-online').addEventListener('toggle', () => prefs.set('navOnline', $('#nav-online').open ? '1' : '0'));
 const fileTypes = { 2: 'Settings file', 3: 'Sport profile', 5: 'Workout', 7: 'Schedule', 8: 'Locations', 11: 'Goals', 29: 'Personal records', 37: 'Golf clubs', 39: 'Adjustments', 41: 'Settings changes' };
 async function describeFit(path) {
   try {
@@ -408,7 +481,7 @@ async function loadApps() {
       if (!a.fileName || seen.has(a.fileName)) continue;
       seen.add(a.fileName);
       const b = el(`<button class="app-item" data-file="${esc(a.fileName)}"><span class="app-ico">${esc(a.name.slice(0, 2).toUpperCase())}</span><span class="body"><span class="app-name">${esc(a.name)}</span><span class="app-sub">${esc(a.typeName)} · v${a.version}</span></span></button>`);
-      b.onclick = () => { document.querySelectorAll('.app-item').forEach((x) => x.classList.remove('active')); b.classList.add('active'); loadAppSettings(a); };
+      b.onclick = () => selectApp(a);
       root.appendChild(b);
     }
     markAppUpdates();
@@ -417,11 +490,17 @@ async function loadApps() {
     note.querySelector('button').onclick = () => showTab('installed');
     root.appendChild(note);
     if (!state.app) {
-      const items = [...root.querySelectorAll('.app-item')];
-      const pick = items.find((b) => (state.apps.find((a) => a.fileName === b.dataset.file) || {}).typeName === 'watchface') || items[0];
-      if (pick) pick.click();
+      // The app named in the URL, else the watch face, else the first one.
+      const want = parseRoute(), shown = state.apps.filter((a) => seen.has(a.fileName));
+      const pick = (want.tab === 'apps' && want.item && findApp(want.item)) || shown.find((a) => a.typeName === 'watchface') || shown[0];
+      if (pick) selectApp(pick, true);
     }
   } catch (e) { root.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
+function selectApp(app, replace) {
+  document.querySelectorAll('.app-item').forEach((x) => x.classList.toggle('active', x.dataset.file === app.fileName));
+  loadAppSettings(app);
+  setRoute('apps', app.name, null, replace);
 }
 async function loadAppSettings(app) {
   state.app = app; state.appPending.clear(); state.appSchema = null; state.appItems = []; updateActionBar();
@@ -623,6 +702,7 @@ async function applyAppChanges() {
 // ---------- files ----------
 async function loadFiles(path) {
   state.path = path;
+  setRoute('files', path);
   const parts = path ? path.split('/') : [];
   let acc = '';
   const crumbs = [`<a href="#" data-p="">Watch</a>`];
@@ -837,7 +917,7 @@ function seriesChart(series, opts) {
 }
 async function loadHealth() {
   if (!state.connected) return;
-  const days = Number($('#health-days').value);
+  const days = Number($('#health-days').value) || 14;
   if (!state.health.daily || state.health.loadedDays !== days) {
     $('#health-status').textContent = 'Asking Garmin Connect…';
     try { state.health.daily = await api('GET', '/api/health/daily?days=' + days); state.health.loadedDays = days; $('#health-status').textContent = days > 14 ? 'Long ranges come from Connect\'s daily totals; calories are not in them.' : ''; loadExtras(); }
@@ -913,7 +993,8 @@ async function showDay(date) {
       <div class="chart"><h3>Body battery</h3>${seriesChart(d.bodyBattery, { max: 100, zero: true, teal: true })}</div>${sl}</div>${d.errors && d.errors.length ? `<p class="hint">${esc(d.errors.join(' · '))}</p>` : ''}`;
   } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
-$('#health-days').addEventListener('change', () => { state.health.daily = null; loadHealth(); });
+$('#health-days').value = prefs.get('healthDays', '14');
+$('#health-days').addEventListener('change', () => { prefs.set('healthDays', $('#health-days').value); state.health.daily = null; loadHealth(); });
 let actsTimer = null;
 async function loadActivities() {
   clearTimeout(actsTimer);
@@ -921,13 +1002,14 @@ async function loadActivities() {
     const list = await api('GET', '/api/health/activities');
     state.health.acts = list;
     renderActivities();
+    if (state.health.selAct && $('#act-detail').hidden) showActivity(state.health.selAct);
     if (list.pending > 0) { $('#acts-status').textContent = `Decoding ${list.pending} of ${list.total} files from the watch…`; actsTimer = setTimeout(loadActivities, 3000); }
     else $('#acts-status').textContent = `${list.total} activities`;
   } catch (e) { $('#acts-table tbody').innerHTML = `<tr><td colspan="7" class="muted">${esc(e.message)}</td></tr>`; }
 }
 function pace(spd) { if (!spd) return ''; const s = 1000 / spd; return `${Math.floor(s / 60)}:${pad2(Math.round(s % 60))} /km`; }
 state.health.actsShown = 40;
-state.health.sport = 'all'; state.health.actsSort = 'date';
+state.health.sport = 'all'; state.health.actsSort = prefs.get('actsSort', 'date'); $('#acts-sort').value = state.health.actsSort;
 function renderActivities() {
   const tb = $('#acts-table tbody'); tb.innerHTML = '';
   const everything = state.health.acts.activities;
@@ -956,9 +1038,10 @@ function renderActivities() {
     tb.appendChild(tr);
   }
 }
-$('#acts-sort').addEventListener('change', () => { state.health.actsSort = $('#acts-sort').value; if (state.health.acts) renderActivities(); });
+$('#acts-sort').addEventListener('change', () => { state.health.actsSort = $('#acts-sort').value; prefs.set('actsSort', state.health.actsSort); if (state.health.acts) renderActivities(); });
 async function showActivity(file) {
-  state.health.selAct = file; renderActivities();
+  state.health.selAct = file; if (state.health.acts) renderActivities();
+  setRoute('health', file);
   const box = $('#act-detail'); box.hidden = false; box.innerHTML = '<p class="muted">Reading the activity from the watch…</p>';
   try {
     const d = await api('GET', '/api/health/activities/' + encodeURIComponent(file));
@@ -1099,7 +1182,7 @@ function renderInstalled() {
     }
     if (a.fileName) {
       const b = el('<button class="btn small" type="button">Settings</button>');
-      b.onclick = () => { showTab('apps'); setTimeout(() => { const item = document.querySelector(`.app-item[data-file="${CSS.escape(a.fileName)}"]`); if (item) item.click(); }, 400); };
+      b.onclick = () => go('apps', a.name);
       act.appendChild(b);
     }
     if (!a.native && a.id) act.appendChild(el(`<a class="btn small" href="https://apps.garmin.com/apps/${esc(a.id)}" target="garmin-store" rel="noopener">Store ↗</a>`));
@@ -1124,7 +1207,8 @@ async function setAppHidden(a, hidden) {
   } catch (e) { toast(e.message, 'bad'); }
 }
 $('#inst-filter').addEventListener('input', () => { if (state.apps.length) renderInstalled(); });
-$('#inst-sort').addEventListener('change', () => { state.installed.sort = $('#inst-sort').value; if (state.apps.length) renderInstalled(); });
+$('#inst-sort').value = state.installed.sort;
+$('#inst-sort').addEventListener('change', () => { state.installed.sort = $('#inst-sort').value; prefs.set('instSort', state.installed.sort); if (state.apps.length) renderInstalled(); });
 document.querySelectorAll('#inst-visibility .chip').forEach((c) => c.addEventListener('click', () => {
   state.installed.visibility = c.dataset.v;
   document.querySelectorAll('#inst-visibility .chip').forEach((x) => x.classList.toggle('active', x === c));
@@ -1195,14 +1279,14 @@ function promptDialog(title, label, value) {
 }
 
 // ---------- Connect IQ store ----------
-state.store = { loaded: false, q: '', type: 'watchface', sort: 'mostPopular', page: 0, apps: [], total: -1, selected: null, busy: false };
+state.store = { loaded: false, q: '', type: prefs.get('storeType', 'watchface'), sort: prefs.get('storeSort', 'mostPopular'), page: 0, apps: [], total: -1, selected: null, busy: false };
 function fmtCount(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
 function stars(r) { return r ? `★ ${Number(r).toFixed(1)}` : 'no rating'; }
 async function loadStore(more) {
   const st = state.store;
   if (st.busy) return;
   st.busy = true;
-  if (!more) { st.page = 0; st.apps = []; $('#store-grid').innerHTML = '<p class="muted">Searching the store…</p>'; }
+  if (!more) { st.page = 0; st.apps = []; $('#store-grid').innerHTML = '<p class="muted">Searching the store…</p>'; setRoute('store', st.selected, storeParams(), true); }
   try {
     const params = new URLSearchParams({ q: st.q, type: st.q ? st.type : (st.type || 'watchface'), sort: st.sort, page: st.page });
     const view = await api('GET', '/api/store?' + params.toString());
@@ -1219,7 +1303,7 @@ function renderStoreControls(view) {
   const types = $('#store-types'); types.innerHTML = '';
   for (const t of view.types) {
     const b = el(`<button class="chip${t.key === state.store.type ? ' active' : ''}" data-type="${esc(t.key)}">${esc(t.label)}</button>`);
-    b.onclick = () => { state.store.type = t.key; document.querySelectorAll('#store-types .chip').forEach((x) => x.classList.toggle('active', x.dataset.type === t.key)); loadStore(); };
+    b.onclick = () => { state.store.type = t.key; prefs.set('storeType', t.key); document.querySelectorAll('#store-types .chip').forEach((x) => x.classList.toggle('active', x.dataset.type === t.key)); loadStore(); };
     types.appendChild(b);
   }
   const sort = $('#store-sort'); sort.innerHTML = view.sorts.map((s) => `<option value="${esc(s.key)}">${esc(s.label)}</option>`).join('');
@@ -1262,6 +1346,7 @@ function renderStore() {
 document.querySelectorAll('#store-filters select, #store-filters input').forEach((x) => x.addEventListener('change', () => { if (state.store.loaded) renderStore(); }));
 async function showStoreApp(id) {
   state.store.selected = id;
+  setRoute('store', id, storeParams());
   document.querySelectorAll('.store-card').forEach((c) => c.classList.toggle('active', c.dataset.id === id));
   const box = $('#store-detail'); box.hidden = false; box.innerHTML = '<p class="muted">Loading…</p>';
   try {
@@ -1285,12 +1370,12 @@ async function showStoreApp(id) {
       ${d.whatsNew ? `<h3>What's new</h3><div class="text">${esc(d.whatsNew)}</div>` : ''}
       ${d.reviews && d.reviews.length ? `<h3>Reviews</h3>${d.reviews.filter((r) => r.text).slice(0, 6).map((r) => `<div class="review"><b>${'★'.repeat(r.rating)}</b> ${esc(r.reviewer)}${r.version ? ' · v' + esc(r.version) : ''}<div>${esc(r.text)}</div></div>`).join('')}` : ''}`;
     const edit = $('#store-edit');
-    if (edit) edit.onclick = () => { showTab('apps'); setTimeout(() => { const b = [...document.querySelectorAll('.app-item')].find((x) => x.textContent.trim().toLowerCase().startsWith(d.name.toLowerCase().slice(0, 4))); if (b) b.click(); }, 400); };
+    if (edit) edit.onclick = async () => { const apps = await fetchApps().catch(() => []); const a = apps.find((x) => x.fileName && x.name.toLowerCase().startsWith(d.name.toLowerCase().slice(0, 4))); go('apps', a ? a.name : ''); };
   } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
 let storeTimer = null;
 $('#store-q').addEventListener('input', () => { clearTimeout(storeTimer); storeTimer = setTimeout(() => { state.store.q = $('#store-q').value.trim(); loadStore(); }, 350); });
-$('#store-sort').addEventListener('change', () => { state.store.sort = $('#store-sort').value; loadStore(); });
+$('#store-sort').addEventListener('change', () => { state.store.sort = $('#store-sort').value; prefs.set('storeSort', state.store.sort); loadStore(); });
 $('#store-more').onclick = () => { state.store.page++; loadStore(true); };
 
 // ---------- Garmin Connect ----------
@@ -1425,6 +1510,7 @@ async function pollSync() {
 }
 
 // ---------- boot ----------
+applyRoute();
 api('GET', '/api/status').then((st) => {
-  if (st.connected) { state.connected = true; state.summary = st.summary; setConn('ok', 'Connected'); $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect'; renderOverview(st.summary); loadNewFiles(); }
+  if (st.connected) { state.connected = true; state.summary = st.summary; setConn('ok', 'Connected'); $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect'; renderOverview(st.summary); loadNewFiles(); loadTab(state.tab); }
 }).catch(() => {});

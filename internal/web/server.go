@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -125,10 +126,38 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 		return nil, err
 	}
 
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	ui := http.FileServer(http.FS(sub))
+	mux.Handle("/", ui)
+
+	index, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		return nil, err
+	}
+
+	tabs := map[string]bool{}
+	for _, m := range uiTab.FindAllSubmatch(index, -1) {
+		tabs[string(m[1])] = true
+	}
+
+	// The UI keeps the open tab and item in the path (/apps/EASY+), so a
+	// reload or a pasted link gets index.html; any other path is a file.
+	page := func(w http.ResponseWriter, r *http.Request) {
+		if !tabs[r.PathValue("tab")] {
+			ui.ServeHTTP(w, r)
+			return
+		}
+
+		http.ServeFileFS(w, r, sub, "index.html")
+	}
+	mux.HandleFunc("GET /{tab}", page)
+	mux.HandleFunc("GET /{tab}/{rest...}", page)
 
 	return logRequests(localOnly(addr, mux)), nil
 }
+
+// uiTab finds the tab names index.html declares, so the page routes follow
+// the nav without a second list here.
+var uiTab = regexp.MustCompile(`data-tab="([a-z]+)"`)
 
 func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health/activities", s.healthActivities)

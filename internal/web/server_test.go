@@ -328,3 +328,47 @@ func TestServer_SyncRejectsMalformedBody(t *testing.T) {
 		t.Fatalf("malformed sync body: status = %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestServer_UIRoutes(t *testing.T) {
+	t.Parallel()
+
+	ts, _ := newTestServer(t)
+
+	for _, tc := range []struct {
+		path string
+		want int
+		page bool
+	}{
+		{"/", http.StatusOK, true},
+		{"/apps/EASY+", http.StatusOK, true},
+		{"/files/GARMIN/Settings", http.StatusOK, true},
+		{"/store?q=solar", http.StatusOK, true},
+		{"/app.js", http.StatusOK, false},
+		{"/nope/EASY+", http.StatusNotFound, false},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			t.Parallel()
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+tc.path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer resp.Body.Close()
+
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != tc.want {
+				t.Fatalf("status %d, want %d", resp.StatusCode, tc.want)
+			}
+
+			if got := strings.Contains(string(body), "<title>garminctl"); got != tc.page {
+				t.Fatalf("serves the page: %v, want %v", got, tc.page)
+			}
+		})
+	}
+}

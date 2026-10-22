@@ -212,7 +212,9 @@ Connect queued: settings, apps, workouts), checks Garmin's update service,
 and shows a Windows notification with the outcome, as Garmin Express did in
 the background. The web UI follows along: it switches to the watch when it
 is plugged in and shows the same events as toasts. `-autosync=false` turns
-the watcher off.
+the watcher off. The URL carries the open tab and item (`/apps/EASY+`,
+`/files/GARMIN/Apps`, `/store?q=solar`), so a reload, the Back button or a
+pasted link returns to the same view.
 
 Storage: the watch reports its capacity and free space (PTP GetStorageInfo);
 `info`, the Overview, the Music tab, the Store detail and the Updates tab

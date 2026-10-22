@@ -41,8 +41,10 @@ See CLAUDE.md for the working rules. Module map:
   reads the public store record (latest version).
 - `internal/web`: `net/http` API + embedded `ui/` (vanilla JS). `handler`
   wraps the mux in `localOnly` (Host/Origin/Sec-Fetch-Site checks; the API
-  has no login) and request logging. `auto.go` is the USB watcher and the
-  background sync job; `server_test.go` drives the API over a dump.
+  has no login) and request logging. The UI keeps the open tab and item in
+  the URL path, so `handler` serves `index.html` for every first segment
+  that `index.html` declares as a `data-tab`. `auto.go` is the USB watcher
+  and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: go-sdk tools, all thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
   (`addWatchTools`, `addAppTools`, `addCloudTools`, ...). Every tool has
