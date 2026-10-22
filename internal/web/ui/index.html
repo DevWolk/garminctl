@@ -126,7 +126,10 @@
               <h2><span id="app-title">Select an app</span> <a id="app-store" class="store-link" target="garmin-store" rel="noopener" hidden>Open in store ↗</a></h2>
               <p class="hint" id="app-hint">Watch faces, widgets and music apps installed from the Connect IQ store appear on the left.</p>
             </div>
-            <input id="app-filter" type="search" placeholder="Find a setting" aria-label="Find a setting" hidden>
+            <div class="toolbar tight">
+              <input id="app-filter" type="search" placeholder="Find a setting" aria-label="Find a setting" hidden>
+              <button class="btn danger small" id="app-remove" type="button" hidden>Remove from watch</button>
+            </div>
           </div>
           <p class="notice" id="app-notice" hidden></p>
           <div id="app-groups"></div>

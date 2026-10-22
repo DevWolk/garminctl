@@ -259,6 +259,22 @@ func Serve(ctx context.Context, open Opener) error {
 	type installIn struct {
 		PartNumber string `json:"partNumber" jsonschema:"part number of an update returned by watch_check_updates, e.g. 006-B4426-00"`
 	}
+	type rmIn struct {
+		App string `json:"app" jsonschema:"the app's name, file id or store id from watch_apps"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "watch_remove_app", Description: "Remove a Connect IQ app, watch face, widget or data field from the watch: deletes its binary, settings and data files; the watch drops it from its list when unplugged. Built-in apps and the Connect IQ Store app are refused. Confirm with the user first."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in rmIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			removed, err := svc.RemoveApp(ctx, in.App)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(map[string]any{"removed": removed, "note": "The watch finishes the removal when the USB session ends; ask the user to unplug it."}, nil)
+		})
+
 	mcp.AddTool(srv, &mcp.Tool{Name: "watch_install_update", Description: "Download one firmware or data update from Garmin, verify its checksum and write it to the watch. The watch installs it after the USB session ends; firmware updates restart the watch. Ask the user before calling this for primary firmware."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in installIn) (*mcp.CallToolResult, any, error) {
 			svc, err := s.service(ctx)

@@ -342,6 +342,64 @@ func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (s
 	return target, nil
 }
 
+// RemoveApp deletes a Connect IQ app's binary, settings and data files. The
+// watch drops the app from its registry when the USB session ends. ref is the
+// app's file id, name or store id; built-in apps and the Connect IQ Store app
+// are refused.
+func (s *Service) RemoveApp(ctx context.Context, ref string) ([]string, error) {
+	apps, err := s.Apps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ref = strings.TrimSuffix(strings.TrimSuffix(ref, ".PRG"), ".prg")
+	var app *App
+	for i := range apps {
+		a := &apps[i]
+		if a.FileName != "" && (strings.EqualFold(a.FileName, ref) || strings.EqualFold(a.Name, ref) || strings.EqualFold(a.ID, ref)) {
+			app = a
+			break
+		}
+	}
+	if app == nil {
+		return nil, fmt.Errorf("%q is not an installed Connect IQ app", ref)
+	}
+	if app.Native {
+		return nil, fmt.Errorf("%s is built into the watch and cannot be removed", app.Name)
+	}
+	if strings.EqualFold(app.FileName, "Toystore") {
+		return nil, errors.New("the Connect IQ Store app cannot be removed")
+	}
+	var removed []string
+	prg := app.FileName + ".PRG"
+	if _, err := s.dev.Stat(ctx, AppFolder+"/"+prg); err == nil {
+		if err := s.dev.Delete(ctx, AppFolder+"/"+prg); err != nil {
+			return removed, err
+		}
+		removed = append(removed, AppFolder+"/"+prg)
+	} else if h, ok := s.dev.(device.HiddenFS); ok {
+		switch err := h.DeleteHidden(ctx, AppFolder, prg); {
+		case err == nil:
+			removed = append(removed, AppFolder+"/"+prg)
+		case errors.Is(err, device.ErrNotFound):
+		default:
+			return removed, err
+		}
+	} else {
+		return nil, errors.New("this watch does not expose its app folder over USB from here")
+	}
+	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + app.FileName + ".SET", "GARMIN/Apps/DATA/" + app.FileName + ".DAT", "GARMIN/Apps/DATA/" + app.FileName + ".IDX", "GARMIN/Apps/DATA/" + app.FileName + ".IMT"} {
+		if _, err := s.dev.Stat(ctx, p); err != nil {
+			continue
+		}
+		if err := s.dev.Delete(ctx, p); err != nil {
+			return removed, err
+		}
+		removed = append(removed, p)
+	}
+	s.invalidate(PathAppsConfig)
+	return removed, nil
+}
+
 // AppFiles lists the app folder, hidden or not.
 func (s *Service) AppFiles(ctx context.Context) ([]device.Entry, error) {
 	if entries, err := s.dev.List(ctx, AppFolder); err == nil {

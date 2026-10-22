@@ -389,6 +389,8 @@ async function loadAppSettings(app) {
   $('#app-title').textContent = app.name;
   $('#app-hint').textContent = `${humanize(app.typeName)} · settings file ${app.fileName}.SET`;
   $('#app-filter').hidden = false;
+  $('#app-remove').hidden = app.native || !app.fileName || /^toystore$/i.test(app.fileName);
+  $('#app-remove').onclick = () => removeApp(app);
   $('#app-groups').innerHTML = '<p class="muted">Reading settings…</p>';
   const notice = $('#app-notice'); notice.hidden = true; state.appReadOnly = false;
   try {
@@ -416,6 +418,18 @@ async function loadAppSettings(app) {
       setupPreview(app);
     } else $('#app-groups').innerHTML = `<p class="muted">${esc(e.message)}</p>`;
   }
+}
+async function removeApp(app) {
+  const ok = await confirmDialog({
+    title: `Remove ${app.name} from the watch?`,
+    body: `<p>Deletes the app file and its settings and data files. The watch finishes the removal when you unplug it; until then it still shows in the list.</p><p class="note">If ${esc(app.name)} is the watch face in use, the watch switches to a built-in face; pick another face on the watch afterwards.</p>`,
+    ok: 'Remove',
+  });
+  if (!ok) return;
+  try {
+    const r = await api('DELETE', `/api/apps/${encodeURIComponent(app.fileName)}`);
+    toast(`${app.name}: ${r.removed.length} file${r.removed.length === 1 ? '' : 's'} deleted. Unplug the watch to finish.`);
+  } catch (e) { toast(e.message, 'bad'); }
 }
 function schemaFor(key) { return state.appSchema ? state.appSchema.settings.find((s) => s.key === key) || null : null; }
 function renderAppSettings() {
@@ -951,6 +965,11 @@ function renderInstalled() {
       act.appendChild(b);
     }
     if (!a.native && a.id) act.appendChild(el(`<a class="btn small" href="https://apps.garmin.com/apps/${esc(a.id)}" target="garmin-store" rel="noopener">Store ↗</a>`));
+    if (!a.native && a.fileName && !/^toystore$/i.test(a.fileName)) {
+      const rm = el('<button class="btn small danger" type="button">Remove</button>');
+      rm.onclick = () => removeApp(a);
+      act.appendChild(rm);
+    }
     tb.appendChild(tr);
   }
   if (!rows.length) tb.innerHTML = '<tr><td colspan="5" class="muted">Nothing matches.</td></tr>';

@@ -46,6 +46,7 @@ Commands:
   put FILE PATH                   write a local file to the watch
   rm PATH                         delete a file on the watch
   mkdir PATH                      create a folder on the watch
+  hidden [-write-test] PATH       list a folder including what MTP hides (the app folder)
   decode PATH                     decode any FIT file on the watch
   settings [-all]                 show device settings (documented fields; -all includes unknown)
   settings set M.F=V [...]        change settings, e.g. deviceSettings.backlightMode=manual
@@ -54,6 +55,7 @@ Commands:
   app-settings APP                show a Connect IQ app's settings (name or file id)
   app-settings set APP K=V [...]  change Connect IQ app settings (V may be an option label)
   app-schema APP [KEY]            show labels and dropdown options of an app's settings
+  app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
   updates                         check Garmin for firmware/data updates and app updates
   updates install PART            download and write one update (e.g. 006-DA094-00)
   software                        installed software components (device.fit)
@@ -149,6 +151,19 @@ func run(args []string) error {
 		return c.settings(ctx, svc, rest)
 	case "apps":
 		return c.apps(ctx, svc)
+	case "app-rm":
+		if len(rest) != 1 {
+			return errors.New("usage: app-rm APP")
+		}
+		removed, err := svc.RemoveApp(ctx, rest[0])
+		if err != nil {
+			return err
+		}
+		for _, p := range removed {
+			fmt.Println("deleted", p)
+		}
+		fmt.Println("the watch drops the app from its list when you unplug it")
+		return nil
 	case "app-settings":
 		return c.appSettings(ctx, svc, rest)
 	case "app-schema":

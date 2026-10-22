@@ -103,6 +103,7 @@ func Serve(ctx context.Context, addr string, open Opener) error {
 	mux.HandleFunc("GET /api/updates/apps", s.updatesApps)
 	mux.HandleFunc("GET /api/software", s.software)
 	mux.HandleFunc("POST /api/apps/install", s.appsInstall)
+	mux.HandleFunc("DELETE /api/apps/{ref}", s.appRemove)
 	sub, err := fs.Sub(uiFS, "ui")
 	if err != nil {
 		return err
@@ -367,6 +368,16 @@ func (s *Server) updatesApps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) software(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return svc.SoftwareInventory(r.Context())
+	})
+}
+
+func (s *Server) appRemove(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		removed, err := svc.RemoveApp(r.Context(), r.PathValue("ref"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"removed": removed, "note": "The watch drops the app from its list when the USB session ends; unplug it."}, nil
 	})
 }
 
