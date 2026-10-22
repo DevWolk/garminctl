@@ -316,6 +316,7 @@ object (`entries`, `rows`, `apps`, `days`, ...).
 | `internal/mcpserver` | MCP tools |
 | `tools/expresswatch` | the daily Garmin Express release check behind the `express-watch` workflow |
 | `docs/formats.md` | what was reverse engineered and how it fits together |
+| `docs/easyplus-theme.md` | the Easy+ watch-face theme (Amber Athletic): every setting, what the watch holds, the rules |
 | `Makefile`, `.golangci.yml` | build and quality targets; the linter configuration |
 
 Run the tests with `go test ./...`. The `testdata` directories hold files
