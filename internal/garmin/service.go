@@ -97,14 +97,15 @@ func (s *Service) DeviceXML(ctx context.Context) (*DeviceXML, error) {
 
 // Summary describes the connected watch.
 type Summary struct {
-	Device      device.Info `json:"device"`
-	Model       string      `json:"model"`
-	PartNumber  string      `json:"partNumber"`
-	UnitID      uint64      `json:"unitId"`
-	Software    string      `json:"software"`
-	AppCount    int         `json:"appCount"`
-	NewFiles    int         `json:"pendingNewFiles"`
-	ProfileVers string      `json:"fitProfile"`
+	Device      device.Info     `json:"device"`
+	Model       string          `json:"model"`
+	PartNumber  string          `json:"partNumber"`
+	UnitID      uint64          `json:"unitId"`
+	Software    string          `json:"software"`
+	AppCount    int             `json:"appCount"`
+	NewFiles    int             `json:"pendingNewFiles"`
+	ProfileVers string          `json:"fitProfile"`
+	Storage     *device.Storage `json:"storage,omitempty"`
 }
 
 // Summary gathers the headline facts about the watch.
@@ -119,6 +120,11 @@ func (s *Service) Summary(ctx context.Context) (*Summary, error) {
 	}
 	if entries, err := s.dev.List(ctx, PathNewFiles); err == nil {
 		sum.NewFiles = len(entries)
+	}
+	if sr, ok := s.dev.(device.StorageReporter); ok {
+		if st, err := sr.Storage(ctx); err == nil && st.CapacityBytes > 0 {
+			sum.Storage = &st
+		}
 	}
 	return sum, nil
 }

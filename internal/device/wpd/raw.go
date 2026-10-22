@@ -18,6 +18,7 @@ import (
 // Garmin Express and openExpress do.
 
 const (
+	opGetStorageInfo   = 0x1005
 	opGetObjectHandles = 0x1007
 	opGetObjectInfo    = 0x1008
 	opDeleteObject     = 0x100B
@@ -310,4 +311,29 @@ func (d *Device) DeleteHidden(ctx context.Context, dir, name string) error {
 		return device.ErrNotFound
 	}
 	return d.DeleteHandle(ctx, o.Handle)
+}
+
+// Storage reports capacity and free space through PTP GetStorageInfo.
+func (d *Device) Storage(ctx context.Context) (device.Storage, error) {
+	storage, _, err := d.Handles(ctx, "GARMIN")
+	if err != nil {
+		return device.Storage{}, err
+	}
+	data, code, _, err := d.MtpRead(ctx, opGetStorageInfo, []uint32{storage})
+	if err != nil {
+		return device.Storage{}, err
+	}
+	if code != ptpOK || len(data) < 26 {
+		return device.Storage{}, fmt.Errorf("GetStorageInfo: PTP response 0x%04X, %d bytes", code, len(data))
+	}
+	// StorageType u16, FilesystemType u16, AccessCapability u16, MaxCapacity u64, FreeSpaceInBytes u64, FreeSpaceInObjects u32, StorageDescription string, VolumeLabel string
+	st := device.Storage{CapacityBytes: binary.LittleEndian.Uint64(data[6:]), FreeBytes: binary.LittleEndian.Uint64(data[14:])}
+	if n := int(data[26]); 27+2*n <= len(data) && n > 0 {
+		u := make([]uint16, n)
+		for i := range u {
+			u[i] = binary.LittleEndian.Uint16(data[27+2*i:])
+		}
+		st.Description = strings.TrimRight(string(utf16.Decode(u)), "\x00")
+	}
+	return st, nil
 }

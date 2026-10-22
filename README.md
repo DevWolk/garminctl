@@ -48,7 +48,8 @@ bin/garminctl workouts create plan.json -send   # build a structured workout, sa
 bin/garminctl workouts create plan.json -local  # or write the workout FIT straight to the watch
 bin/garminctl music ls | music add song.mp3 | music playlist Run track1 track2
 bin/garminctl app-rm "Simply Large"        # remove a Connect IQ app (finished on unplug)
-bin/garminctl app-hide Archery | app-show Archery | app-pending
+bin/garminctl app-hide Archery | app-show Archery | app-pending | app-restore ~/.cache/garminctl/OUT.BIN-…
+bin/garminctl autostart on          # run serve hidden at Windows sign-in (copies the Windows build to %LOCALAPPDATA%\garminctl)
 bin/garminctl health extras | health history 365 | health weight 80.5
 bin/garminctl hidden GARMIN/Apps/Media      # list a folder the MTP listing hides
 bin/garminctl serve -autosync=false         # web UI without the USB watcher
@@ -176,6 +177,13 @@ and shows a Windows notification with the outcome, as Garmin Express did in
 the background. The web UI follows along: it switches to the watch when it
 is plugged in and shows the same events as toasts. `-autosync=false` turns
 the watcher off.
+
+Storage: the watch reports its capacity and free space (PTP GetStorageInfo);
+`info`, the Overview, the Music tab, the Store detail and the Updates tab
+show it. `autostart on` installs a Windows Startup shortcut that runs the
+Windows build of `serve` hidden at sign-in, so the watcher, sync and
+notifications work the way Garmin Express did without a terminal;
+`autostart off` removes it.
 
 ## Web UI
 

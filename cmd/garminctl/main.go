@@ -61,6 +61,8 @@ Commands:
   app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
   app-hide APP | app-show APP     hide a built-in activity, glance or app from the watch's lists, or show it (applied on unplug)
   app-pending                     app-list changes waiting for the next unplug
+  app-restore FILE                queue a saved copy of the app list (from ~/.cache/garminctl) for the watch
+  autostart on|off|status         run "garminctl serve" at Windows sign-in, like Garmin Express did
   updates                         check Garmin for firmware/data updates and app updates
   updates install PART            download and write one update (e.g. 006-DA094-00)
   software                        installed software components (device.fit)
@@ -123,6 +125,8 @@ func run(args []string) error {
 		return c.devices(ctx)
 	case "serve":
 		return c.serve(ctx, rest)
+	case "autostart":
+		return c.autostart(rest)
 	case "mcp":
 		return c.mcp(ctx)
 	case "cloud":
@@ -165,6 +169,22 @@ func run(args []string) error {
 			return err
 		}
 		fmt.Printf("queued in GARMIN/Apps/IN.BIN (copy of the registry: %s); the watch applies it when you unplug it\n", backup)
+		return nil
+	case "app-restore":
+		if len(rest) != 1 {
+			return errors.New("usage: app-restore FILE   (a copy of OUT.BIN from ~/.cache/garminctl)")
+		}
+		b, err := os.ReadFile(rest[0])
+		if err != nil {
+			return err
+		}
+		if _, err := garmin.ParseAppsConfig(b); err != nil {
+			return fmt.Errorf("%s is not an app registry: %w", rest[0], err)
+		}
+		if err := svc.Device().Write(ctx, garmin.PathAppsIn, b); err != nil {
+			return err
+		}
+		fmt.Println("queued as GARMIN/Apps/IN.BIN; the watch restores that app list when you unplug it")
 		return nil
 	case "app-pending":
 		ch, err := svc.PendingAppChanges(ctx)
@@ -283,6 +303,9 @@ func (c *cli) info(ctx context.Context, svc *garmin.Service) error {
 	fmt.Printf("Software:   %s\n", sum.Software)
 	fmt.Printf("Apps:       %d installed entries\n", sum.AppCount)
 	fmt.Printf("NewFiles:   %d pending\n", sum.NewFiles)
+	if sum.Storage != nil {
+		fmt.Printf("Storage:    %.2f GB free of %.2f GB\n", float64(sum.Storage.FreeBytes)/1e9, float64(sum.Storage.CapacityBytes)/1e9)
+	}
 	return nil
 }
 

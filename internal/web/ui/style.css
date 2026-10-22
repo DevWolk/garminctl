@@ -180,6 +180,8 @@ input.changed, select.changed { border-color: var(--accent); box-shadow: 0 0 0 3
 .hero-sub .mono { color: var(--fg-2); }
 .hero-state { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
 .hero-state .big { font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }
+.hero-state .bar.storage { width: 160px; height: 5px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.hero-state .bar.storage i { display: block; height: 100%; background: var(--teal); border-radius: 999px; }
 .hero-state .big .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px rgba(69, 196, 138, .2); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }

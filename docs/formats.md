@@ -249,7 +249,9 @@ handles itself, so `EnumObjects("o…")` fails). Writing is
 SendObjectInfo(storage, parent) with an ObjectInfo dataset (format and thumb
 format 0x3000, as Express sends it) followed by SendObject; the new file
 shows in the ordinary listing with its size, reads back transformed (not
-byte-identical), and DeleteObject(handle) removes it. Verified 2026-10-22:
+byte-identical), and DeleteObject(handle) removes it. `GetStorageInfo` (0x1005) over the same raw path gives capacity and free
+space (3 706 159 104 and 1 844 510 720 bytes on 2026-10-22, "Internal
+Storage"). Verified 2026-10-22:
 "Simply Large" queued from the Connect IQ phone app (install_app message,
 fileType BRAIN, deviceXmlDataType IQWatchFaces, binary from
 `services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/versions/<v>/binaries/vivoactive5?...`)

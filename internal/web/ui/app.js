@@ -101,7 +101,9 @@ async function connect() {
 }
 // Retail part numbers (the support site's "identifier"); the device XML only carries the firmware part.
 const retailSKU = { 'vívoactive 5': '010-02862-10', 'vivoactive 5': '010-02862-10' };
+function renderFree() { const el2 = $('#apps-free'); if (el2 && state.summary && state.summary.storage) el2.textContent = `${fmtSize(state.summary.storage.freeBytes)} free on the watch.`; }
 function renderOverview(s) {
+  renderFree();
   const sku = retailSKU[(s.model || '').toLowerCase()] || retailSKU[s.model];
   $('#link-manual').href = sku ? `https://support.garmin.com/en-US/?identifier=${sku}&tab=manuals` : 'https://support.garmin.com/en-US/';
   $('#overview-empty').hidden = true;
@@ -161,9 +163,14 @@ async function pollStatus() {
 }
 setInterval(pollStatus, 7000);
 $('#hero-watch').onclick = () => showTab('apps');
+function storageLine(s) {
+  if (!s || !s.storage) return '';
+  const used = s.storage.capacityBytes - s.storage.freeBytes, pct = Math.round(used / s.storage.capacityBytes * 100);
+  return `<span class="hint">Storage: ${fmtSize(s.storage.freeBytes)} free of ${fmtSize(s.storage.capacityBytes)}</span><span class="bar storage" title="${pct}% used"><i style="width:${pct}%"></i></span>`;
+}
 async function renderHeroState() {
   const st = $('#hero-state');
-  st.innerHTML = '<span class="big"><span class="dot"></span>Connected over USB</span>';
+  st.innerHTML = '<span class="big"><span class="dot"></span>Connected over USB</span>' + storageLine(state.summary);
   try {
     const c = await api('GET', '/api/cloud/status');
     st.innerHTML += c.loggedIn ? `<span class="hint">Garmin Connect: ${esc(c.profile && c.profile.name ? c.profile.name : c.email)}</span>` : '<span class="hint">Garmin Connect: not signed in</span>';
@@ -922,11 +929,17 @@ async function showActivity(file) {
     const gps = d.points.filter((p) => p.lat && p.lon);
     const hr = d.points.filter((p) => p.hr).map((p) => [p.t * 1000, p.hr]);
     const alt = d.points.filter((p) => p.alt !== undefined).map((p) => [p.t * 1000, Math.round(p.alt)]);
+    const spd = d.points.filter((p) => p.spd > 0).map((p) => [p.t * 1000, Math.round(p.spd * 36) / 10]);
+    const cad = d.points.filter((p) => p.cad > 0).map((p) => [p.t * 1000, p.cad]);
+    const pace = (ms) => ms > 0 ? `${Math.floor(1000 / ms / 60)}:${pad2(Math.round(1000 / ms % 60))} /km` : '';
+    const avgSpd = spd.length ? spd.reduce((a, p) => a + p[1], 0) / spd.length : 0;
     box.innerHTML = `<h2>${esc(humanize(d.sport))} · ${esc(new Date(d.start).toLocaleString())}</h2>
       <dl class="facts"><dt>Distance</dt><dd>${(d.distanceM / 1000).toFixed(2)} km</dd><dt>Time</dt><dd>${fmtDur(d.timerSec)} (${fmtDur(d.elapsedSec)} elapsed)</dd><dt>Heart rate</dt><dd>${d.avgHr} avg · ${d.maxHr} max</dd><dt>Calories</dt><dd>${d.calories}</dd><dt>Ascent</dt><dd>${d.ascentM} m</dd></dl>
       ${gps.length ? '<div class="map" id="act-map"></div>' : ''}
       ${hr.length ? `<div class="chart"><h3>Heart rate</h3>${seriesChartT(hr)}</div>` : ''}
       ${alt.length && d.ascentM ? `<div class="chart"><h3>Elevation</h3>${seriesChartT(alt, true)}</div>` : ''}
+      ${spd.length > 5 ? `<div class="chart"><h3>Speed · avg ${avgSpd.toFixed(1)} km/h${/run|walk|hik/i.test(d.sport) ? ` (${pace(avgSpd / 3.6)})` : ''}</h3>${seriesChartT(spd)}</div>` : ''}
+      ${cad.length > 5 ? `<div class="chart"><h3>Cadence</h3>${seriesChartT(cad)}</div>` : ''}
       ${d.laps && d.laps.length > 1 ? `<table class="files"><thead><tr><th>Lap</th><th class="num">Time</th><th class="num">Distance</th><th class="num">HR</th></tr></thead><tbody>${d.laps.map((l, i) => `<tr><td>${i + 1}</td><td class="num">${fmtDur(l.elapsedSec)}</td><td class="num">${(l.distanceM / 1000).toFixed(2)} km</td><td class="num">${l.avgHr || ''}</td></tr>`).join('')}</tbody></table>` : ''}`;
     if (gps.length) drawMap(gps);
   } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
@@ -1083,7 +1096,7 @@ function renderMusic() {
   if (!lib.tracks.length) tb.innerHTML = `<tr><td colspan="5" class="muted">${prov.length ? `No audio files added over USB. Downloads made by ${prov.map((p) => esc(p.name)).join(' and ')} live in the app's own protected cache and never show up here.` : 'No audio files on the watch. Add MP3, M4A, AAC, WAV or FLAC files above.'}</td></tr>`;
   const pv = $('#music-providers'); pv.hidden = !prov.length;
   if (prov.length) pv.innerHTML = `<h2>Streaming apps</h2><ul class="pending">${prov.map((p) => `<li><span><div class="what">${esc(p.name)} <span class="tag">v${p.version}</span></div><div class="meta">downloads in its protected cache</div></span><span class="num">${fmtSize(p.cacheBytes)}</span></li>`).join('')}</ul><p class="hint">Streaming downloads are DRM-protected and kept in the hidden app area, so USB cannot list, copy or delete them. Manage them from the ${esc(prov[0].name)} app on the watch or from Connect IQ on the phone. Only files added on this page appear in the table.</p>`;
-  $('#music-status').textContent = `${lib.tracks.length} tracks · ${fmtSize(lib.bytes)}`;
+  $('#music-status').textContent = `${lib.tracks.length} tracks · ${fmtSize(lib.bytes)}${state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free on the watch` : ''}`;
   const ul = $('#music-playlists'); ul.innerHTML = lib.playlists.length ? '' : '<li class="muted">No playlists. Select tracks and press “Make playlist”.</li>';
   for (const p of lib.playlists) {
     const li = el(`<li><div><div class="what">${esc(p.name)}</div><div class="meta">${p.tracks.length} tracks · <span class="mono">${esc(p.path)}</span></div></div><button class="btn small danger">Delete</button></li>`);
@@ -1189,7 +1202,7 @@ async function showStoreApp(id) {
         <dt>Downloads</dt><dd>${fmtCount(d.downloads)}</dd>
         <dt>Version</dt><dd>${esc(d.version)}${d.updated ? ' · ' + esc(d.updated) : ''}</dd>
         <dt>Price</dt><dd>${esc(d.price || 'Free')}${d.trialMode ? ' (trial available)' : ''}</dd>
-        ${d.sizeBytes ? `<dt>Size</dt><dd>${fmtSize(d.sizeBytes)} on this watch</dd>` : ''}
+        ${d.sizeBytes ? `<dt>Size</dt><dd>${fmtSize(d.sizeBytes)} on this watch${state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free` : ''}</dd>` : ''}
         ${d.hasSettings !== undefined && d.hasSettings !== null ? `<dt>Settings</dt><dd>${d.hasSettings ? 'editable here once installed' : 'none'}</dd>` : ''}
         ${d.permissions && d.permissions.length ? `<dt>Permissions</dt><dd>${esc(d.permissions.join(', '))}</dd>` : ''}
       </dl>

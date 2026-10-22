@@ -19,6 +19,18 @@ type Entry struct {
 	Modified string `json:"modified,omitempty"`
 }
 
+// Storage is the watch's storage capacity as it reports it.
+type Storage struct {
+	CapacityBytes uint64 `json:"capacityBytes"`
+	FreeBytes     uint64 `json:"freeBytes"`
+	Description   string `json:"description,omitempty"`
+}
+
+// StorageReporter is implemented by devices that can report their storage.
+type StorageReporter interface {
+	Storage(ctx context.Context) (Storage, error)
+}
+
 // HiddenFS is implemented by devices that can reach folders the ordinary
 // listing hides, such as the Connect IQ app folder on the vívoactive 5 and the
 // fēnix 8. Paths are the same slash-separated watch paths as elsewhere.
