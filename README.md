@@ -1,5 +1,7 @@
 # garminctl
 
+[![Tests](https://github.com/DevWolk/garminctl/actions/workflows/test.yml/badge.svg)](https://github.com/DevWolk/garminctl/actions/workflows/test.yml) [![Lint](https://github.com/DevWolk/garminctl/actions/workflows/lint.yml/badge.svg)](https://github.com/DevWolk/garminctl/actions/workflows/lint.yml) [![Security](https://github.com/DevWolk/garminctl/actions/workflows/security.yml/badge.svg)](https://github.com/DevWolk/garminctl/actions/workflows/security.yml) [![Release](https://img.shields.io/github/v/release/DevWolk/garminctl)](https://github.com/DevWolk/garminctl/releases) [![Go version](https://img.shields.io/github/go-mod/go-version/DevWolk/garminctl)](https://go.dev/) [![License](https://img.shields.io/github/license/DevWolk/garminctl)](./LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/DevWolk/garminctl)](https://goreportcard.com/report/github.com/DevWolk/garminctl) [![Go Reference](https://pkg.go.dev/badge/github.com/DevWolk/garminctl.svg)](https://pkg.go.dev/github.com/DevWolk/garminctl)
+
 Manage a Garmin watch over USB without Garmin Express: read and change the
 watch settings, edit Connect IQ watch-face settings (for example Easy+),
 browse and copy files, all from a CLI, a local web UI, or an MCP server so an
