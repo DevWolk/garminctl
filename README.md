@@ -47,6 +47,10 @@ bin/garminctl workouts                     # workouts in Garmin Connect
 bin/garminctl workouts create plan.json -send   # build a structured workout, save it in Connect, deliver to the watch
 bin/garminctl workouts create plan.json -local  # or write the workout FIT straight to the watch
 bin/garminctl music ls | music add song.mp3 | music playlist Run track1 track2
+bin/garminctl app-rm "Simply Large"        # remove a Connect IQ app (finished on unplug)
+bin/garminctl health extras | health history 365 | health weight 80.5
+bin/garminctl hidden GARMIN/Apps/Media      # list a folder the MTP listing hides
+bin/garminctl serve -autosync=false         # web UI without the USB watcher
 bin/garminctl store search solar face      # Connect IQ store, filtered to this watch (public catalogue)
 bin/garminctl store list -type widget -sort mostPopular
 bin/garminctl store info 7c993e2b-70b3-459a-bbe0-db48a89af5a8
@@ -162,11 +166,32 @@ USB:
 - Types that need a privacy consent in Connect (HRV, skin temperature, sleep
   disruptions, …) are skipped with a note until the consent is given.
 
+## Automatic sync
+
+`garminctl serve` watches USB. When the watch appears it connects, syncs
+with Garmin Connect if you are signed in (uploads new files, writes what
+Connect queued: settings, apps, workouts), checks Garmin's update service,
+and shows a Windows notification with the outcome, as Garmin Express did in
+the background. The web UI follows along: it switches to the watch when it
+is plugged in and shows the same events as toasts. `-autosync=false` turns
+the watcher off.
+
 ## Web UI
 
 ```sh
 bin/garminctl serve            # http://127.0.0.1:8787
 ```
+
+Health & activities also shows what else Connect knows: VO2 max, fitness
+age, HRV status, personal records (linked to the activity in Connect),
+earned badges, weight history and a form to log a weigh-in; ranges above
+14 days come from Connect's daily-range endpoints, so a year of steps,
+resting heart rate, stress, body battery and sleep loads in a few requests.
+Connect IQ apps can be removed from App settings or Apps & glances (the
+watch finishes the removal on unplug). `app-flag` writes `IN.BIN` with one
+registry flag changed, with a copy of `OUT.BIN` kept in
+`~/.cache/garminctl`; the flag's meaning is still being verified, so it
+stays a CLI-only experiment for now.
 
 Sections: Overview (the watch with its Easy+ face drawn from the settings
 file as it is right now, today's steps, resting heart rate, sleep, body

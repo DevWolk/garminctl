@@ -158,11 +158,25 @@
       </header>
       <div class="panel">
         <div class="toolbar tight">
-          <h2 style="margin:0">Last <select id="health-days"><option value="7">7</option><option value="14" selected>14</option><option value="30">30</option><option value="60">60</option></select> days</h2>
+          <h2 style="margin:0">Last <select id="health-days"><option value="7">7</option><option value="14" selected>14</option><option value="30">30</option><option value="90">90</option><option value="180">180</option><option value="365">365</option></select> days</h2>
           <span class="spacer"></span><span class="hint" id="health-status"></span>
         </div>
         <div class="charts" id="health-charts"><p class="muted">Loading…</p></div>
         <div id="day-detail" hidden></div>
+      </div>
+      <div class="panel panel-gap" id="extras-panel">
+        <div class="toolbar tight"><h2 style="margin:0">More from Garmin Connect</h2><span class="spacer"></span><span class="hint" id="extras-status"></span></div>
+        <div class="tiles" id="extras-tiles"></div>
+        <div class="grid-2">
+          <div><h3 class="muted" style="margin-bottom:8px">Personal records</h3><div class="table-wrap"><table class="files" id="records-table"><thead><tr><th>Record</th><th class="num">Best</th><th>When</th></tr></thead><tbody><tr><td colspan="3" class="muted">Loading…</td></tr></tbody></table></div></div>
+          <div>
+            <h3 class="muted" style="margin-bottom:8px">Weight</h3>
+            <form class="toolbar tight" id="weight-form"><input type="number" id="weight-kg" step="0.1" min="20" max="400" placeholder="kg" style="width:110px" required><button class="btn small" type="submit">Log weigh-in</button><span class="hint" id="weight-status"></span></form>
+            <ul class="pending" id="weight-list"><li class="muted">Loading…</li></ul>
+            <h3 class="muted" style="margin:14px 0 8px">Badges</h3>
+            <ul class="pending" id="badges-list"><li class="muted">Loading…</li></ul>
+          </div>
+        </div>
       </div>
       <div class="panel panel-gap">
         <div class="toolbar tight"><h2 style="margin:0">Activities on the watch</h2><span class="spacer"></span><span class="hint" id="acts-status"></span></div>

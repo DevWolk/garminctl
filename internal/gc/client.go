@@ -481,6 +481,38 @@ func (c *Client) Do(ctx context.Context, method, p string, contentType string, b
 	return resp.StatusCode, b, nil
 }
 
+// DoOAuth1 performs a request to an absolute URL signed with the session's
+// OAuth1 token, the way Garmin Express talks to services.garmin.com.
+func (c *Client) DoOAuth1(ctx context.Context, method, absURL, contentType string, body []byte) (int, []byte, error) {
+	c.mu.Lock()
+	o1 := c.sess.OAuth1
+	c.mu.Unlock()
+	if o1 == nil {
+		return 0, nil, errors.New("not signed in to Garmin Connect")
+	}
+	cons, err := c.loadConsumer(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, absURL, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("User-Agent", apiUserAgent)
+	req.Header.Set("Accept", "application/json, */*")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	signOAuth1(req, nil, cons.Key, cons.Secret, o1.Token, o1.Secret)
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return resp.StatusCode, b, err
+}
+
 // GetJSON fetches JSON.
 func (c *Client) GetJSON(ctx context.Context, p string, out any) error {
 	st, b, err := c.Do(ctx, http.MethodGet, p, "", nil)

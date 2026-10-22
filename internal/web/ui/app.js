@@ -137,6 +137,29 @@ function renderHeroFace() {
   $('#hero-face').innerHTML = EasyFace.render(state.heroValues, { screen: 1, aod: false, systemIs24h: state.hero24h });
 }
 setInterval(() => { if (state.tab === 'overview') renderHeroFace(); }, 30000);
+// Follow the server's USB watcher: it connects on plug-in and syncs on its own.
+let autoSeen = Date.now();
+async function pollStatus() {
+  try {
+    const st = await api('GET', '/api/status');
+    for (const ev of (st.auto && st.auto.events) || []) {
+      const t = new Date(ev.at).getTime();
+      if (t <= autoSeen) continue;
+      autoSeen = t;
+      toast(ev.text, ev.kind === 'error' ? 'bad' : ev.kind === 'unplugged' ? 'warn' : 'ok');
+      if (ev.kind === 'synced') { loadNewFiles(); if (state.tab === 'cloud') loadCloud(); }
+    }
+    if (st.connected && !state.connected) {
+      state.connected = true; state.summary = st.summary; setConn('ok', 'Connected');
+      $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect';
+      renderOverview(st.summary); loadNewFiles(); loadTab(state.tab);
+    } else if (!st.connected && state.connected) {
+      state.connected = false; setConn('bad', 'Unplugged');
+      state.rows = []; state.apps = []; state.app = null;
+    }
+  } catch (e) {}
+}
+setInterval(pollStatus, 7000);
 $('#hero-watch').onclick = () => showTab('apps');
 async function renderHeroState() {
   const st = $('#hero-state');
@@ -780,7 +803,7 @@ async function loadHealth() {
   const days = Number($('#health-days').value);
   if (!state.health.daily || state.health.loadedDays !== days) {
     $('#health-status').textContent = 'Asking Garmin Connect…';
-    try { state.health.daily = await api('GET', '/api/health/daily?days=' + days); state.health.loadedDays = days; $('#health-status').textContent = ''; }
+    try { state.health.daily = await api('GET', '/api/health/daily?days=' + days); state.health.loadedDays = days; $('#health-status').textContent = days > 14 ? 'Long ranges come from Connect\'s daily totals; calories are not in them.' : ''; loadExtras(); }
     catch (e) { $('#health-charts').innerHTML = `<p class="muted">${esc(e.message)}${/signed in/.test(e.message) ? ' (sign in on the Garmin Connect tab)' : ''}</p>`; $('#health-status').textContent = ''; }
   }
   if (state.health.daily) renderDaily();
@@ -797,9 +820,46 @@ function renderDaily() {
     <div class="chart"><h3>Sleep · ${fmtDur(last.sleepSec)} last night</h3>${barChart(rows.map((r) => ({ date: r.date, h: Math.round(r.sleepSec / 360) / 10 })), 'h', { unit: 'h', max: 9 })}</div>
     <div class="chart"><h3>Stress (avg) · ${last.avgStress}</h3>${barChart(rows, 'avgStress', { max: 100 })}</div>
     <div class="chart"><h3>Body battery · ${last.bodyBatteryLow}–${last.bodyBatteryHigh}</h3>${lineChart(rows, ['bodyBatteryHigh', 'bodyBatteryLow'], { zero: true })}</div>
-    <div class="chart"><h3>Calories · ${last.calories} kcal</h3>${barChart(rows, 'calories', {})}</div>`;
+    ${rows.some((r) => r.calories) ? `<div class="chart"><h3>Calories · ${last.calories} kcal</h3>${barChart(rows, 'calories', {})}</div>` : ''}`;
   document.querySelectorAll('#health-charts .bar').forEach((b) => { b.onclick = () => showDay(b.dataset.date); });
 }
+async function loadExtras() {
+  if (state.health.extras) return;
+  $('#extras-status').textContent = 'Asking Garmin Connect…';
+  try { state.health.extras = await api('GET', '/api/health/extras'); $('#extras-status').textContent = ''; renderExtras(); }
+  catch (e) { $('#extras-status').textContent = e.message; $('#extras-tiles').innerHTML = ''; }
+}
+function renderExtras() {
+  const x = state.health.extras;
+  const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  $('#extras-tiles').innerHTML = (x.vo2max ? tile('VO2 max', x.vo2max.toFixed(1), `as of ${esc(x.vo2maxDate)}`) : '')
+    + (x.fitnessAge ? tile('Fitness age', Math.round(x.fitnessAge), `you are ${x.chronologicalAge}`) : '')
+    + (x.hrv ? tile('HRV last night', `${x.hrv.lastNight}<small>ms</small>`, `weekly ${x.hrv.weeklyAvg} ms · ${esc(humanize(x.hrv.status.toLowerCase()))}`) : '')
+    + (x.badges.length ? tile('Badges', x.badges.length, `${x.badges.reduce((a, b) => a + b.points, 0)} points`) : '');
+  const tb = $('#records-table tbody'); tb.innerHTML = '';
+  for (const r of x.records) {
+    const tr = el(`<tr${r.activityId ? ' class="act"' : ''}><td>${esc(r.label)}</td><td class="num"><b>${esc(r.display)}</b></td><td>${esc(r.date)}</td></tr>`);
+    if (r.activityId) tr.onclick = () => window.open(`https://connect.garmin.com/modern/activity/${r.activityId}`, 'garmin-connect');
+    tb.appendChild(tr);
+  }
+  if (!x.records.length) tb.innerHTML = '<tr><td colspan="3" class="muted">No personal records yet.</td></tr>';
+  const wl = $('#weight-list'); wl.innerHTML = x.weight.length ? '' : '<li class="muted">No weigh-ins in the last year. Log one above; the watch shows it in the weight glance after a sync.</li>';
+  for (const w of x.weight.slice(-8).reverse()) wl.appendChild(el(`<li><span><span class="what">${w.kg.toFixed(1)} kg</span>${w.bmi ? ` <span class="meta">BMI ${w.bmi.toFixed(1)}</span>` : ''}</span><span class="meta">${esc(w.date)}</span></li>`));
+  const bl = $('#badges-list'); bl.innerHTML = x.badges.length ? '' : '<li class="muted">No badges yet.</li>';
+  for (const b of x.badges.slice(0, 8)) bl.appendChild(el(`<li><span><span class="what">${esc(b.name)}</span>${b.count > 1 ? ` <span class="tag">×${b.count}</span>` : ''}</span><span class="meta">${esc(b.date)} · ${b.points} pt</span></li>`));
+  for (const e of x.errors || []) toast(e, 'warn');
+}
+$('#weight-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const kg = Number($('#weight-kg').value);
+  const ok = await confirmDialog({ title: `Log ${kg.toFixed(1)} kg in Garmin Connect?`, body: '<p>Saved as a manual weigh-in dated now. Garmin Connect shows it on the phone and the watch after their next sync.</p>', ok: 'Log it' });
+  if (!ok) return;
+  try {
+    await api('POST', '/api/health/weight', { kg });
+    toast(`Logged ${kg.toFixed(1)} kg`);
+    $('#weight-kg').value = ''; state.health.extras = null; loadExtras();
+  } catch (e) { toast(e.message, 'bad'); }
+});
 function fmtDur(sec) { sec = Math.round(sec || 0); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return h ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`; }
 function pad2(n) { return String(n).padStart(2, '0'); }
 function fmtHM(sec) { const h = Math.floor(sec / 3600), m = Math.round(sec % 3600 / 60); return h ? `${h}h ${pad2(m)}m` : `${m}m`; }

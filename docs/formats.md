@@ -140,6 +140,14 @@ Built-in apps use ids like `c0ffee15-600d-20d9-...`. The user's watch lists
 139 entries (64 activities, 33 glances, 40 apps, the watch face, YouTube
 Music); the registry has no "in the activity list / glance loop" marker.
 
+`IN.BIN` is the same protobuf handed back by the host; the watch applies it
+on unplug and deletes it. `garminctl app-flag APP on|off` re-encodes
+OUT.BIN byte for byte with one field-4 value changed (identity re-encoding
+is checked first, a copy of OUT.BIN is kept in `~/.cache/garminctl`) and
+writes it as IN.BIN; openExpress toggles built-in activities and glances
+the same way. Installing a `.PRG` needs no IN.BIN entry: the watch
+registered Simply Large from the file alone.
+
 Field 4 is exposed as `enabled` but does not mean "visible": on 2026-10-22
 it was clear for Walk, Boxing, Yoga, Strength, Bike, Pool Swim, Komoot
 (activities the user has in his list) and for the Steps, Weather, Heart
@@ -258,6 +266,45 @@ Audio content provider apps live in the same hidden area. The device XML's
 `Music/`, `Podcasts` and `Audiobooks` hold only files the user copies, so
 provider downloads cannot be listed, copied or deleted over MTP; the Music
 tab, `music ls` and `music_list` report them as "providers" by size only.
+
+## More Connect endpoints (health extras and history, verified 2026-10-22)
+
+- Range stats, used for anything over 14 days: steps
+  `GET /usersummary-service/stats/steps/daily/{start}/{end}`
+  (`calendarDate, totalSteps, totalDistance, stepGoal`); resting heart rate
+  `GET /userstats-service/wellness/daily/{displayName}?fromDate&untilDate&metricId=60`
+  (`allMetrics.metricsMap.WELLNESS_RESTING_HEART_RATE[]`); stress
+  `GET /usersummary-service/stats/stress/daily/{start}/{end}`
+  (`values.overallStressLevel`); body battery
+  `GET /wellness-service/wellness/bodyBattery/reports/daily?startDate&endDate`
+  (`bodyBatteryValuesArray[[ms, level]]`); sleep
+  `GET /sleep-service/stats/sleep/daily/{start}/{end}`
+  (`individualStats[].values.totalSleepTimeInSeconds`, plus `overallStats`);
+  sleep score only: `GET /wellness-service/stats/daily/sleep/score/{start}/{end}`.
+  `/wellness-service/stats/sleep/daily/...` is 404.
+- VO2 max: `GET /metrics-service/metrics/maxmet/daily/{start}/{end}` →
+  `generic.vo2MaxPreciseValue`; fitness age:
+  `GET /fitnessage-service/fitnessage/{date}` → `fitnessAge, chronologicalAge`;
+  HRV: `GET /hrv-service/hrv/{date}` → `hrvSummary{weeklyAvg, lastNightAvg, status}`.
+- Personal records: `GET /personalrecord-service/personalrecord/prs/{displayName}`
+  → `typeId, value, activityId, activityType, prStartTimeGmtFormatted`. Type
+  ids seen: 1 (1 km run, seconds), 7 (longest run, m), 8 (longest ride, m),
+  9 (cycling, 637 on the day a "Climber 1" badge was earned: probably biggest
+  climb in m, unverified), 12/13/14 (most steps in a day/week/month), 15
+  (longest goal streak, days), 16 (value 0, unknown).
+- Badges: `GET /badge-service/badge/earned` → `badgeName, badgeKey,
+  badgeEarnedDate, badgePoints, badgeEarnedNumber`.
+- Weight: `GET /weight-service/weight/dateRange?startDate&endDate` →
+  `dateWeightList[]` (empty on this account); manual weigh-in
+  `POST /weight-service/user-weight` with `{dateTimestamp, gmtTimestamp
+  ("2006-01-02T15:04:05.00"), unitKey: "kg", sourceType: "MANUAL", value}`
+  (shape from python-garminconnect, not yet exercised here).
+- Gear: `GET /gear-service/gear/filterGear?userProfilePk={profileId}` (empty).
+- Express's app-store API (`services.garmin.com/express/appstore/rest/apps/
+  downloads|updates|installApps|removeInstalledApps`, OAuth1) answers 403
+  "X-garmin-client-id-header not found" for a token that is not Garmin
+  Express's own, so the Store tab cannot queue installs; the Connect IQ phone
+  app queues them and sync delivers.
 
 ## Garmin Connect sync (what Express does with a login)
 

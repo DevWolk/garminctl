@@ -421,6 +421,37 @@ func Serve(ctx context.Context, open Opener) error {
 			return must(garmin.NewCloud(svc, cloudClient).Daily(ctx, in.Days))
 		})
 
+	mcp.AddTool(srv, &mcp.Tool{Name: "health_history", Description: "One row per day for up to a year from Garmin Connect (steps, goal, distance, resting heart rate, average stress, body battery low/high, sleep seconds); calories are not available in this form."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in daysIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).History(ctx, in.Days))
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "health_extras", Description: "Fitness metrics from Garmin Connect: VO2 max, fitness age, HRV status, personal records, earned badges and weight history."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).Extras(ctx))
+		})
+	type weightIn struct {
+		Kg float64 `json:"kg" jsonschema:"body weight in kilograms"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "health_log_weight", Description: "Record a manual weigh-in (kg, now) in Garmin Connect."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in weightIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := garmin.NewCloud(svc, cloudClient).LogWeight(ctx, in.Kg, time.Time{}); err != nil {
+				return nil, nil, err
+			}
+			return must(map[string]any{"ok": true, "kg": in.Kg}, nil)
+		})
+
 	type dayIn struct {
 		Date string `json:"date" jsonschema:"YYYY-MM-DD"`
 	}

@@ -35,6 +35,7 @@ type Server struct {
 	svc   *garmin.Service
 	cloud *gc.Client
 	job   syncJob
+	auto  autoState
 }
 
 // syncJob is the one background sync run at a time.
@@ -55,13 +56,19 @@ func (j *syncJob) snapshot() map[string]any {
 }
 
 // Serve runs the HTTP server until ctx ends.
-func Serve(ctx context.Context, addr string, open Opener) error {
+func Serve(ctx context.Context, addr string, open Opener, autoSync bool) error {
 	s := &Server{open: open, cloud: gc.New(gc.DefaultStorePath())}
+	s.auto.Enabled = autoSync
+	if autoSync {
+		go s.watch(ctx)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health/activities", s.healthActivities)
 	mux.HandleFunc("GET /api/health/activities/{name}", s.healthActivity)
 	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
 	mux.HandleFunc("GET /api/health/day", s.healthDay)
+	mux.HandleFunc("GET /api/health/extras", s.healthExtras)
+	mux.HandleFunc("POST /api/health/weight", s.healthWeight)
 	mux.HandleFunc("GET /api/workouts", s.workoutsList)
 	mux.HandleFunc("POST /api/workouts", s.workoutsCreate)
 	mux.HandleFunc("POST /api/workouts/{id}/send", s.workoutsSend)
@@ -199,7 +206,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	connected := s.svc != nil
 	s.mu.Unlock()
 	if !connected && r.URL.Query().Get("connect") == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"connected": false})
+		writeJSON(w, http.StatusOK, map[string]any{"connected": false, "auto": s.autoSnapshot()})
 		return
 	}
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
@@ -207,7 +214,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"connected": true, "summary": sum}, nil
+		return map[string]any{"connected": true, "summary": sum, "auto": s.autoSnapshot()}, nil
 	})
 }
 
@@ -470,32 +477,11 @@ func (s *Server) cloudSyncStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": gc.ErrNotLoggedIn.Error()})
 		return
 	}
-	j := &s.job
-	j.mu.Lock()
-	if j.Running {
-		j.mu.Unlock()
+	if !s.startSync(svc, up, down) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a sync is already running"})
 		return
 	}
-	j.Running, j.StartedAt, j.EndedAt, j.Log, j.Result, j.Error = true, time.Now(), time.Time{}, nil, nil, ""
-	j.mu.Unlock()
-	cloud := garmin.NewCloud(svc, s.cloud)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-		defer cancel()
-		res, err := cloud.Sync(ctx, up, down, func(line string) {
-			j.mu.Lock()
-			j.Log = append(j.Log, line)
-			j.mu.Unlock()
-		})
-		j.mu.Lock()
-		j.Running, j.EndedAt, j.Result = false, time.Now(), res
-		if err != nil {
-			j.Error = err.Error()
-		}
-		j.mu.Unlock()
-	}()
-	writeJSON(w, http.StatusAccepted, j.snapshot())
+	writeJSON(w, http.StatusAccepted, s.job.snapshot())
 }
 
 func (s *Server) cloudSyncState(w http.ResponseWriter, r *http.Request) {
@@ -584,7 +570,32 @@ func (s *Server) healthActivity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) healthDaily(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		if days > 14 { // range endpoints: a few requests for a year instead of one per day
+			return garmin.NewCloud(svc, s.cloud).History(r.Context(), days)
+		}
 		return garmin.NewCloud(svc, s.cloud).Daily(r.Context(), days)
+	})
+}
+
+func (s *Server) healthExtras(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Extras(r.Context())
+	})
+}
+
+func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Kg float64 `json:"kg"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		if err := garmin.NewCloud(svc, s.cloud).LogWeight(r.Context(), in.Kg, time.Time{}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true, "kg": in.Kg}, nil
 	})
 }
 

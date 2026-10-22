@@ -24,9 +24,12 @@ import (
 	"garminctl/internal/garmin"
 	"garminctl/internal/gc"
 
+	"bytes"
 	"garminctl/internal/mcpserver"
 	"garminctl/internal/web"
 	"golang.org/x/term"
+	"io"
+	"net/http"
 )
 
 const usage = `garminctl - manage a Garmin watch over USB (no Garmin Express needed)
@@ -56,6 +59,7 @@ Commands:
   app-settings set APP K=V [...]  change Connect IQ app settings (V may be an option label)
   app-schema APP [KEY]            show labels and dropdown options of an app's settings
   app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
+  app-flag APP on|off             experimental: set an app's registry flag through IN.BIN
   updates                         check Garmin for firmware/data updates and app updates
   updates install PART            download and write one update (e.g. 006-DA094-00)
   software                        installed software components (device.fit)
@@ -151,6 +155,16 @@ func run(args []string) error {
 		return c.settings(ctx, svc, rest)
 	case "apps":
 		return c.apps(ctx, svc)
+	case "app-flag":
+		if len(rest) != 2 || (rest[1] != "on" && rest[1] != "off") {
+			return errors.New("usage: app-flag APP on|off   (experimental: writes IN.BIN with one registry flag changed)")
+		}
+		backup, err := svc.SetAppFlag(ctx, rest[0], rest[1] == "on")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("wrote GARMIN/Apps/IN.BIN; copy of OUT.BIN saved as %s\nthe watch applies it when you unplug it\n", backup)
+		return nil
 	case "app-rm":
 		if len(rest) != 1 {
 			return errors.New("usage: app-rm APP")
@@ -770,6 +784,69 @@ func (c *cli) activity(ctx context.Context, svc *garmin.Service, args []string) 
 
 func (c *cli) health(ctx context.Context, svc *garmin.Service, args []string) error {
 	cloud := garmin.NewCloud(svc, gc.New(gc.DefaultStorePath()))
+	if len(args) >= 1 && args[0] == "extras" {
+		x, err := cloud.Extras(ctx)
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(x)
+		}
+		if x.VO2Max > 0 {
+			fmt.Printf("VO2 max %.1f (%s)\n", x.VO2Max, x.VO2MaxDate)
+		}
+		if x.FitnessAge > 0 {
+			fmt.Printf("fitness age %.0f (chronological %d)\n", x.FitnessAge, x.ChronologicalA)
+		}
+		if x.HRV != nil {
+			fmt.Printf("HRV last night %d ms, weekly %d ms, %s\n", x.HRV.LastNight, x.HRV.WeeklyAvg, x.HRV.Status)
+		}
+		for _, r := range x.Records {
+			fmt.Printf("record  %-24s %-12s %s\n", r.Label, r.Display, r.Date)
+		}
+		for i, b := range x.Badges {
+			if i >= 10 {
+				fmt.Printf("… %d more badges\n", len(x.Badges)-10)
+				break
+			}
+			fmt.Printf("badge   %-32s %s (%d pt)\n", b.Name, b.Date, b.Points)
+		}
+		for _, w := range x.Weight {
+			fmt.Printf("weight  %s %.1f kg\n", w.Date, w.Kg)
+		}
+		for _, e := range x.Errors {
+			fmt.Println("error:", e)
+		}
+		return nil
+	}
+	if len(args) >= 2 && args[0] == "weight" {
+		kg, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			return fmt.Errorf("weight: %w", err)
+		}
+		if err := cloud.LogWeight(ctx, kg, time.Time{}); err != nil {
+			return err
+		}
+		fmt.Printf("logged %.1f kg in Garmin Connect\n", kg)
+		return nil
+	}
+	if len(args) >= 1 && args[0] == "history" {
+		n := 90
+		if len(args) >= 2 {
+			n, _ = strconv.Atoi(args[1])
+		}
+		rows, err := cloud.History(ctx, n)
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(rows)
+		}
+		for _, r := range rows {
+			fmt.Printf("%s steps %6d  rhr %3d  stress %3d  bb %3d-%3d  sleep %s\n", r.Date, r.Steps, r.RestingHR, r.AvgStress, r.BodyBatteryLow, r.BodyBatteryHigh, fmtDur(float64(r.SleepSec)))
+		}
+		return nil
+	}
 	if len(args) >= 2 && args[0] == "day" {
 		d, err := cloud.Day(ctx, args[1])
 		if err != nil {
@@ -1173,7 +1250,43 @@ func (c *cli) cloud(ctx context.Context, svc *garmin.Service, args []string) err
 	if len(args) == 0 {
 		return errors.New("usage: cloud status|sync|messages|settings")
 	}
-	cloud := garmin.NewCloud(svc, gc.New(gc.DefaultStorePath()))
+	cl := gc.New(gc.DefaultStorePath())
+	cloud := garmin.NewCloud(svc, cl)
+	if len(args) > 1 && (args[0] == "get" || args[0] == "post" || args[0] == "get1" || args[0] == "post1") {
+		// Raw Connect calls for exploring the API: get/post use the bearer token on connectapi
+		// paths; get1/post1 sign an absolute URL with OAuth1 like Garmin Express.
+		method, body, ct := http.MethodGet, []byte(nil), ""
+		if strings.HasPrefix(args[0], "post") {
+			method, ct = http.MethodPost, "application/json"
+			if len(args) > 2 {
+				body = []byte(args[2])
+			}
+		}
+		var st int
+		var b []byte
+		var err error
+		if strings.HasSuffix(args[0], "1") {
+			st, b, err = cl.DoOAuth1(ctx, method, args[1], ct, body)
+		} else {
+			var r io.Reader
+			if body != nil {
+				r = bytes.NewReader(body)
+			}
+			st, b, err = cl.Do(ctx, method, args[1], ct, r)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Printf("HTTP %d\n", st)
+		var pretty bytes.Buffer
+		if json.Indent(&pretty, b, "", " ") == nil {
+			os.Stdout.Write(pretty.Bytes())
+		} else {
+			os.Stdout.Write(b)
+		}
+		fmt.Println()
+		return nil
+	}
 	switch args[0] {
 	case "status":
 		st := cloud.Status(ctx)
@@ -1299,12 +1412,13 @@ func parseScalar(v string) any {
 func (c *cli) serve(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8787", "listen address")
+	autoSync := fs.Bool("autosync", true, "watch USB; when the watch appears, sync with Garmin Connect, check updates and notify")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	return web.Serve(ctx, *addr, func(ctx context.Context) (device.Device, error) {
 		return openDevice(ctx, c.root, c.devID)
-	})
+	}, *autoSync && c.root == "")
 }
 
 func (c *cli) mcp(ctx context.Context) error {

@@ -70,3 +70,43 @@ func TestParseDeviceXMLApps(t *testing.T) {
 		t.Fatalf("provider %+v lacks name or cache size", *provider)
 	}
 }
+
+func TestRewriteAppsRoundTrip(t *testing.T) {
+	b, err := os.ReadFile("testdata/OUT.BIN")
+	if err != nil {
+		t.Skip("no sample")
+	}
+	same, err := rewriteApps(b, func(_ App, f []pbField) ([]pbField, error) { return f, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(same) != string(b) {
+		t.Fatalf("identity rewrite changed %d bytes", len(b))
+	}
+	flipped, err := rewriteApps(b, func(a App, f []pbField) ([]pbField, error) {
+		if a.Name != "Easy+" {
+			return f, nil
+		}
+		for i := range f {
+			if f[i].num == 4 {
+				f[i].varint = 0
+			}
+		}
+		return f, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flipped) != len(b) {
+		t.Fatalf("flag flip changed the length: %d -> %d", len(b), len(flipped))
+	}
+	apps, err := ParseAppsConfig(flipped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range apps {
+		if a.Name == "Easy+" && a.Enabled {
+			t.Fatal("flag not flipped")
+		}
+	}
+}
