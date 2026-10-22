@@ -3,7 +3,7 @@ const $ = (s) => document.querySelector(s);
 const state = {
   connected: false, summary: null,
   rows: [], pending: new Map(),
-  apps: [], app: null, appItems: [], appSchema: null, appValues: {}, appPending: new Map(), installed: { type: 'all' },
+  apps: [], app: null, appItems: [], appSchema: null, appValues: {}, appPending: new Map(), installed: { type: 'all', visibility: 'all', sort: 'watch' },
   path: '', tab: 'overview',
   preview: { screen: 1, aod: false, timer: null },
 };
@@ -633,7 +633,27 @@ async function loadFiles(path) {
   tb.innerHTML = '<tr><td colspan="4" class="muted">Reading…</td></tr>';
   try {
     const entries = await api('GET', '/api/files?path=' + encodeURIComponent(path));
-    entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
+    state.files = { path, entries };
+    renderFiles();
+  } catch (e) { tb.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`; }
+}
+state.filesSort = { key: 'name', dir: 1 };
+document.querySelectorAll('#files-table th.sortable').forEach((th) => th.onclick = () => {
+  const k = th.dataset.sort;
+  state.filesSort = { key: k, dir: state.filesSort.key === k ? -state.filesSort.dir : (k === 'name' ? 1 : -1) };
+  if (state.files) renderFiles();
+});
+function renderFiles() {
+  const { path, entries } = state.files;
+  const tb = $('#files-table tbody');
+  const { key, dir } = state.filesSort;
+  document.querySelectorAll('#files-table th.sortable').forEach((th) => { th.classList.toggle('asc', th.dataset.sort === key && dir === 1); th.classList.toggle('desc', th.dataset.sort === key && dir === -1); });
+  entries.sort((a, b) => {
+    if (a.dir !== b.dir) return a.dir ? -1 : 1;
+    const v = key === 'size' ? (a.size || 0) - (b.size || 0) : key === 'modified' ? String(a.modified || '').localeCompare(String(b.modified || '')) : a.name.localeCompare(b.name);
+    return v * dir;
+  });
+  {
     tb.innerHTML = entries.length ? '' : '<tr><td colspan="4" class="muted">Empty folder.</td></tr>';
     for (const e of entries) {
       const full = (path ? path + '/' : '') + e.name;
@@ -653,7 +673,7 @@ async function loadFiles(path) {
       }
       tb.appendChild(tr);
     }
-  } catch (e) { tb.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`; }
+  }
 }
 $('#upload-file').addEventListener('change', async () => {
   const f = $('#upload-file').files[0];
@@ -866,6 +886,7 @@ function renderExtras() {
   for (const b of x.badges.slice(0, 8)) bl.appendChild(el(`<li><span><span class="what">${esc(b.name)}</span>${b.count > 1 ? ` <span class="tag">×${b.count}</span>` : ''}</span><span class="meta">${esc(b.date)} · ${b.points} pt</span></li>`));
   for (const e of x.errors || []) toast(e, 'warn');
 }
+$('#music-q').addEventListener('input', () => { if (state.music.lib) renderMusic(); });
 $('#weight-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const kg = Number($('#weight-kg').value);
@@ -906,9 +927,23 @@ async function loadActivities() {
 }
 function pace(spd) { if (!spd) return ''; const s = 1000 / spd; return `${Math.floor(s / 60)}:${pad2(Math.round(s % 60))} /km`; }
 state.health.actsShown = 40;
+state.health.sport = 'all'; state.health.actsSort = 'date';
 function renderActivities() {
   const tb = $('#acts-table tbody'); tb.innerHTML = '';
-  const all = state.health.acts.activities;
+  const everything = state.health.acts.activities;
+  const counts = {};
+  for (const a of everything) counts[a.sport] = (counts[a.sport] || 0) + 1;
+  const chips = $('#acts-sports'); chips.innerHTML = '';
+  if (!counts[state.health.sport] && state.health.sport !== 'all') state.health.sport = 'all';
+  for (const sp of ['all', ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])]) {
+    const c = el(`<button class="chip${state.health.sport === sp ? ' active' : ''}" type="button">${sp === 'all' ? 'All' : esc(humanize(sp))} <span class="muted">${sp === 'all' ? everything.length : counts[sp]}</span></button>`);
+    c.onclick = () => { state.health.sport = sp; state.health.actsShown = 40; renderActivities(); };
+    chips.appendChild(c);
+  }
+  const all = everything.filter((a) => state.health.sport === 'all' || a.sport === state.health.sport);
+  const key = state.health.actsSort;
+  const num = (v) => Number(v) || 0;
+  all.sort((a, b) => key === 'date-asc' ? new Date(a.start) - new Date(b.start) : key === 'distance' ? num(b.distanceM) - num(a.distanceM) : key === 'time' ? num(b.timerSec) - num(a.timerSec) : key === 'hr' ? num(b.avgHr) - num(a.avgHr) : key === 'kcal' ? num(b.calories) - num(a.calories) : new Date(b.start) - new Date(a.start));
   for (const a of all.slice(0, state.health.actsShown)) {
     const tr = el(`<tr class="act${state.health.selAct === a.file ? ' sel' : ''}"><td>${esc(new Date(a.start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</td><td>${esc(humanize(a.sport))}${a.subSport ? ' · ' + esc(humanize(a.subSport)) : ''}</td><td class="num">${a.distanceM ? (a.distanceM / 1000).toFixed(2) + ' km' : ''}</td><td class="num">${fmtDur(a.timerSec)}</td><td class="num">${a.sport === 'running' || a.sport === 'walking' || a.sport === 'hiking' ? pace(a.avgSpeedMs) : a.avgSpeedMs ? (a.avgSpeedMs * 3.6).toFixed(1) + ' km/h' : ''}</td><td class="num">${a.avgHr || ''}</td><td class="num">${a.calories || ''}</td></tr>`);
     tr.onclick = () => showActivity(a.file);
@@ -921,6 +956,7 @@ function renderActivities() {
     tb.appendChild(tr);
   }
 }
+$('#acts-sort').addEventListener('change', () => { state.health.actsSort = $('#acts-sort').value; if (state.health.acts) renderActivities(); });
 async function showActivity(file) {
   state.health.selAct = file; renderActivities();
   const box = $('#act-detail'); box.hidden = false; box.innerHTML = '<p class="muted">Reading the activity from the watch…</p>';
@@ -1036,9 +1072,18 @@ function renderInstalled() {
     c.onclick = () => { state.installed.type = k; renderInstalled(); };
     chips.appendChild(c);
   }
-  const rows = apps.filter((a) => (state.installed.type === 'all' || a.typeName === state.installed.type) && (!q || `${a.name} ${a.typeName} ${a.fileName || ''}`.toLowerCase().includes(q)));
-  rows.sort((a, b) => kindOrder.indexOf(a.typeName) - kindOrder.indexOf(b.typeName)); // stable: keeps the watch's own order within a kind
   const pending = new Map((state.installed.pending || []).map((c) => [c.id + '/' + c.typeName, c.hidden]));
+  const vis = state.installed.visibility;
+  const rows = apps.filter((a) => (state.installed.type === 'all' || a.typeName === state.installed.type) && (!q || `${a.name} ${a.typeName} ${a.fileName || ''}`.toLowerCase().includes(q)))
+    .filter((a) => {
+      const p = pending.get(a.id + '/' + a.typeName);
+      const hiddenNow = p !== undefined ? p : a.hidden;
+      return vis === 'all' || (vis === 'pending' ? p !== undefined : vis === 'hidden' ? hiddenNow : !hiddenNow);
+    });
+  const byKind = (a, b) => kindOrder.indexOf(a.typeName) - kindOrder.indexOf(b.typeName);
+  if (state.installed.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name) || byKind(a, b));
+  else if (state.installed.sort === 'source') rows.sort((a, b) => Number(a.native) - Number(b.native) || byKind(a, b));
+  else rows.sort(byKind); // stable: keeps the watch's own order within a kind
   const tb = $('#inst-table tbody'); tb.innerHTML = '';
   for (const a of rows) {
     const listed = ['activity', 'glance', 'app', 'widget', 'datafield'].includes(a.typeName);
@@ -1079,6 +1124,12 @@ async function setAppHidden(a, hidden) {
   } catch (e) { toast(e.message, 'bad'); }
 }
 $('#inst-filter').addEventListener('input', () => { if (state.apps.length) renderInstalled(); });
+$('#inst-sort').addEventListener('change', () => { state.installed.sort = $('#inst-sort').value; if (state.apps.length) renderInstalled(); });
+document.querySelectorAll('#inst-visibility .chip').forEach((c) => c.addEventListener('click', () => {
+  state.installed.visibility = c.dataset.v;
+  document.querySelectorAll('#inst-visibility .chip').forEach((x) => x.classList.toggle('active', x === c));
+  if (state.apps.length) renderInstalled();
+}));
 
 async function loadMusic() {
   if (!state.connected) return;
@@ -1087,7 +1138,8 @@ async function loadMusic() {
 }
 function renderMusic() {
   const lib = state.music.lib, tb = $('#music-table tbody'); tb.innerHTML = '';
-  for (const t of lib.tracks) {
+  const mq = ($('#music-q').value || '').trim().toLowerCase();
+  for (const t of lib.tracks.filter((t) => !mq || `${t.artist || ''} ${t.album || ''} ${t.title}`.toLowerCase().includes(mq))) {
     const tr = el(`<tr><td class="chk"><input type="checkbox" data-path="${esc(t.path)}"${state.music.sel.has(t.path) ? ' checked' : ''}></td><td>${esc(t.artist || '')}</td><td>${esc(t.album || '')}</td><td title="${esc(t.path)}">${esc(t.title)}${t.folder !== 'Music' ? ` <span class="tag">${esc(t.folder)}</span>` : ''}</td><td class="num">${fmtSize(t.size)}</td></tr>`);
     tr.querySelector('input').onchange = (ev) => { if (ev.target.checked) state.music.sel.add(t.path); else state.music.sel.delete(t.path); updateMusicButtons(); };
     tb.appendChild(tr);
@@ -1173,9 +1225,28 @@ function renderStoreControls(view) {
   const sort = $('#store-sort'); sort.innerHTML = view.sorts.map((s) => `<option value="${esc(s.key)}">${esc(s.label)}</option>`).join('');
   sort.value = state.store.sort;
 }
+function storeFilters() {
+  return { rating: Number($('#sf-rating').value), reviews: Number($('#sf-reviews').value), price: $('#sf-price').value, state: $('#sf-state').value, fits: $('#sf-fits').checked, settings: $('#sf-settings').checked };
+}
+function storeMatches(a, f) {
+  const free = !a.price || /^(free|0|0[.,]00.*)$/i.test(String(a.price).trim());
+  if (f.rating && !(Number(a.rating) >= f.rating)) return false;
+  if (f.reviews && !(Number(a.reviewCount) >= f.reviews)) return false;
+  if (f.price === 'free' && !free) return false;
+  if (f.price === 'paid' && free) return false;
+  if (f.state === 'installed' && !a.installed) return false;
+  if (f.state === 'update' && !a.updateAvailable) return false;
+  if (f.state === 'new' && a.installed) return false;
+  if (f.fits && state.summary && state.summary.storage && a.sizeBytes > state.summary.storage.freeBytes) return false;
+  if (f.settings && !a.hasSettings) return false;
+  return true;
+}
 function renderStore() {
   const grid = $('#store-grid'); grid.innerHTML = '';
-  for (const a of state.store.apps) {
+  const f = storeFilters();
+  const shown = state.store.apps.filter((a) => storeMatches(a, f));
+  $('#store-filtered').textContent = shown.length === state.store.apps.length ? '' : `${shown.length} of ${state.store.apps.length} loaded match the filters; Show more loads more from the store`;
+  for (const a of shown) {
     const badge = a.updateAvailable ? '<span class="tag new">Update</span>' : a.installed ? '<span class="tag ok">Installed</span>' : !a.compatible ? '<span class="tag">Not for this watch</span>' : '';
     const card = el(`<button class="store-card${state.store.selected === a.id ? ' active' : ''}" data-id="${esc(a.id)}">
       ${a.iconUrl ? `<img src="${esc(a.iconUrl)}" alt="" loading="lazy">` : '<span class="app-ico">?</span>'}
@@ -1186,7 +1257,9 @@ function renderStore() {
     grid.appendChild(card);
   }
   if (!state.store.apps.length) grid.innerHTML = '<p class="muted">Nothing found.</p>';
+  else if (!shown.length) grid.innerHTML = '<p class="muted">Nothing loaded so far matches the filters. Press Show more, or loosen them.</p>';
 }
+document.querySelectorAll('#store-filters select, #store-filters input').forEach((x) => x.addEventListener('change', () => { if (state.store.loaded) renderStore(); }));
 async function showStoreApp(id) {
   state.store.selected = id;
   document.querySelectorAll('.store-card').forEach((c) => c.classList.toggle('active', c.dataset.id === id));

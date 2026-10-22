@@ -147,6 +147,15 @@
         <div class="chips" id="inst-types"></div>
         <span class="spacer"></span><span class="hint" id="inst-status"></span>
       </div>
+      <div class="toolbar filters">
+        <div class="chips" id="inst-visibility">
+          <button class="chip active" data-v="all" type="button">All</button>
+          <button class="chip" data-v="shown" type="button">Shown</button>
+          <button class="chip" data-v="hidden" type="button">Hidden</button>
+          <button class="chip" data-v="pending" type="button">Waiting for unplug</button>
+        </div>
+        <label class="check">Order <select id="inst-sort"><option value="watch">as on the watch</option><option value="name">by name</option><option value="kind">by kind</option><option value="source">Connect IQ first</option></select></label>
+      </div>
       <div class="table-wrap tall"><table class="files" id="inst-table"><thead><tr><th>Name</th><th>Kind</th><th>Source</th><th title="Whether it is in your activity list, glance loop or app list on the watch">On watch</th><th class="num">Size</th><th class="actions"></th></tr></thead><tbody><tr><td colspan="6" class="muted">Connect the watch to list apps.</td></tr></tbody></table></div>
       <p class="hint">Shown means the entry is in your activity list, glance loop or app list on the watch; Hidden means it is not. Hide and Show queue a change in the watch's app list that it applies when you unplug it; a copy of the list is kept in <code>~/.cache/garminctl</code>.</p>
     </section>
@@ -180,6 +189,10 @@
       </div>
       <div class="panel panel-gap">
         <div class="toolbar tight"><h2 style="margin:0">Activities on the watch</h2><span class="spacer"></span><span class="hint" id="acts-status"></span></div>
+        <div class="toolbar filters">
+          <div class="chips" id="acts-sports"></div>
+          <label class="check">Order <select id="acts-sort"><option value="date">newest first</option><option value="date-asc">oldest first</option><option value="distance">longest distance</option><option value="time">longest time</option><option value="hr">highest heart rate</option><option value="kcal">most calories</option></select></label>
+        </div>
         <div class="acts-layout">
           <div class="table-wrap tall"><table class="files acts" id="acts-table"><thead><tr><th>Date</th><th>Sport</th><th class="num">Distance</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th class="num">kcal</th></tr></thead><tbody><tr><td colspan="7" class="muted">Loading…</td></tr></tbody></table></div>
           <div id="act-detail" class="act-detail" hidden></div>
@@ -232,6 +245,7 @@
         <select id="music-folder"><option>Music</option><option>Podcasts</option><option>Audiobooks</option></select>
         <button class="btn" id="music-playlist" disabled>Make playlist from selected</button>
         <button class="btn danger" id="music-delete" disabled>Delete selected</button>
+        <input id="music-q" type="search" placeholder="Filter tracks" aria-label="Filter tracks" style="width:180px">
         <span class="spacer"></span><span class="hint" id="music-status"></span>
       </div>
       <div class="grid-2">
@@ -252,6 +266,15 @@
         <input id="store-q" type="search" placeholder="Search the store" aria-label="Search the store">
         <div class="chips" id="store-types"></div>
         <select id="store-sort" aria-label="Sort"></select>
+      </div>
+      <div class="toolbar filters" id="store-filters">
+        <label class="check">Rating ≥ <select id="sf-rating"><option value="0">any</option><option value="4">4.0</option><option value="4.5">4.5</option><option value="4.8">4.8</option></select></label>
+        <label class="check">Reviews ≥ <select id="sf-reviews"><option value="0">any</option><option value="10">10</option><option value="100">100</option><option value="1000">1000</option></select></label>
+        <label class="check"><select id="sf-price"><option value="any">Free and paid</option><option value="free">Free only</option><option value="paid">Paid only</option></select></label>
+        <label class="check"><select id="sf-state"><option value="any">Installed or not</option><option value="installed">Installed</option><option value="update">Update available</option><option value="new">Not installed</option></select></label>
+        <label class="check"><input type="checkbox" id="sf-fits"> Fits in free space</label>
+        <label class="check"><input type="checkbox" id="sf-settings"> Has settings</label>
+        <span class="spacer"></span><span class="hint" id="store-filtered"></span>
       </div>
       <div class="store-layout">
         <div>
@@ -355,7 +378,7 @@
       </div>
       <div class="table-wrap tall">
         <table class="files" id="files-table">
-          <thead><tr><th>Name</th><th class="num">Size</th><th>Modified</th><th></th></tr></thead>
+          <thead><tr><th class="sortable" data-sort="name">Name</th><th class="num sortable" data-sort="size">Size</th><th class="sortable" data-sort="modified">Modified</th><th></th></tr></thead>
           <tbody><tr><td colspan="4" class="muted">Connect the watch to browse.</td></tr></tbody>
         </table>
       </div>

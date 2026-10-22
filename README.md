@@ -205,6 +205,14 @@ app list and applied on unplug, with a copy of the list kept in
 `~/.cache/garminctl`. The Overview lists queued app-list changes next to
 the pending files and can cancel them.
 
+Lists can be narrowed everywhere: Apps & glances by kind, by Shown, Hidden
+or waiting-for-unplug, and ordered as on the watch, by name, by kind or
+Connect IQ first; the Store by rating, number of reviews, free or paid,
+installed state, whether the app fits in the watch's free space and
+whether it has settings (on top of the store's own search, kinds and sort
+orders); activities by sport and by date, distance, time, heart rate or
+calories; files by any column; music tracks by text.
+
 Sections: Overview (the watch with its Easy+ face drawn from the settings
 file as it is right now, today's steps, resting heart rate, sleep, body
 battery and calories from Garmin Connect, pending NewFiles, latest

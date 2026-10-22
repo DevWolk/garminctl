@@ -135,6 +135,12 @@ input.changed, select.changed { border-color: var(--accent); box-shadow: 0 0 0 3
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .toolbar.tight { margin-bottom: 4px; }
 .jump { margin: -8px 0 18px; }
+.toolbar.filters { margin: -8px 0 14px; gap: 10px 16px; }
+.toolbar.filters .check select { padding: 4px 8px; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--fg); }
+th.sortable.asc::after { content: " ▲"; font-size: 9px; }
+th.sortable.desc::after { content: " ▼"; font-size: 9px; }
 .jump .chip { padding: 3px 10px; font-size: 12px; }
 .spacer { flex: 1; }
 .legend { color: var(--muted); font-size: 12.5px; }
