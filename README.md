@@ -9,11 +9,19 @@ Tested with a vívoactive 5 (firmware 17.05) from WSL2 on Windows 11. No
 .NET runtime, no drivers, no cloud account: the watch is reached through the
 Windows Portable Devices API that is part of Windows.
 
-## Build
+## Install
+
+Pre-built binaries for Windows and Linux (amd64 and arm64) are attached to
+each [release](https://github.com/DevWolk/garminctl/releases); unpack the
+archive and put `garminctl.exe` (Windows) or `garminctl` (Linux/WSL) on
+your `PATH`. `checksums.txt` next to the archives holds their SHA-256 sums.
+`garminctl version` prints the version a binary was built from.
+
+With a Go toolchain, the latest release or a specific one:
 
 ```sh
-go build -o bin/garminctl ./cmd/garminctl                      # Linux/WSL binary
-GOOS=windows GOARCH=amd64 go build -o bin/garminctl.exe ./cmd/garminctl   # native Windows
+go install github.com/DevWolk/garminctl/cmd/garminctl@latest
+go install github.com/DevWolk/garminctl/cmd/garminctl@v0.1.0
 ```
 
 Both builds talk to the watch the same way: they start `powershell.exe`
@@ -22,12 +30,13 @@ The first call compiles the bridge (about a second); later calls are fast.
 Garmin Express may stay installed, but close it while using garminctl so the
 two do not write to the watch at the same time.
 
-Pre-built binaries for Windows and Linux are attached to each
-[release](https://github.com/DevWolk/garminctl/releases); `garminctl
-version` prints the version a binary was built from. From source:
+## Build
+
+From a checkout:
 
 ```sh
-go install github.com/DevWolk/garminctl/cmd/garminctl@latest
+go build -o bin/garminctl ./cmd/garminctl                      # Linux/WSL binary
+GOOS=windows GOARCH=amd64 go build -o bin/garminctl.exe ./cmd/garminctl   # native Windows
 ```
 
 `make` builds both binaries. Development targets:
