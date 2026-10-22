@@ -177,7 +177,12 @@ window.EasyFace = (() => {
     return `<g transform="translate(${x - size / 2} ${y - size / 2}) scale(${s})"><path d="${d}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>`;
   }
 
+  let seq = 0;
   function render(v, opts) {
+    // Every render gets its own id namespace: two faces on one page (Overview hero and the editor)
+    // would otherwise share gradient ids, and url(#id) resolves to the first one in the document
+    // even when that one sits inside a hidden tab and paints nothing.
+    const ns = `ef${++seq}-`;
     const screen = opts.screen === 2 && v.secondscreen ? 2 : 1;
     const sfx = screen === 2 ? 'b' : 'a';
     const p = palette(v, screen);
@@ -195,21 +200,21 @@ window.EasyFace = (() => {
     const parts = [];
     const defs = [];
     parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="${p.bg}"/>`);
-    if (aod === 0) return wrap(parts.join(''), defs, opts);
+    if (aod === 0) return wrap(parts.join(''), defs, ns);
 
     // Spotlight (AMOLED glow) behind everything.
     const spot = Number(v.spot_type);
     const gradientFonts = !!(p.hour2 && p.hour2 !== p.hour) || !!(p.min2 && p.min2 !== p.min);
     if (spot >= 0 && !opts.aod) {
       if ((spot === 0 || spot === 1) && !gradientFonts) {
-        defs.push(`<radialGradient id="spot"><stop offset="0" stop-color="${p.spot}" stop-opacity="${spot === 1 ? .55 : .45}"/><stop offset="${spot === 1 ? .75 : .5}" stop-color="${p.spot}" stop-opacity="0"/></radialGradient>`);
-        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#spot)"/>`);
+        defs.push(`<radialGradient id="${ns}spot"><stop offset="0" stop-color="${p.spot}" stop-opacity="${spot === 1 ? .55 : .45}"/><stop offset="${spot === 1 ? .75 : .5}" stop-color="${p.spot}" stop-opacity="0"/></radialGradient>`);
+        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#${ns}spot)"/>`);
       } else if (spot === 2 || spot === 3) {
-        defs.push(`<radialGradient id="spot"><stop offset="${spot === 3 ? .55 : .8}" stop-color="${p.spot}" stop-opacity="0"/><stop offset="1" stop-color="${p.spot}" stop-opacity=".6"/></radialGradient>`);
-        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#spot)"/>`);
+        defs.push(`<radialGradient id="${ns}spot"><stop offset="${spot === 3 ? .55 : .8}" stop-color="${p.spot}" stop-opacity="0"/><stop offset="1" stop-color="${p.spot}" stop-opacity=".6"/></radialGradient>`);
+        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#${ns}spot)"/>`);
       } else if (spot === 4) {
-        defs.push(`<radialGradient id="spot"><stop offset=".45" stop-color="${p.spot}" stop-opacity="0"/><stop offset=".72" stop-color="${p.spot}" stop-opacity=".35"/><stop offset="1" stop-color="${p.spot}" stop-opacity="0"/></radialGradient>`);
-        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#spot)"/>`);
+        defs.push(`<radialGradient id="${ns}spot"><stop offset=".45" stop-color="${p.spot}" stop-opacity="0"/><stop offset=".72" stop-color="${p.spot}" stop-opacity=".35"/><stop offset="1" stop-color="${p.spot}" stop-opacity="0"/></radialGradient>`);
+        parts.push(`<circle cx="${C}" cy="${C}" r="${C}" fill="url(#${ns}spot)"/>`);
       }
     }
 
@@ -247,7 +252,7 @@ window.EasyFace = (() => {
     const dimAod = opts.aod && v.reduced_aod ? ' opacity=".55"' : '';
     function timeText(txt, y, f, c1, c2, id) {
       let fill = c1;
-      if (c2 && c2 !== c1) { defs.push(`<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>`); fill = `url(#${id})`; }
+      if (c2 && c2 !== c1) { defs.push(`<linearGradient id="${ns}${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>`); fill = `url(#${ns}${id})`; }
       const stroke = f.outline ? ` fill="none" stroke="${fill}" stroke-width="3"` : ` fill="${fill}"`;
       return `<text x="${C}" y="${y}" font-size="98" font-weight="${f.weight}" font-stretch="condensed" ${f.italic ? 'font-style="italic"' : ''} font-family="${timeFont}" text-anchor="middle" dominant-baseline="central" letter-spacing="-2"${stroke}${dimAod} data-key="${id === 'gh' ? 't_font' : 'm_font'}" class="face-hit">${txt}</text>`;
     }
@@ -287,11 +292,11 @@ window.EasyFace = (() => {
       parts.push(`<text x="${tx}" y="${ty}" font-size="${fs}" font-weight="700" fill="${mc}" text-anchor="middle" dominant-baseline="central" font-family="${metricFont}">${esc(text)}</text>`);
       parts.push('</g>');
     }
-    return wrap(parts.join(''), defs, opts);
+    return wrap(parts.join(''), defs, ns);
   }
 
-  function wrap(body, defs, opts) {
-    return `<svg viewBox="0 0 ${W} ${W}" width="100%" height="100%" role="img" aria-label="Watch face preview"><defs><clipPath id="faceclip"><circle cx="${C}" cy="${C}" r="${C}"/></clipPath>${defs.join('')}</defs><g clip-path="url(#faceclip)">${body}</g><circle cx="${C}" cy="${C}" r="${C - 1}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="2"/></svg>`;
+  function wrap(body, defs, ns) {
+    return `<svg viewBox="0 0 ${W} ${W}" width="100%" height="100%" role="img" aria-label="Watch face preview"><defs><clipPath id="${ns}faceclip"><circle cx="${C}" cy="${C}" r="${C}"/></clipPath>${defs.join('')}</defs><g clip-path="url(#${ns}faceclip)">${body}</g><circle cx="${C}" cy="${C}" r="${C - 1}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="2"/></svg>`;
   }
 
   return { APP_ID, render, supports: (appId) => String(appId).toLowerCase() === APP_ID };

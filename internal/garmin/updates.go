@@ -305,6 +305,9 @@ func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
 	if len(data) < 16 || data[0] != 0 || data[1] != 0 || data[2] != 0 {
 		return "", errors.New("this does not look like a Connect IQ .PRG file")
 	}
+	if _, err := s.dev.Stat(ctx, "GARMIN/APPS/MEDIA"); err != nil {
+		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
+	}
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	name := fmt.Sprintf("GARMIN/APPS/MEDIA/%s.PRG", strings.ToUpper(hex.EncodeToString(b[:])))

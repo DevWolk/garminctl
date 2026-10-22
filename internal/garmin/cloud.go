@@ -368,7 +368,13 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			out = append(out, pf)
 			continue
 		}
-		if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
+		if strings.HasPrefix(target, "GARMIN/APPS/") {
+			if _, err := c.svc.dev.Stat(ctx, path.Dir(target)); err != nil {
+				pf.Error = "this watch does not expose its app folder over USB; left in Connect's queue for the phone app to deliver"
+				out = append(out, pf)
+				continue
+			}
+		} else if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
 			pf.Error = err.Error()
 			out = append(out, pf)
 			continue

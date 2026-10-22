@@ -20,6 +20,13 @@ See CLAUDE.md for the working rules. Module map:
   OAuth2, token file, bearer helpers). `internal/garmin/cloud.go` builds the
   sync on it: `Status`, `Settings`/`SetSettings`, `Messages`/`Pull`,
   `Upload`, `Sync`.
+- `internal/garmin/health.go` (activities from the watch's FIT files with a
+  disk cache, daily/intraday health from Connect), `workouts.go`
+  (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
+  `music.go` (tracks, ID3 tags, playlists).
+- `internal/ciqstore/store.go`: public store website API (`Browse`,
+  `Detail`, `Reviews`, `DeviceTypeID`); `internal/garmin/store.go` merges it
+  with the installed apps.
 - `internal/ciqstore`: `Fetch`/`Load`/`Parse` of the apps.garmin.com
   settings page; `Setting.OptionValue` resolves labels to values; `AppInfo`
   reads the public store record (latest version).

@@ -39,6 +39,18 @@ bin/garminctl app-settings set easy seconds=off "bar1a=Body Battery %" cust_colo
 bin/garminctl updates                      # firmware/data updates from Garmin + app versions vs the store
 bin/garminctl updates install 006-DA094-00 # download, verify and write one update
 bin/garminctl software                     # software components the watch reports
+bin/garminctl activities -n 20             # activities decoded from the watch's own FIT files (cached)
+bin/garminctl activity 2026-10-18-14-02-40.fit
+bin/garminctl health -days 14              # daily steps, resting HR, stress, body battery, sleep (Garmin Connect)
+bin/garminctl health day 2026-10-22        # intraday heart rate, stress, body battery, sleep stages
+bin/garminctl workouts                     # workouts in Garmin Connect
+bin/garminctl workouts create plan.json -send   # build a structured workout, save it in Connect, deliver to the watch
+bin/garminctl workouts create plan.json -local  # or write the workout FIT straight to the watch
+bin/garminctl music ls | music add song.mp3 | music playlist Run track1 track2
+bin/garminctl store search solar face      # Connect IQ store, filtered to this watch (public catalogue)
+bin/garminctl store list -type widget -sort mostPopular
+bin/garminctl store info 7c993e2b-70b3-459a-bbe0-db48a89af5a8
+bin/garminctl backup ~/garmin-backup       # copy the watch's storage (music left out by default)
 bin/garminctl cloud login                  # sign in to Garmin Connect (asks for the password; MFA supported)
 bin/garminctl cloud status
 bin/garminctl cloud sync                   # upload new activities/health files, pull what Connect queued
@@ -74,6 +86,55 @@ the public settings page on apps.garmin.com (cached under
 `~/.cache/garminctl/appsettings/`), so dropdown choices can be given by
 label.
 
+## Health, activities, workouts, music
+
+Activities are decoded from `GARMIN/Activity/*.fit` on the watch (session,
+laps, records) and cached in `~/.cache/garminctl/activities-<unit>.json`;
+the Health tab lists them and draws the GPS track on an OpenStreetMap map
+with heart-rate and elevation charts. Daily health (steps, resting heart
+rate, stress, body battery, sleep, calories) and intraday series come from
+Garmin Connect, which keeps the history the watch itself discards after
+each sync.
+
+Workouts are described in a small JSON spec:
+
+```json
+{"name":"4x400","sport":"running","steps":[
+  {"type":"warmup","duration":"10:00"},
+  {"repeat":4,"steps":[{"type":"interval","distance":"400m","target":"pace 4:30-4:45"},
+                       {"type":"recovery","duration":"1:30"}]},
+  {"type":"cooldown","duration":"5:00","target":"hr zone 2"}]}
+```
+
+Step types: warmup, cooldown, interval, recovery, rest, other. One end
+condition per step: `duration` ("10:00", "90s", "1h"), `distance` ("400m",
+"2km", "1mi"), `calories`, or `lap: true`. Targets: "hr 140-160",
+"hr zone 3", "pace 4:30-4:45" (min/km), "speed 10-12" (km/h),
+"cadence 170-180", "power 200-250". The spec is rendered either as Garmin
+Connect's workout JSON (saved to the account and queued to the watch
+through the device-message queue) or as a workout FIT file written straight
+into `GARMIN/NewFiles`; both were verified to match the file Connect
+generates. Courses are not offered because the vívoactive 5 has no course
+data type.
+
+Music: downloads made by streaming apps (YouTube Music, Spotify, …) are
+DRM-protected and live in the hidden app area; only their cache size is
+known and shown as "Streaming apps". Your own audio files (mp3, m4a, aac, wav, flac) are written to
+`Music/<Artist>/<Album>/<Title>` from their ID3 tags (Podcasts and
+Audiobooks folders likewise); playlists are `.m3u` files in `Music/`.
+
+## Connect IQ store
+
+The store website's own JSON API answers without a login, so the Store tab,
+`store` commands and `store_search`/`store_app` MCP tools browse and search
+the catalogue filtered to this watch, with ratings, downloads, price, size
+for this device, permissions, description, what's new and reviews, and mark
+what is installed or has a newer version. Installing goes through Garmin
+Connect: press Download on the store page while signed in there, then
+`cloud sync` pulls the queued app. This watch (like the fēnix 8) hides its
+app folder over USB, so a sideloaded `.PRG` cannot be written directly; the
+tool says so instead of failing silently.
+
 ## Garmin Connect (cloud)
 
 Sign in once (`cloud login` or the Garmin Connect tab of the web UI). The
@@ -104,9 +165,13 @@ USB:
 bin/garminctl serve            # http://127.0.0.1:8787
 ```
 
-Sections: Overview (device facts, pending NewFiles), Watch settings
-(grouped, filterable, inline editing with dropdowns, one review step before
-writing), Watch face & apps (edit any Connect IQ app's settings with the
+Sections: Overview (the watch with its Easy+ face drawn from the settings
+file as it is right now, today's steps, resting heart rate, sleep, body
+battery and calories from Garmin Connect, pending NewFiles, latest
+activities), Watch settings (grouped with a jump list, filterable, inline
+editing with dropdowns, one review step before writing), Apps & glances (the watch's whole app registry: built-in
+activities, glances and apps plus Connect IQ installs, with a filter by
+kind and links to each app's settings and store page), App settings (edit any Connect IQ app's settings with the
 store's labels; Easy+ gets a live emulator in `internal/web/ui/face.js`
 that redraws from the pending values, switches between screen 1 and 2,
 previews always-on modes and jumps to a setting when you click a field),
@@ -119,7 +184,9 @@ its device page (where Connect-managed settings live), Garmin Coach, the
 Connect IQ store, the watch's manual and support page, Garmin's status page
 and garmin.com, each in its own browser tab that is reused on the next click
 (Garmin Connect refuses to be embedded). The app editor links to the
-selected app's store page. The JSON API behind it is in
+selected app's store page. The UI is plain HTML, CSS and JS in
+`internal/web/ui/` (Manrope and JetBrains Mono from Google Fonts with system
+fallbacks; dark and light follow the OS). The JSON API behind it is in
 `internal/web/server.go`.
 
 ## MCP server
@@ -140,7 +207,9 @@ Tools: `watch_info`, `watch_list_files`, `watch_decode_fit`,
 `watch_app_settings_schema`, `watch_set_app_settings`, `watch_check_updates`,
 `watch_install_update`, `cloud_status`, `cloud_sync`, `cloud_settings`,
 `cloud_set_settings` (sign in first via the web UI or CLI; MCP never handles
-the password).
+the password), `store_search`, `store_app`, `activities_list`,
+`activity_detail`, `health_daily`, `health_day`, `workouts_list`,
+`workout_create`, `workout_send`, `music_list`, `music_playlist`.
 
 ## Layout
 

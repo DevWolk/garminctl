@@ -11,10 +11,12 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"garminctl/internal/ciqstore"
 	"garminctl/internal/device"
 	"garminctl/internal/garmin"
 	"garminctl/internal/gc"
@@ -56,6 +58,21 @@ func (j *syncJob) snapshot() map[string]any {
 func Serve(ctx context.Context, addr string, open Opener) error {
 	s := &Server{open: open, cloud: gc.New(gc.DefaultStorePath())}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/health/activities", s.healthActivities)
+	mux.HandleFunc("GET /api/health/activities/{name}", s.healthActivity)
+	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
+	mux.HandleFunc("GET /api/health/day", s.healthDay)
+	mux.HandleFunc("GET /api/workouts", s.workoutsList)
+	mux.HandleFunc("POST /api/workouts", s.workoutsCreate)
+	mux.HandleFunc("POST /api/workouts/{id}/send", s.workoutsSend)
+	mux.HandleFunc("DELETE /api/workouts/{id}", s.workoutsDelete)
+	mux.HandleFunc("POST /api/workouts/preview", s.workoutsPreview)
+	mux.HandleFunc("GET /api/music", s.musicList)
+	mux.HandleFunc("POST /api/music", s.musicAdd)
+	mux.HandleFunc("DELETE /api/music", s.musicRemove)
+	mux.HandleFunc("PUT /api/music/playlists/{name}", s.musicPlaylist)
+	mux.HandleFunc("GET /api/store", s.storeBrowse)
+	mux.HandleFunc("GET /api/store/apps/{id}", s.storeApp)
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
 	mux.HandleFunc("POST /api/cloud/login", s.cloudLogin)
 	mux.HandleFunc("POST /api/cloud/mfa", s.cloudMFA)
@@ -496,5 +513,199 @@ func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	s.withService(w, r, func(svc *garmin.Service) (any, error) {
 		return garmin.NewCloud(svc, s.cloud).SetSettings(r.Context(), body.Changes)
+	})
+}
+
+// ---------- Connect IQ store ----------
+
+const defaultPart = "006-B4426-00" // vívoactive 5 firmware part; replaced by the connected watch's
+
+// storeSvc returns the connected service (or nil) and the watch's part number.
+func (s *Server) storeSvc(ctx context.Context) (*garmin.Service, string) {
+	s.mu.Lock()
+	svc := s.svc
+	s.mu.Unlock()
+	part := defaultPart
+	if svc != nil {
+		if dx, err := svc.DeviceXML(ctx); err == nil && dx.PartNumber != "" {
+			part = dx.PartNumber
+		}
+	}
+	return svc, part
+}
+
+func (s *Server) storeBrowse(w http.ResponseWriter, r *http.Request) {
+	svc, part := s.storeSvc(r.Context())
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	view, err := svc.BrowseStore(r.Context(), part, ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 24})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) storeApp(w http.ResponseWriter, r *http.Request) {
+	svc, part := s.storeSvc(r.Context())
+	d, err := svc.StoreApp(r.Context(), part, r.PathValue("id"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+// ---------- health ----------
+
+func (s *Server) healthActivities(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return svc.Activities(r.Context(), r.URL.Query().Get("wait") == "1")
+	})
+}
+
+func (s *Server) healthActivity(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return svc.Activity(r.Context(), r.PathValue("name"), 1500)
+	})
+}
+
+func (s *Server) healthDaily(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Daily(r.Context(), days)
+	})
+}
+
+func (s *Server) healthDay(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Day(r.Context(), r.URL.Query().Get("date"))
+	})
+}
+
+// ---------- workouts ----------
+
+func (s *Server) workoutsList(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Workouts(r.Context(), 50)
+	})
+}
+
+type workoutReq struct {
+	Spec  garmin.WorkoutSpec `json:"spec"`
+	Send  bool               `json:"send"`  // queue it for the watch through Connect
+	Local bool               `json:"local"` // write the FIT straight to the watch instead of Connect
+}
+
+func (s *Server) workoutsPreview(w http.ResponseWriter, r *http.Request) {
+	var req workoutReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	doc, err := req.Spec.ConnectJSON()
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"spec": req.Spec, "connect": doc})
+}
+
+func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
+	var req workoutReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		if req.Local {
+			p, err := svc.WriteWorkoutToWatch(r.Context(), &req.Spec)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"path": p, "note": "Workout file written to GARMIN/NewFiles; unplug the watch and find it under Training > Workouts."}, nil
+		}
+		cloud := garmin.NewCloud(svc, s.cloud)
+		wk, err := cloud.CreateWorkout(r.Context(), &req.Spec)
+		if err != nil {
+			return nil, err
+		}
+		res := map[string]any{"workout": wk, "note": "Saved in Garmin Connect."}
+		if req.Send {
+			pulled, err := cloud.SendWorkout(r.Context(), wk.ID, wk.Name)
+			if err != nil {
+				res["note"] = "Saved in Garmin Connect, but sending to the watch failed: " + err.Error()
+			} else {
+				res["pulled"] = pulled
+				if len(pulled) > 0 {
+					res["note"] = "Saved in Garmin Connect and written to the watch; unplug it to see the workout under Training > Workouts."
+				} else {
+					res["note"] = "Saved in Garmin Connect and queued for the watch; Sync later or let the phone deliver it."
+				}
+			}
+		}
+		return res, nil
+	})
+}
+
+func (s *Server) workoutsSend(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad workout id"})
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		pulled, err := garmin.NewCloud(svc, s.cloud).SendWorkout(r.Context(), id, r.URL.Query().Get("name"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"pulled": pulled}, nil
+	})
+}
+
+func (s *Server) workoutsDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad workout id"})
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(r.Context(), id)
+	})
+}
+
+// ---------- music ----------
+
+func (s *Server) musicList(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) { return svc.Music(r.Context()) })
+}
+
+func (s *Server) musicAdd(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(io.LimitReader(r.Body, 512<<20))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return svc.AddTrack(r.Context(), r.URL.Query().Get("folder"), r.URL.Query().Get("name"), data)
+	})
+}
+
+func (s *Server) musicRemove(w http.ResponseWriter, r *http.Request) {
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return map[string]any{"ok": true}, svc.RemoveTrack(r.Context(), r.URL.Query().Get("path"))
+	})
+}
+
+func (s *Server) musicPlaylist(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Tracks []string `json:"tracks"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+		return svc.WritePlaylist(r.Context(), r.PathValue("name"), body.Tracks)
 	})
 }

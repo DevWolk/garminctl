@@ -12,7 +12,24 @@ type DeviceXML struct {
 	Description     string     `json:"description"`
 	UnitID          uint64     `json:"unitId"`
 	DataTypes       []DataType `json:"dataTypes"`
+	Apps            []XMLApp   `json:"apps"`
 }
+
+// XMLApp is a Connect IQ app as the device XML's Apps extension lists it.
+// Audio content providers (YouTube Music, Spotify, …) carry the size of their
+// protected download cache; the cache itself sits in the hidden app area.
+type XMLApp struct {
+	Name            string `json:"name"`
+	StoreID         string `json:"storeId"`
+	AppID           string `json:"appId"`
+	Type            string `json:"type"` // watch-app, watchface, widget, data-field, audio-content-provider-app …
+	Version         int    `json:"version"`
+	FileName        string `json:"fileName"`
+	MediaCacheBytes int64  `json:"mediaCacheBytes,omitempty"`
+}
+
+// AudioProviderType is the device-XML AppType of streaming music apps.
+const AudioProviderType = "audio-content-provider-app"
 
 // DataType is one file type the device exchanges.
 type DataType struct {
@@ -48,6 +65,15 @@ type xmlDevice struct {
 			} `xml:"File"`
 		} `xml:"DataType"`
 	} `xml:"MassStorageMode"`
+	Apps []struct {
+		AppName        string `xml:"AppName"`
+		StoreID        string `xml:"StoreId"`
+		AppID          string `xml:"AppId"`
+		AppType        string `xml:"AppType"`
+		Version        int    `xml:"Version"`
+		FileName       string `xml:"FileName"`
+		MediaCacheSize int64  `xml:"MediaCacheSize"`
+	} `xml:"Extensions>IQAppExt>Apps>App"`
 }
 
 // ParseDeviceXML decodes GarminDevice.xml.
@@ -63,6 +89,9 @@ func ParseDeviceXML(b []byte) (*DeviceXML, error) {
 			t.Files = append(t.Files, DataTypeFile{Path: f.Location.Path, BaseName: f.Location.BaseName, Extension: f.Location.FileExtension, Direction: f.TransferDirection})
 		}
 		d.DataTypes = append(d.DataTypes, t)
+	}
+	for _, a := range x.Apps {
+		d.Apps = append(d.Apps, XMLApp{Name: a.AppName, StoreID: a.StoreID, AppID: a.AppID, Type: a.AppType, Version: a.Version, FileName: a.FileName, MediaCacheBytes: a.MediaCacheSize})
 	}
 	return d, nil
 }

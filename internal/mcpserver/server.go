@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"garminctl/internal/ciqstore"
 	"garminctl/internal/device"
 	"garminctl/internal/garmin"
 	"garminctl/internal/gc"
@@ -307,6 +308,188 @@ func Serve(ctx context.Context, open Opener) error {
 				return nil, nil, err
 			}
 			return must(garmin.NewCloud(svc, cloudClient).SetSettings(ctx, in.Changes))
+		})
+
+	type storeSearchIn struct {
+		Query string `json:"query,omitempty" jsonschema:"words to search for; empty lists by type"`
+		Type  string `json:"type,omitempty" jsonschema:"watchface, watch-app, widget, datafield or audio-content-provider-app"`
+		Sort  string `json:"sort,omitempty" jsonschema:"mostPopular, highestRated, mostRecent or trending (listing only)"`
+		Page  int    `json:"page,omitempty"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "store_search", Description: "Search or browse the Connect IQ store for apps compatible with this watch (public store data, no login). Each result says whether it is installed and whether the store has a newer version."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in storeSearchIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			dx, err := svc.DeviceXML(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(svc.BrowseStore(ctx, dx.PartNumber, ciqstore.StoreQuery{Keywords: in.Query, Type: in.Type, Sort: in.Sort, Page: in.Page, PageSize: 20}))
+		})
+
+	type storeAppIn struct {
+		ID string `json:"id" jsonschema:"store app id (UUID)"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "store_app", Description: "Details of one Connect IQ store app: description, what's new, version, size for this watch, permissions, price, recent reviews, and whether it is installed. Installing goes through Garmin Connect: open storeUrl, press Download while signed in there, then cloud_sync (or let the phone deliver it)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in storeAppIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			dx, err := svc.DeviceXML(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(svc.StoreApp(ctx, dx.PartNumber, in.ID))
+		})
+
+	type actsIn struct {
+		Limit int `json:"limit,omitempty" jsonschema:"how many of the newest activities to return (default 30)"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "activities_list", Description: "Activities recorded on the watch, decoded from its own FIT files (sport, start, duration, distance, calories, heart rate). The first call decodes files in the background; call again while pending > 0."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in actsIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			list, err := svc.Activities(ctx, false)
+			if err != nil {
+				return nil, nil, err
+			}
+			n := in.Limit
+			if n <= 0 {
+				n = 30
+			}
+			if len(list.Activities) > n {
+				list.Activities = list.Activities[:n]
+			}
+			return nil, list, nil
+		})
+
+	type actIn struct {
+		File   string `json:"file" jsonschema:"activity file name from activities_list"`
+		Points int    `json:"points,omitempty" jsonschema:"max track points to include (default 200; 0 keeps laps only)"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "activity_detail", Description: "One activity with laps and a downsampled track (time, lat/lon, heart rate, speed, altitude)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in actIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			n := in.Points
+			if n == 0 {
+				n = 200
+			}
+			d, err := svc.Activity(ctx, in.File, n)
+			if err != nil {
+				return nil, nil, err
+			}
+			if in.Points < 0 {
+				d.Points = nil
+			}
+			return nil, d, nil
+		})
+
+	type daysIn struct {
+		Days int `json:"days,omitempty" jsonschema:"days to return, today included (default 14, max 90)"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "health_daily", Description: "Daily health from Garmin Connect for the last N days: steps and goal, resting/min/max heart rate, average stress, body battery high/low, sleep seconds, calories, floors, intensity minutes. Needs the Garmin Connect sign-in."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in daysIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).Daily(ctx, in.Days))
+		})
+
+	type dayIn struct {
+		Date string `json:"date" jsonschema:"YYYY-MM-DD"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "health_day", Description: "Intraday health of one day from Garmin Connect: heart rate, stress and body battery series ([unix ms, value]) and the night's sleep stages and score."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in dayIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).Day(ctx, in.Date))
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "workouts_list", Description: "Structured workouts stored in Garmin Connect (id, name, sport, estimated duration)."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).Workouts(ctx, 50))
+		})
+
+	type wkIn struct {
+		Spec  garmin.WorkoutSpec `json:"spec" jsonschema:"the workout: name, sport (running, cycling, swimming, walking, hiking, strength, cardio, hiit, yoga, pilates, other) and steps. A step has type (warmup, cooldown, interval, recovery, rest, other), exactly one end condition (duration like '10:00' or '90s', distance like '400m' or '2km', calories, or lap=true for the lap button) and an optional target ('hr 140-160', 'hr zone 3', 'pace 4:30-4:45' in min/km, 'speed 10-12' in km/h, 'cadence 170-180', 'power 200-250'). A repeat group is {repeat: N, steps: [...]}."`
+		Send  bool               `json:"send,omitempty" jsonschema:"also queue it for the watch through Garmin Connect and pull it onto the watch (default true)"`
+		Local bool               `json:"local,omitempty" jsonschema:"skip Garmin Connect: write the workout FIT straight into GARMIN/NewFiles (works without sign-in; the workout will not appear in Connect)"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "workout_create", Description: "Create a structured workout from a spec and put it on the watch. By default it is saved in Garmin Connect and queued for the watch; with local=true the FIT file is written directly. The watch shows it under Training > Workouts after the USB session ends."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in wkIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if in.Local {
+				p, err := svc.WriteWorkoutToWatch(ctx, &in.Spec)
+				if err != nil {
+					return nil, nil, err
+				}
+				return nil, map[string]any{"path": p, "note": "written to GARMIN/NewFiles; unplug the watch to see it"}, nil
+			}
+			cloud := garmin.NewCloud(svc, cloudClient)
+			wk, err := cloud.CreateWorkout(ctx, &in.Spec)
+			if err != nil {
+				return nil, nil, err
+			}
+			out := map[string]any{"workout": wk}
+			pulled, err := cloud.SendWorkout(ctx, wk.ID, wk.Name)
+			if err != nil {
+				out["sendError"] = err.Error()
+			} else {
+				out["pulled"] = pulled
+			}
+			return nil, out, nil
+		})
+
+	type wkSendIn struct {
+		ID int64 `json:"id" jsonschema:"workout id from workouts_list"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "workout_send", Description: "Queue an existing Garmin Connect workout for the watch and pull it over USB."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in wkSendIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(garmin.NewCloud(svc, cloudClient).SendWorkout(ctx, in.ID, ""))
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "music_list", Description: "Audio files and playlists on the watch (Music, Podcasts, Audiobooks), plus streaming provider apps such as YouTube Music whose DRM downloads sit in a hidden cache and are reported by size only."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(svc.Music(ctx))
+		})
+
+	type plIn struct {
+		Name   string   `json:"name" jsonschema:"playlist name"`
+		Tracks []string `json:"tracks" jsonschema:"watch paths from music_list, in order"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "music_playlist", Description: "Write a playlist (Music/<name>.m3u) from tracks already on the watch."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in plIn) (*mcp.CallToolResult, any, error) {
+			svc, err := s.service(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			return must(svc.WritePlaylist(ctx, in.Name, in.Tracks))
 		})
 
 	return srv.Run(ctx, &mcp.StdioTransport{})

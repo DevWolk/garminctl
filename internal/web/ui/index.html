@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>garminctl</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%2314161b' stroke='%23ff7a2a' stroke-width='3'/%3E%3Cpath d='M16 9v7l5 3' stroke='%23ff7a2a' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -20,18 +24,25 @@
     <nav class="nav" aria-label="Sections">
       <button class="nav-item active" data-tab="overview"><span class="nav-ico">◎</span>Overview<span class="nav-badge" id="badge-pending" hidden></span></button>
       <button class="nav-item" data-tab="settings"><span class="nav-ico">≡</span>Watch settings</button>
-      <button class="nav-item" data-tab="apps"><span class="nav-ico">◐</span>Watch face &amp; apps</button>
+      <button class="nav-item" data-tab="apps"><span class="nav-ico">◐</span>App settings</button>
+      <button class="nav-item" data-tab="installed"><span class="nav-ico">▦</span>Apps &amp; glances</button>
+      <button class="nav-item" data-tab="health"><span class="nav-ico">♥</span>Health &amp; activities</button>
+      <button class="nav-item" data-tab="training"><span class="nav-ico">⏱</span>Workouts</button>
+      <button class="nav-item" data-tab="music"><span class="nav-ico">♪</span>Music</button>
+      <button class="nav-item" data-tab="store"><span class="nav-ico">◈</span>Store</button>
       <button class="nav-item" data-tab="updates"><span class="nav-ico">⇡</span>Updates<span class="nav-badge" id="badge-updates" hidden></span></button>
       <button class="nav-item" data-tab="cloud"><span class="nav-ico">⇅</span>Garmin Connect<span class="nav-badge" id="badge-cloud" hidden></span></button>
       <button class="nav-item" data-tab="files"><span class="nav-ico">▤</span>Files</button>
-      <div class="nav-sep">Garmin online</div>
+      <details class="nav-group" id="nav-online">
+      <summary>Garmin online</summary>
       <a class="nav-item ext" href="https://connect.garmin.com/app/home" target="garmin-connect" rel="noopener" title="Activities, health stats, cloud device settings"><span class="nav-ico">◉</span>Connect website<span class="ext-mark" aria-hidden="true">↗</span></a>
-      <a class="nav-item ext" href="https://connect.garmin.com/app/devices" target="garmin-connect" rel="noopener" title="Device settings that Garmin Connect manages and pushes back on every sync"><span class="nav-ico">◍</span>Devices in Connect<span class="ext-mark" aria-hidden="true">↗</span></a>
+      <a class="nav-item ext" href="https://connect.garmin.com/app/devices" target="garmin-connect" rel="noopener" title="Device settings that Garmin Connect manages and pushes back on every sync"><span class="nav-ico">◍</span>Connect devices<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://www.garmin.com/garmin-coach/overview/" target="garmin-coach" rel="noopener"><span class="nav-ico">⚑</span>Garmin Coach<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://apps.garmin.com/pl-PL" target="garmin-store" rel="noopener"><span class="nav-ico">◈</span>Connect IQ store<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" id="link-manual" href="https://support.garmin.com/en-US/" target="garmin-support" rel="noopener"><span class="nav-ico">?</span>Manual &amp; support<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://connect.garmin.com/status/" target="garmin-status" rel="noopener" title="Is Garmin Connect down?"><span class="nav-ico">◌</span>Garmin status<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://www.garmin.com/" target="garmin-www" rel="noopener"><span class="nav-ico">▲</span>garmin.com<span class="ext-mark" aria-hidden="true">↗</span></a>
+      </details>
     </nav>
     <div class="side-foot">
       <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Not connected</span></div>
@@ -45,21 +56,32 @@
   <main class="main">
     <section id="tab-overview" class="tab active">
       <header class="page-head">
-        <h1>Overview</h1>
-        <p class="lede">What the watch reports over USB, and what is waiting to be applied.</p>
+        <div><h1>Overview</h1><p class="lede">The watch as it is right now, today's numbers, and what is waiting to go onto it.</p></div>
+        <span class="hint" id="overview-when"></span>
       </header>
       <div id="overview-empty" class="empty">
-        <p>Plug the watch in over USB, close Garmin Express, and press <b>Connect watch</b>.</p>
+        <p>Plug the watch in over USB and press <b>Connect watch</b>. Garmin Express can stay closed; it is not needed.</p>
       </div>
-      <div id="overview" class="grid-2" hidden>
-        <div class="panel">
-          <h2>Device</h2>
-          <dl class="facts" id="facts"></dl>
+      <div id="overview" hidden>
+        <div class="hero">
+          <div class="hero-watch" id="hero-watch" title="Open the watch face settings"><div class="face" id="hero-face"></div></div>
+          <div>
+            <div class="hero-title" id="hero-model">vívoactive 5</div>
+            <div class="hero-sub" id="hero-sub"></div>
+          </div>
+          <div class="hero-state" id="hero-state"></div>
         </div>
-        <div class="panel">
-          <h2>Waiting to be applied</h2>
-          <p class="hint">Files in <code>GARMIN/NewFiles</code>. The watch reads them the moment the USB session ends: unplug it, or eject it in Windows.</p>
-          <ul class="pending" id="newfiles"><li class="muted">Loading…</li></ul>
+        <div class="tiles" id="today"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <h2>Waiting to be applied</h2>
+            <p class="hint">Files in <code>GARMIN/NewFiles</code>. The watch reads them the moment the USB session ends: unplug it, or eject it in Windows.</p>
+            <ul class="pending" id="newfiles"><li class="muted">Loading…</li></ul>
+          </div>
+          <div class="panel">
+            <h2>Latest activities</h2>
+            <ul class="acts-mini" id="recent-acts"><li class="muted">Loading…</li></ul>
+          </div>
         </div>
       </div>
     </section>
@@ -74,13 +96,14 @@
         <label class="check"><input type="checkbox" id="settings-unknown"> Show undocumented fields</label>
         <span class="legend"><span class="tag connect">Garmin Connect</span> is re-sent by Connect on every sync</span>
       </div>
+      <div class="chips jump" id="settings-jump" hidden></div>
       <div id="settings-groups"><p class="muted">Connect the watch to load settings.</p></div>
     </section>
 
     <section id="tab-apps" class="tab">
       <header class="page-head">
-        <h1>Watch face &amp; apps</h1>
-        <p class="lede">Connect IQ settings are written to the watch immediately and take effect on the next refresh of the face.</p>
+        <h1>App settings</h1>
+        <p class="lede">Settings of the Connect IQ apps on the watch. They are written to the watch immediately and take effect on the next refresh of the face.</p>
       </header>
       <div class="apps-layout">
         <div class="apps-side">
@@ -105,8 +128,120 @@
             </div>
             <input id="app-filter" type="search" placeholder="Find a setting" aria-label="Find a setting" hidden>
           </div>
+          <p class="notice" id="app-notice" hidden></p>
           <div id="app-groups"></div>
         </div>
+      </div>
+    </section>
+
+    <section id="tab-installed" class="tab">
+      <header class="page-head">
+        <h1>Apps &amp; glances</h1>
+        <p class="lede">Everything in the watch's app registry: built-in activities, glances and apps plus the Connect IQ installs. Add or hide them on the watch itself or in the Garmin Connect app; Connect IQ settings are edited under App settings.</p>
+      </header>
+      <div class="toolbar">
+        <input id="inst-filter" type="search" placeholder="Find an app, glance or activity" aria-label="Find an app, glance or activity">
+        <div class="chips" id="inst-types"></div>
+        <span class="spacer"></span><span class="hint" id="inst-status"></span>
+      </div>
+      <div class="table-wrap tall"><table class="files" id="inst-table"><thead><tr><th>Name</th><th>Kind</th><th>Source</th><th class="num">Size</th><th class="actions"></th></tr></thead><tbody><tr><td colspan="5" class="muted">Connect the watch to list apps.</td></tr></tbody></table></div>
+      <p class="hint">The list comes from the watch's own app registry, so it includes every built-in activity and glance whether or not it is in your activity list or glance loop; the registry does not say which ones are.</p>
+    </section>
+
+    <section id="tab-health" class="tab">
+      <header class="page-head">
+        <h1>Health &amp; activities</h1>
+        <p class="lede">Daily health comes from Garmin Connect; activities are decoded from the files on the watch itself.</p>
+      </header>
+      <div class="panel">
+        <div class="toolbar tight">
+          <h2 style="margin:0">Last <select id="health-days"><option value="7">7</option><option value="14" selected>14</option><option value="30">30</option><option value="60">60</option></select> days</h2>
+          <span class="spacer"></span><span class="hint" id="health-status"></span>
+        </div>
+        <div class="charts" id="health-charts"><p class="muted">Loading…</p></div>
+        <div id="day-detail" hidden></div>
+      </div>
+      <div class="panel panel-gap">
+        <div class="toolbar tight"><h2 style="margin:0">Activities on the watch</h2><span class="spacer"></span><span class="hint" id="acts-status"></span></div>
+        <div class="acts-layout">
+          <div class="table-wrap tall"><table class="files acts" id="acts-table"><thead><tr><th>Date</th><th>Sport</th><th class="num">Distance</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th class="num">kcal</th></tr></thead><tbody><tr><td colspan="7" class="muted">Loading…</td></tr></tbody></table></div>
+          <div id="act-detail" class="act-detail" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-training" class="tab">
+      <header class="page-head">
+        <h1>Workouts</h1>
+        <p class="lede">Describe a structured workout; it is saved in Garmin Connect and delivered to the watch over USB, or written to the watch directly without Connect.</p>
+      </header>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>New workout</h2>
+          <p class="hint">Steps end by <b>duration</b> ("10:00", "90s"), <b>distance</b> ("400m", "2km"), <b>calories</b> or the lap button. Targets: "hr 140-160", "hr zone 3", "pace 4:30-4:45" (min/km), "speed 10-12" (km/h), "cadence 170-180", "power 200-250". A repeat group is {"repeat": 4, "steps": [...]}.</p>
+          <textarea id="wk-spec" spellcheck="false" rows="16">{
+  "name": "4x400 intervals",
+  "sport": "running",
+  "steps": [
+    {"type": "warmup", "duration": "10:00"},
+    {"repeat": 4, "steps": [
+      {"type": "interval", "distance": "400m", "target": "pace 4:30-4:45"},
+      {"type": "recovery", "duration": "1:30"}
+    ]},
+    {"type": "cooldown", "duration": "5:00", "target": "hr zone 2"}
+  ]
+}</textarea>
+          <div class="toolbar tight">
+            <button class="btn primary" id="wk-create">Save in Connect and send to watch</button>
+            <button class="btn" id="wk-local">Write to watch only</button>
+            <span class="hint" id="wk-status"></span>
+          </div>
+          <div class="text" id="wk-preview"></div>
+        </div>
+        <div class="panel">
+          <h2>In Garmin Connect</h2>
+          <ul class="pending" id="wk-list"><li class="muted">Loading…</li></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-music" class="tab">
+      <header class="page-head">
+        <h1>Music</h1>
+        <p class="lede">Audio files you add over USB, sorted into Artist/Album folders from their tags, and playlists the Music app can play. Streaming apps keep their own downloads.</p>
+      </header>
+      <div class="toolbar">
+        <label class="btn primary file-btn">Add audio files<input type="file" id="music-files" accept=".mp3,.m4a,.aac,.adts,.wav,.flac,audio/*" multiple hidden></label>
+        <select id="music-folder"><option>Music</option><option>Podcasts</option><option>Audiobooks</option></select>
+        <button class="btn" id="music-playlist" disabled>Make playlist from selected</button>
+        <button class="btn danger" id="music-delete" disabled>Delete selected</button>
+        <span class="spacer"></span><span class="hint" id="music-status"></span>
+      </div>
+      <div class="grid-2">
+        <div class="table-wrap"><table class="files" id="music-table"><thead><tr><th></th><th>Artist</th><th>Album</th><th>Title</th><th class="num">Size</th></tr></thead><tbody><tr><td colspan="5" class="muted">Loading…</td></tr></tbody></table></div>
+        <div class="stack">
+          <div class="panel"><h2>Playlists</h2><ul class="pending" id="music-playlists"><li class="muted">Loading…</li></ul></div>
+          <div class="panel" id="music-providers" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-store" class="tab">
+      <header class="page-head">
+        <h1>Connect IQ store</h1>
+        <p class="lede">Watch faces, apps, widgets and data fields that fit this watch, from the store's public catalogue. Installing goes through Garmin Connect: press Download on the store page, then Sync.</p>
+      </header>
+      <div class="toolbar">
+        <input id="store-q" type="search" placeholder="Search the store" aria-label="Search the store">
+        <div class="chips" id="store-types"></div>
+        <select id="store-sort" aria-label="Sort"></select>
+      </div>
+      <div class="store-layout">
+        <div>
+          <div class="store-grid" id="store-grid"><p class="muted">Loading…</p></div>
+          <div class="toolbar"><button class="btn" id="store-more" hidden>Show more</button><span class="hint" id="store-count"></span></div>
+        </div>
+        <aside class="store-detail" id="store-detail" hidden></aside>
       </div>
     </section>
 
@@ -201,7 +336,7 @@
         <span class="spacer"></span>
         <label class="btn file-btn">Upload to this folder<input type="file" id="upload-file" hidden></label>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap tall">
         <table class="files" id="files-table">
           <thead><tr><th>Name</th><th class="num">Size</th><th>Modified</th><th></th></tr></thead>
           <tbody><tr><td colspan="4" class="muted">Connect the watch to browse.</td></tr></tbody>
@@ -217,7 +352,7 @@
   </div>
 </div>
 
-<dialog id="dlg" class="dialog">
+<dialog id="dlg" class="dialog" closedby="any" aria-labelledby="dlg-title">
   <form method="dialog">
     <h2 id="dlg-title">Confirm</h2>
     <div id="dlg-body"></div>
@@ -229,6 +364,8 @@
 </dialog>
 
 <div id="toasts" class="toasts" aria-live="polite"></div>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="face.js"></script>
 <script src="app.js"></script>
 </body>

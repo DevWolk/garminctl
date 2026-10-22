@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
+	"garminctl/internal/ciqstore"
 	"garminctl/internal/device"
 	"garminctl/internal/device/wpd"
 	"garminctl/internal/garmin"
@@ -60,6 +63,18 @@ Commands:
   cloud messages                  what Garmin Connect has queued for the watch
   cloud settings                  device settings kept by Garmin Connect
   cloud settings set K=V ...      change them (Connect then generates the settings file for the watch)
+  activities [-n N] [-wait]       activities recorded on the watch (decoded locally, cached)
+  activity FILE                   one activity with laps and a downsampled track
+  health [-days N]                daily steps, resting HR, stress, body battery, sleep (Garmin Connect)
+  health day YYYY-MM-DD           intraday heart rate, stress, body battery and sleep stages
+  workouts                        workouts stored in Garmin Connect
+  workouts create FILE.json [-send] [-local]   create from a spec (see docs); -send queues it for the watch, -local writes the FIT directly
+  workouts send ID                queue an existing Connect workout for the watch
+  music ls | music add [-folder Music] FILE... | music rm PATH | music playlist NAME TRACK...
+  store search WORDS [-type T] [-sort S]   search the Connect IQ store for this watch
+  store list [-type watchface] [-sort mostPopular]   browse by type
+  store info APP_ID               details and reviews of one store app
+  backup DIR [-skip Music,Podcasts,Audiobooks]   copy the watch's storage to a folder
   serve [-addr 127.0.0.1:8787]    run the web UI and HTTP API
   mcp                             run the MCP server on stdio
 `
@@ -139,6 +154,20 @@ func run(args []string) error {
 		return c.software(ctx, svc)
 	case "cloud":
 		return c.cloud(ctx, svc, rest)
+	case "store":
+		return c.store(ctx, svc, rest)
+	case "activities":
+		return c.activities(ctx, svc, rest)
+	case "activity":
+		return c.activity(ctx, svc, rest)
+	case "health":
+		return c.health(ctx, svc, rest)
+	case "workouts":
+		return c.workouts(ctx, svc, rest)
+	case "music":
+		return c.music(ctx, svc, rest)
+	case "backup":
+		return c.backup(ctx, svc, rest)
 	}
 	fs.Usage()
 	return fmt.Errorf("unknown command %q", cmd)
@@ -555,6 +584,428 @@ func (c *cli) software(ctx context.Context, svc *garmin.Service) error {
 	for _, p := range parts {
 		fmt.Printf("%s\t%.2f\n", p.PartNumber, p.Version)
 	}
+	return nil
+}
+
+func (c *cli) activities(ctx context.Context, svc *garmin.Service, args []string) error {
+	fs := flag.NewFlagSet("activities", flag.ContinueOnError)
+	n := fs.Int("n", 30, "how many to show")
+	wait := fs.Bool("wait", false, "decode every file before answering")
+	if err := fs.Parse(flagsFirst(args)); err != nil {
+		return err
+	}
+	list, err := svc.Activities(ctx, *wait)
+	if err != nil {
+		return err
+	}
+	if c.asJSON {
+		return c.printJSON(list)
+	}
+	for i, a := range list.Activities {
+		if i >= *n {
+			break
+		}
+		fmt.Printf("%-28s %-16s %-10s %7.2f km %8s %4d kcal  HR %3d/%3d\n", a.File, a.Start.Local().Format("2006-01-02 15:04"), a.Sport, a.Distance/1000, fmtDur(a.Timer), a.Calories, a.AvgHR, a.MaxHR)
+	}
+	if list.Pending > 0 {
+		fmt.Printf("%d of %d files still being decoded in the background; run again (or use -wait)\n", list.Pending, list.Total)
+	}
+	return nil
+}
+
+// flagsFirst moves "-flag" tokens ahead of positional arguments so that
+// "create FILE -send" parses like "create -send FILE".
+func flagsFirst(args []string) []string {
+	var flags, pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "-") && a != "-" {
+			flags = append(flags, a)
+			if !strings.Contains(a, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && isValueFlag(a) {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		pos = append(pos, a)
+	}
+	return append(flags, pos...)
+}
+
+// isValueFlag names the flags that take a value (all others are booleans).
+func isValueFlag(a string) bool {
+	switch strings.TrimLeft(a, "-") {
+	case "n", "days", "type", "sort", "page", "folder", "skip", "email", "addr", "o", "device", "root":
+		return true
+	}
+	return false
+}
+
+func fmtDur(sec float64) string {
+	d := time.Duration(sec) * time.Second
+	if d >= time.Hour {
+		return fmt.Sprintf("%d:%02d:%02d", int(d.Hours()), int(d.Minutes())%60, int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%d:%02d", int(d.Minutes()), int(d.Seconds())%60)
+}
+
+func (c *cli) activity(ctx context.Context, svc *garmin.Service, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: activity FILE")
+	}
+	d, err := svc.Activity(ctx, args[0], 1500)
+	if err != nil {
+		return err
+	}
+	if c.asJSON {
+		return c.printJSON(d)
+	}
+	fmt.Printf("%s %s %s: %.2f km in %s, %d kcal, HR %d avg / %d max, %d m up, %d points, %d laps\n", d.File, d.Start.Local().Format("2006-01-02 15:04"), d.Sport, d.Distance/1000, fmtDur(d.Timer), d.Calories, d.AvgHR, d.MaxHR, d.Ascent, len(d.Points), len(d.Laps))
+	for i, l := range d.Laps {
+		fmt.Printf("  lap %2d  %8s  %6.2f km  HR %3d\n", i+1, fmtDur(l.Elapsed), l.Distance/1000, l.AvgHR)
+	}
+	return nil
+}
+
+func (c *cli) health(ctx context.Context, svc *garmin.Service, args []string) error {
+	cloud := garmin.NewCloud(svc, gc.New(gc.DefaultStorePath()))
+	if len(args) >= 2 && args[0] == "day" {
+		d, err := cloud.Day(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(d)
+		}
+		fmt.Printf("%s: %d heart-rate samples, %d stress samples, %d body-battery samples\n", d.Date, len(d.HeartRate), len(d.Stress), len(d.BodyBattery))
+		if d.Sleep != nil {
+			fmt.Printf("sleep: deep %s, light %s, REM %s, awake %s, score %d %s\n", fmtDur(float64(d.Sleep.DeepSec)), fmtDur(float64(d.Sleep.LightSec)), fmtDur(float64(d.Sleep.RemSec)), fmtDur(float64(d.Sleep.AwakeSec)), d.Sleep.Score, d.Sleep.Quality)
+		}
+		for _, e := range d.Errors {
+			fmt.Println("warning:", e)
+		}
+		return nil
+	}
+	fs := flag.NewFlagSet("health", flag.ContinueOnError)
+	days := fs.Int("days", 14, "days to show")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rows, err := cloud.Daily(ctx, *days)
+	if err != nil {
+		return err
+	}
+	if c.asJSON {
+		return c.printJSON(rows)
+	}
+	fmt.Printf("%-10s %6s %5s %4s %6s %8s %7s %5s\n", "date", "steps", "goal", "rHR", "stress", "battery", "sleep", "kcal")
+	for _, d := range rows {
+		if d.Error != "" {
+			fmt.Printf("%-10s %s\n", d.Date, d.Error)
+			continue
+		}
+		fmt.Printf("%-10s %6d %5d %4d %6d %3d-%-3d %7s %5d\n", d.Date, d.Steps, d.StepGoal, d.RestingHR, d.AvgStress, d.BodyBatteryLow, d.BodyBatteryHigh, fmtDur(float64(d.SleepSec)), d.Calories)
+	}
+	return nil
+}
+
+func (c *cli) workouts(ctx context.Context, svc *garmin.Service, args []string) error {
+	cloud := garmin.NewCloud(svc, gc.New(gc.DefaultStorePath()))
+	if len(args) == 0 {
+		list, err := cloud.Workouts(ctx, 50)
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(list)
+		}
+		for _, w := range list {
+			fmt.Printf("%-12d %-32s %-10s %8s %s\n", w.ID, trunc(w.Name, 32), w.Sport, fmtDur(float64(w.Duration)), w.Updated)
+		}
+		return nil
+	}
+	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("workouts create", flag.ContinueOnError)
+		send := fs.Bool("send", false, "queue it for the watch through Garmin Connect")
+		local := fs.Bool("local", false, "write the FIT straight into GARMIN/NewFiles instead of Garmin Connect")
+		if err := fs.Parse(flagsFirst(args[1:])); err != nil {
+			return err
+		}
+		if fs.NArg() != 1 {
+			return errors.New("usage: workouts create FILE.json [-send] [-local]")
+		}
+		b, err := os.ReadFile(fs.Arg(0))
+		if err != nil {
+			return err
+		}
+		var spec garmin.WorkoutSpec
+		if err := json.Unmarshal(b, &spec); err != nil {
+			return fmt.Errorf("spec: %w", err)
+		}
+		if *local {
+			p, err := svc.WriteWorkoutToWatch(ctx, &spec)
+			if err != nil {
+				return err
+			}
+			fmt.Println("written to", p, "- unplug the watch; the workout appears under Training > Workouts")
+			return nil
+		}
+		wk, err := cloud.CreateWorkout(ctx, &spec)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("saved in Garmin Connect as workout %d\n", wk.ID)
+		if *send {
+			pulled, err := cloud.SendWorkout(ctx, wk.ID, wk.Name)
+			if err != nil {
+				return err
+			}
+			for _, p := range pulled {
+				fmt.Println("written to the watch:", p.Path)
+			}
+			if len(pulled) == 0 {
+				fmt.Println("queued for the watch; sync later")
+			}
+		}
+		return nil
+	case "send":
+		if len(args) < 2 {
+			return errors.New("usage: workouts send ID")
+		}
+		id, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil {
+			return err
+		}
+		pulled, err := cloud.SendWorkout(ctx, id, "")
+		if err != nil {
+			return err
+		}
+		for _, p := range pulled {
+			fmt.Println("written to the watch:", p.Path)
+		}
+		if len(pulled) == 0 {
+			fmt.Println("queued for the watch; sync later")
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown workouts command %q", args[0])
+}
+
+func (c *cli) music(ctx context.Context, svc *garmin.Service, args []string) error {
+	if len(args) == 0 {
+		args = []string{"ls"}
+	}
+	switch args[0] {
+	case "ls":
+		lib, err := svc.Music(ctx)
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(lib)
+		}
+		for _, t := range lib.Tracks {
+			fmt.Printf("%-60s %6.1f MB\n", t.Path, float64(t.Size)/1e6)
+		}
+		fmt.Printf("%d tracks, %.1f MB\n", len(lib.Tracks), float64(lib.Bytes)/1e6)
+		for _, p := range lib.Playlists {
+			fmt.Printf("playlist %s: %d tracks\n", p.Name, len(p.Tracks))
+		}
+		for _, p := range lib.Providers {
+			fmt.Printf("%s v%d keeps %.1f MB of downloads in its protected cache (hidden from USB)\n", p.Name, p.Version, float64(p.CacheBytes)/1e6)
+		}
+		return nil
+	case "add":
+		fs := flag.NewFlagSet("music add", flag.ContinueOnError)
+		folder := fs.String("folder", "Music", "Music, Podcasts or Audiobooks")
+		if err := fs.Parse(flagsFirst(args[1:])); err != nil {
+			return err
+		}
+		for _, f := range fs.Args() {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				return err
+			}
+			t, err := svc.AddTrack(ctx, *folder, filepath.Base(f), data)
+			if err != nil {
+				return err
+			}
+			fmt.Println("added", t.Path)
+		}
+		return nil
+	case "rm":
+		for _, p := range args[1:] {
+			if err := svc.RemoveTrack(ctx, p); err != nil {
+				return err
+			}
+			fmt.Println("removed", p)
+		}
+		return nil
+	case "playlist":
+		if len(args) < 3 {
+			return errors.New("usage: music playlist NAME TRACK...")
+		}
+		pl, err := svc.WritePlaylist(ctx, args[1], args[2:])
+		if err != nil {
+			return err
+		}
+		fmt.Println("written", pl.Path)
+		return nil
+	}
+	return fmt.Errorf("unknown music command %q", args[0])
+}
+
+func (c *cli) store(ctx context.Context, svc *garmin.Service, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: store search WORDS | store list | store info APP_ID")
+	}
+	dx, err := svc.DeviceXML(ctx)
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "info":
+		if len(args) < 2 {
+			return errors.New("usage: store info APP_ID")
+		}
+		d, err := svc.StoreApp(ctx, dx.PartNumber, args[1])
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(d)
+		}
+		fmt.Printf("%s by %s (%s)\n", d.Name, d.Developer, d.Type)
+		fmt.Printf("version %s (internal %d), %.1f★ from %d reviews, %d downloads, %s\n", d.Version, d.InternalVersion, d.Rating, d.ReviewCount, d.Downloads, ifEmpty(d.Price, "free"))
+		if d.Installed {
+			fmt.Printf("installed on the watch: v%d%s\n", d.InstalledVersion, map[bool]string{true: " (update available)", false: ""}[d.UpdateAvailable])
+		}
+		fmt.Println(d.StoreURL)
+		fmt.Println()
+		fmt.Println(d.Description)
+		if d.WhatsNew != "" {
+			fmt.Println("\nWhat's new:\n" + d.WhatsNew)
+		}
+		for _, r := range d.Reviews {
+			fmt.Printf("  %d★ %s: %s\n", r.Rating, r.Reviewer, r.Text)
+		}
+		return nil
+	case "search", "list":
+		fs := flag.NewFlagSet("store "+args[0], flag.ContinueOnError)
+		typ := fs.String("type", "", "watchface, watch-app, widget, datafield, audio-content-provider-app")
+		sort := fs.String("sort", "", "mostPopular, highestRated, mostRecent, trending")
+		page := fs.Int("page", 0, "page number")
+		var words []string
+		for _, a := range args[1:] {
+			if strings.HasPrefix(a, "-") {
+				break
+			}
+			words = append(words, a)
+		}
+		if err := fs.Parse(args[1+len(words):]); err != nil {
+			return err
+		}
+		view, err := svc.BrowseStore(ctx, dx.PartNumber, ciqstore.StoreQuery{Keywords: strings.Join(words, " "), Type: *typ, Sort: *sort, Page: *page, PageSize: 24})
+		if err != nil {
+			return err
+		}
+		if c.asJSON {
+			return c.printJSON(view)
+		}
+		for _, a := range view.Apps {
+			state := ""
+			if a.UpdateAvailable {
+				state = "  [update available]"
+			} else if a.Installed {
+				state = "  [installed]"
+			}
+			fmt.Printf("%-36s %-24s %-10s %3.1f★(%d) %7d dl  %-10s %s%s\n", a.ID, trunc(a.Name, 24), a.Type, a.Rating, a.ReviewCount, a.Downloads, ifEmpty(a.Price, "free"), a.Developer, state)
+		}
+		if view.Total >= 0 {
+			fmt.Printf("%d results in total\n", view.Total)
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown store command %q", args[0])
+}
+
+func ifEmpty(s, d string) string {
+	if s == "" {
+		return d
+	}
+	return s
+}
+
+func trunc(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
+}
+
+func (c *cli) backup(ctx context.Context, svc *garmin.Service, args []string) error {
+	fs := flag.NewFlagSet("backup", flag.ContinueOnError)
+	skip := fs.String("skip", "Music,Podcasts,Audiobooks", "comma-separated top-level folders to leave out")
+	if err := fs.Parse(flagsFirst(args)); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: backup DIR")
+	}
+	dest := fs.Arg(0)
+	skipSet := map[string]bool{}
+	for _, s := range strings.Split(*skip, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			skipSet[strings.ToLower(s)] = true
+		}
+	}
+	files, bytes := 0, 0
+	var walk func(dir string) error
+	walk = func(dir string) error {
+		entries, err := svc.Device().List(ctx, dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			p := e.Name
+			if dir != "" {
+				p = dir + "/" + e.Name
+			}
+			if dir == "" && skipSet[strings.ToLower(e.Name)] {
+				continue
+			}
+			if e.Dir {
+				if err := walk(p); err != nil {
+					return err
+				}
+				continue
+			}
+			data, err := svc.Device().Read(ctx, p)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "skip %s: %v\n", p, err)
+				continue
+			}
+			out := filepath.Join(dest, filepath.FromSlash(p))
+			if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(out, data, 0o644); err != nil {
+				return err
+			}
+			files++
+			bytes += len(data)
+			if !c.asJSON {
+				fmt.Printf("  %s (%d bytes)\n", p, len(data))
+			}
+		}
+		return nil
+	}
+	if err := walk(""); err != nil {
+		return err
+	}
+	fmt.Printf("backed up %d files, %.1f MB, to %s\n", files, float64(bytes)/1e6, dest)
 	return nil
 }
 

@@ -44,3 +44,29 @@ func TestParseDeviceXML(t *testing.T) {
 		t.Fatalf("expected many data types, got %d", len(d.DataTypes))
 	}
 }
+
+func TestParseDeviceXMLApps(t *testing.T) {
+	b, err := os.ReadFile("testdata/GarminDevice.xml")
+	if err != nil {
+		t.Skip("no fixture")
+	}
+	d, err := ParseDeviceXML(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Apps) == 0 {
+		t.Fatal("no apps parsed from Extensions/IQAppExt/Apps")
+	}
+	var provider *XMLApp
+	for i := range d.Apps {
+		if d.Apps[i].Type == AudioProviderType {
+			provider = &d.Apps[i]
+		}
+	}
+	if provider == nil {
+		t.Fatalf("no audio provider among %d apps", len(d.Apps))
+	}
+	if provider.Name == "" || provider.MediaCacheBytes <= 0 {
+		t.Fatalf("provider %+v lacks name or cache size", *provider)
+	}
+}

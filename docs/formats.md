@@ -123,12 +123,32 @@ to the page, and on save the page's `.../binary` endpoint returns a new
 fetches and parses that page (installed version first, then the store's
 latest) and caches the result in `~/.cache/garminctl/appsettings/`.
 
+The page exists only for apps that ship a `settings.xml`. For the others it
+answers 404 (verified 2026-10-22 for YouTube Music, the Connect IQ Store app
+and Komoot). YouTube Music still has a `.SET` with its internal properties
+(`SYNC_PAGE_SIZE`, `syncType`, `BASE_YMCA_URL`, `EPISODE_STREAM_FORMAT`,
+`BASE_OAUTH_URL`), which the web UI shows read-only with a notice; the Store
+app and Komoot have no `.SET` at all. `app-settings` on the CLI can still
+write raw values for such apps.
+
 ## Installed apps (OUT.BIN)
 
 Protobuf: root field 3 -> field 2 -> repeated field 3 `App { 1: 16-byte id,
 2: list type (1 app, 2 glance, 3 watch face, 7 music provider, 8 activity),
-3: name, 4: enabled, 5: version, 6: file name, 7: size, 8: native app id }`.
-Built-in apps use ids like `c0ffee15-600d-20d9-...`.
+3: name, 4: flag, 5: version, 6: file name, 7: size, 8: native app id }`.
+Built-in apps use ids like `c0ffee15-600d-20d9-...`. The user's watch lists
+139 entries (64 activities, 33 glances, 40 apps, the watch face, YouTube
+Music); the registry has no "in the activity list / glance loop" marker.
+
+Field 4 is exposed as `enabled` but does not mean "visible": on 2026-10-22
+it was clear for Walk, Boxing, Yoga, Strength, Bike, Pool Swim, Komoot
+(activities the user has in his list) and for the Steps, Weather, Heart
+Rate, Body Battery, Stress glances, while set for Run, Treadmill, Baseball,
+Cricket, Archery, the Last Run/Ride/Swim glances and all Connect IQ apps
+(Easy+, Hydration, Connect IQ Store, YouTube Music). The pattern fits
+"removed from the user's list" for built-in entries, which is why the
+Apps & glances tab does not show the bit; confirm against the watch before
+renaming it.
 
 ## Software updates (OMT)
 
@@ -158,6 +178,68 @@ tool detects updates and links to the store. Express installs apps by writing
 
 Garmin Connect (`connect.garmin.com`) sends `x-frame-options: deny` and
 redirects to SSO, so the web UI links to it in a new tab instead of embedding.
+
+## Health and workouts (Garmin Connect)
+
+With the session from `internal/gc`, these connectapi paths are used (all
+verified live on 2026-10-22): `GET /usersummary-service/usersummary/daily/<displayName>?calendarDate=D`
+(totalSteps, dailyStepGoal, restingHeartRate, min/maxHeartRate,
+averageStressLevel, bodyBatteryHighest/LowestValue, sleepingSeconds,
+totalKilocalories, activeKilocalories, floorsAscended, moderate/vigorous
+intensity minutes), `GET /wellness-service/wellness/dailyHeartRate/<displayName>?date=D`
+(`heartRateValues[[ms, bpm]]`), `GET /wellness-service/wellness/dailyStress/D`
+(`stressValuesArray[[ms, level]]`, `bodyBatteryValuesArray[[ms, status, level, …]]`),
+`GET /wellness-service/wellness/dailySleepData/<displayName>?date=D&nonSleepBufferMinutes=60`
+(`dailySleepDTO` with stage seconds and `sleepScores.overall`, `sleepLevels[{startGMT, activityLevel}]`),
+`GET /workout-service/workouts?start&limit&myWorkoutsOnly=true`,
+`POST /workout-service/workout` (Connect workout JSON; answers `workoutId`),
+`DELETE /workout-service/workout/<id>`, and the device-message push
+`POST /device-service/devicemessage/messages` with
+`[{deviceId, messageUrl: "workout-service/workout/FIT/<id>", messageType: "workouts", messageName, priority: 1, fileType: "FIT", metaDataId: <id>, groupName: null}]`,
+after which the queue holds the workout FIT. `displayName` is the opaque id
+from `/userprofile-service/socialProfile`.
+
+Workout FIT (type 5): `workout` (sport, sub_sport, num_valid_steps,
+wkt_name) and `workout_step` messages: duration_type time=0 (ms),
+distance=1 (cm), calories=4, open=5, repeat_until_steps_cmplt=6
+(duration_value = index of the first step of the loop, target_value =
+repetitions); target_type speed=0 (custom low/high in mm/s), heart_rate=1
+(target_value = zone, or 0 with custom low/high = bpm + 100), open=2,
+cadence=3, power=4 (custom = watts + 1000); intensity active=0, rest=1,
+warmup=2, cooldown=3, recovery=4, interval=5. Connect's own file for the
+same spec matched this layout field for field.
+
+## Connect IQ store (public website API)
+
+`https://apps.garmin.com/api/appsLibraryExternalServices/api/asw` answers
+without authentication: `GET /deviceTypes` (id, partNumber, name; the
+vívoactive 5 is id 294), `GET /apps?appType=watchface|watch-app|widget|datafield|audio-content-provider-app&partNumber=…&sortType=mostPopular|highestRated|mostRecent|trending&startPageIndex=N&pageSize=N&countryCode=US`
+(array of records), `GET /apps/keywords?keywords=…&startPageIndex=N&pageSize=N&countryCode=US&locale=en-US`
+(`{totalCount, apps[], appTypeNames}`), `GET /apps/<id>?countryCode=US`
+(full record: `appLocalizations[{locale,name,description,whatsNew}]`,
+`latestExternalVersion`, `latestInternalVersion`, `averageRating`,
+`reviewCount`, `downloadCount`, `pricing.salePrice.formattedPrice`,
+`fileSizeInfo.byteCountByDeviceTypeId`, `settingsAvailabilityInfo`,
+`permissions`, `compatibleDevicePartNumbers`, `hasTrialMode`), and
+`GET /apps/<id>/reviews?pageSize=N&startPageIndex=0`. Record `typeId` is
+1 watchface, 2 app, 3 widget, 4 datafield, 5 music (not the device's OUT.BIN
+numbering). Icons: `https://services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/icon/<iconFileId>`
+(public PNG); the screenshot URL pattern was not found. `startPageIndex` is
+a record offset. Implemented in `internal/ciqstore/store.go`.
+
+The vívoactive 5 does not list `GARMIN/APPS/MEDIA` over MTP (the PRG files
+of installed apps are invisible, like on the fēnix 8), so app binaries
+cannot be written over USB from here; installs go through Garmin Connect
+and the phone.
+
+Audio content provider apps live in the same hidden area. The device XML's
+`Extensions/IQAppExt/Apps` list gives each Connect IQ app its
+`AppType`; providers (`audio-content-provider-app`, e.g. YouTube Music) add
+`<MediaCacheSize>` in bytes, the size of their DRM download cache
+(104 005 632 B for the user's 15 YouTube Music tracks on 2026-10-22).
+`Music/`, `Podcasts` and `Audiobooks` hold only files the user copies, so
+provider downloads cannot be listed, copied or deleted over MTP; the Music
+tab, `music ls` and `music_list` report them as "providers" by size only.
 
 ## Garmin Connect sync (what Express does with a login)
 
