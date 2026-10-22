@@ -4,5 +4,3 @@ bin/
 .idea/
 dist/
 coverage.out
-# raw Easy+ design notes and saved store pages; distilled into docs/easyplus-theme.md
-garmin-easyplus/
