@@ -139,7 +139,7 @@ window.EasyFace = (() => {
       if (t) {
         const fg = '#' + t[0], bg = '#' + t[1];
         const dim = luminance(bg) > .5 ? '#999999' : '#555555';
-        Object.assign(p, { bg, hour: fg, hour2: null, min: fg, min2: null, metric: fg, icon: fg, lines: dim, linesBg: 'transparent', bar1: fg, bar1b: dim, bar2: fg, bar2b: dim, spot: fg });
+        Object.assign(p, { bg, hour: fg, hour2: null, min: fg, min2: null, metric: fg, icon: fg, lines: fg, linesBg: 'transparent', bar1: fg, bar1b: dim, bar2: fg, bar2b: dim, spot: fg });
         p.perMetric = () => fg; p.perIcon = () => fg;
       }
     }
@@ -154,11 +154,14 @@ window.EasyFace = (() => {
     return `M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
   }
 
-  // Field slots: angle (deg, 0 = right, counter-clockwise), text rotation, anchor.
+  // Field slots on the round layout, measured from photos of the watch: every
+  // value stays upright; the icon sits on the side nearer the time (below the
+  // value in the upper half and beside it on the left/right, above the value
+  // in the lower half). Offsets from the centre in pixels, y down.
   const SLOTS = {
-    1: { a: 90, rot: 0, rt: 152, ri: 112 }, 2: { a: 45, rot: 45, rt: 155, ri: 116 }, 3: { a: 0, rot: 0, rt: 155, ri: 118 },
-    4: { a: -45, rot: -45, rt: 155, ri: 116 }, 5: { a: -90, rot: 0, rt: 152, ri: 112 }, 6: { a: -135, rot: 45, rt: 155, ri: 116 },
-    7: { a: 180, rot: 0, rt: 155, ri: 118 }, 8: { a: 135, rot: -45, rt: 155, ri: 116 },
+    1: { tx: 0, ty: -150, ix: 0, iy: -118 }, 2: { tx: 90, ty: -118, ix: 82, iy: -84 }, 3: { tx: 138, ty: -34, ix: 138, iy: 2 },
+    4: { tx: 97, ty: 98, ix: 92, iy: 62 }, 5: { tx: 0, ty: 152, ix: 0, iy: 118 }, 6: { tx: -97, ty: 98, ix: -92, iy: 62 },
+    7: { tx: -138, ty: -34, ix: -138, iy: 2 }, 8: { tx: -90, ty: -118, ix: -82, iy: -84 },
   };
 
   function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -215,9 +218,9 @@ window.EasyFace = (() => {
       const w = Math.min(5, Math.max(1, Number(v.lines_width) || 2));
       for (let k = 0; k < 8; k++) {
         const a = 22.5 + 45 * k;
-        const [x0, y0] = polar(a, 92), [x1, y1] = polar(a, 196);
-        if (p.linesBg !== 'transparent') parts.push(`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${p.linesBg}" stroke-width="${w + 2}" stroke-linecap="round"/>`);
-        parts.push(`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${p.lines}" stroke-width="${w}" stroke-linecap="round"/>`);
+        const [x0, y0] = polar(a, 96), [x1, y1] = polar(a, 196);
+        if (p.linesBg !== 'transparent') parts.push(`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${p.linesBg}" stroke-width="${w + 4}" stroke-linecap="butt"/>`);
+        parts.push(`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${p.lines}" stroke-width="${w}" stroke-linecap="butt"/>`);
       }
     }
 
@@ -228,12 +231,12 @@ window.EasyFace = (() => {
         const fill = BAR_FILL[type];
         if (fill === null || fill === undefined) continue;
         const main = side === '1' ? p.bar1 : p.bar2, second = side === '1' ? p.bar1b : p.bar2b;
-        const centre = side === '1' ? 180 : 0, span = 32, segs = 10, r = 112;
+        const centre = side === '1' ? 180 : 0, span = 33, segs = 5, r = 97;
         for (let i = 0; i < segs; i++) {
-          const a0 = centre - span + (2 * span) * i / segs + 1.2, a1 = centre - span + (2 * span) * (i + 1) / segs - 1.2;
+          const a0 = centre - span + (2 * span) * i / segs + 1.6, a1 = centre - span + (2 * span) * (i + 1) / segs - 1.6;
           const filled = side === '1' ? i < Math.round(fill * segs) : i >= segs - Math.round(fill * segs);
           const lit = side === '1' ? filled : filled;
-          parts.push(`<path d="${arcPath(r, side === '1' ? a0 : a0, side === '1' ? a1 : a1)}" stroke="${lit ? main : second}" stroke-width="12" fill="none" data-key="bar${side}${sfx}" class="face-hit"/>`);
+          parts.push(`<path d="${arcPath(r, side === '1' ? a0 : a0, side === '1' ? a1 : a1)}" stroke="${lit ? main : second}" stroke-width="14" fill="none" data-key="bar${side}${sfx}" class="face-hit"/>`);
         }
       }
     }
@@ -248,12 +251,13 @@ window.EasyFace = (() => {
       const stroke = f.outline ? ` fill="none" stroke="${fill}" stroke-width="3"` : ` fill="${fill}"`;
       return `<text x="${C}" y="${y}" font-size="98" font-weight="${f.weight}" font-stretch="condensed" ${f.italic ? 'font-style="italic"' : ''} font-family="${timeFont}" text-anchor="middle" dominant-baseline="central" letter-spacing="-2"${stroke}${dimAod} data-key="${id === 'gh' ? 't_font' : 'm_font'}" class="face-hit">${txt}</text>`;
     }
-    parts.push(timeText(hh, 149, hf, p.hour, p.hour2, 'gh'));
-    parts.push(timeText(mm, 249, mf, p.min, p.min2, 'gm'));
+    parts.push(timeText(hh, 158, hf, p.hour, p.hour2, 'gh'));
+    parts.push(timeText(mm, 232, mf, p.min, p.min2, 'gm'));
 
     // Fields.
     const visible = (i) => aod >= 3 || (aod === 2 && (i === 3 || i === 7));
-    const base = 32 * scale;
+    const base = 30 * scale;
+    const metricFont = `'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif`;
     for (let i = 1; i <= 8; i++) {
       if (!visible(i)) continue;
       const key = 'field' + i + sfx;
@@ -271,18 +275,16 @@ window.EasyFace = (() => {
       }
       let iconCol = ic;
       if (m.attention && p.attention) iconCol = p.attention;
-      const s = SLOTS[layout === 2 ? i : i];
+      const s = SLOTS[i];
       const fs = (v.metrics_even ? base : base * (String(text).length > 5 ? 0.82 : 1));
-      let [tx, ty] = polar(s.a, s.rt), [ix, iy] = polar(s.a, s.ri);
-      if (layout === 2) { // classic: a 3x3 grid, no rotation
+      let tx = C + s.tx, ty = C + s.ty, ix = C + s.ix, iy = C + s.iy;
+      if (layout === 2) { // classic: a 3x3 grid
         const grid = { 1: [C, 48], 2: [C + 118, 92], 3: [C + 135, C], 4: [C + 118, 298], 5: [C, 342], 6: [C - 118, 298], 7: [C - 135, C], 8: [C - 118, 92] };
         [tx, ty] = grid[i]; ix = tx; iy = ty - fs * 0.95;
-        if (i === 5) { iy = ty - fs * 0.95; }
       }
-      const rot = layout === 2 ? 0 : s.rot;
       parts.push(`<g data-key="${key}" class="face-hit"><title>Field ${i}: ${esc(opts.labelFor ? opts.labelFor(key, id) : id)}</title>`);
       parts.push(iconSvg(iconName, ix, iy, 30 * scale, iconCol, iconText));
-      parts.push(`<text x="${tx}" y="${ty}" transform="rotate(${rot} ${tx} ${ty})" font-size="${fs}" font-weight="600" fill="${mc}" text-anchor="middle" dominant-baseline="central" font-family="${timeFont}">${esc(text)}</text>`);
+      parts.push(`<text x="${tx}" y="${ty}" font-size="${fs}" font-weight="700" fill="${mc}" text-anchor="middle" dominant-baseline="central" font-family="${metricFont}">${esc(text)}</text>`);
       parts.push('</g>');
     }
     return wrap(parts.join(''), defs, opts);

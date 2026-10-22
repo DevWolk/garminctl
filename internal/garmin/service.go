@@ -23,6 +23,7 @@ type Service struct {
 	mu      sync.Mutex
 	cache   map[string][]byte
 	schemas map[string]*ciqstore.Schema
+	gen     int // device reconnect count the cache belongs to
 }
 
 // New wraps a device.
@@ -39,7 +40,18 @@ func (s *Service) Profile() *fit.Profile { return s.profile }
 // Knowledge returns the notes about undocumented fields.
 func (s *Service) Knowledge() *Knowledge { return s.know }
 
+// reconnecter is implemented by devices that reopen themselves after an unplug.
+type reconnecter interface{ Reconnects() int }
+
 func (s *Service) read(ctx context.Context, p string, cached bool) ([]byte, error) {
+	if r, ok := s.dev.(reconnecter); ok {
+		s.mu.Lock()
+		if g := r.Reconnects(); g != s.gen {
+			s.cache = map[string][]byte{} // the watch was replugged; it may have rewritten its files
+			s.gen = g
+		}
+		s.mu.Unlock()
+	}
 	if cached {
 		s.mu.Lock()
 		b, ok := s.cache[strings.ToLower(p)]

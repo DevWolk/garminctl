@@ -243,8 +243,10 @@ func Devices(ctx context.Context) ([]device.Info, error) {
 
 // Device is an opened MTP device.
 type Device struct {
-	bridge *Bridge
-	info   device.Info
+	mu         sync.Mutex
+	bridge     *Bridge
+	info       device.Info
+	reconnects int
 }
 
 // Open connects to the device with the given ID. An empty ID selects the
@@ -289,8 +291,63 @@ func Open(ctx context.Context, id string) (*Device, error) {
 
 func (d *Device) Info() device.Info { return d.info }
 
+// Reconnects counts how often the device was reopened; callers use it to
+// drop caches after the watch was unplugged and plugged back in.
+func (d *Device) Reconnects() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.reconnects
+}
+
+// isStale reports errors that mean the device object is gone: the watch was
+// unplugged (Windows shuts the object down) or the bridge process died.
+func isStale(err error) bool {
+	if err == nil || errors.Is(err, device.ErrNotFound) {
+		return false
+	}
+	m := err.Error()
+	return strings.Contains(m, "0x802A0002") || strings.Contains(m, "Shutdown was already called") ||
+		strings.Contains(m, "0x8007048F") || strings.Contains(m, "is not connected") ||
+		strings.Contains(m, "0x800706BA") || strings.Contains(m, "0x8007001F") ||
+		strings.Contains(m, "bridge closed") || strings.Contains(m, "bridge write") || strings.Contains(m, "bridge exited")
+}
+
+// call runs one bridge op; when the device object turned out to be stale it
+// reopens the same watch once and retries.
+func (d *Device) call(ctx context.Context, req map[string]any) (*response, error) {
+	d.mu.Lock()
+	b := d.bridge
+	d.mu.Unlock()
+	resp, err := b.Call(ctx, cloneReq(req))
+	if !isStale(err) {
+		return resp, err
+	}
+	d.mu.Lock()
+	if d.bridge == b { // nobody else reopened it yet
+		_ = b.Close()
+		fresh, oerr := Open(ctx, d.info.ID)
+		if oerr != nil {
+			d.mu.Unlock()
+			return nil, fmt.Errorf("the watch connection was lost and could not be reopened: %w", oerr)
+		}
+		d.bridge = fresh.bridge
+		d.reconnects++
+	}
+	b = d.bridge
+	d.mu.Unlock()
+	return b.Call(ctx, cloneReq(req))
+}
+
+func cloneReq(req map[string]any) map[string]any {
+	c := make(map[string]any, len(req)+1)
+	for k, v := range req {
+		c[k] = v
+	}
+	return c
+}
+
 func (d *Device) List(ctx context.Context, path string) ([]device.Entry, error) {
-	resp, err := d.bridge.Call(ctx, map[string]any{"op": "list", "path": path})
+	resp, err := d.call(ctx, map[string]any{"op": "list", "path": path})
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +358,7 @@ func (d *Device) List(ctx context.Context, path string) ([]device.Entry, error) 
 }
 
 func (d *Device) Stat(ctx context.Context, path string) (device.Entry, error) {
-	resp, err := d.bridge.Call(ctx, map[string]any{"op": "stat", "path": path})
+	resp, err := d.call(ctx, map[string]any{"op": "stat", "path": path})
 	if err != nil {
 		return device.Entry{}, err
 	}
@@ -312,7 +369,7 @@ func (d *Device) Stat(ctx context.Context, path string) (device.Entry, error) {
 }
 
 func (d *Device) Read(ctx context.Context, path string) ([]byte, error) {
-	resp, err := d.bridge.Call(ctx, map[string]any{"op": "read", "path": path})
+	resp, err := d.call(ctx, map[string]any{"op": "read", "path": path})
 	if err != nil {
 		return nil, err
 	}
@@ -320,18 +377,22 @@ func (d *Device) Read(ctx context.Context, path string) ([]byte, error) {
 }
 
 func (d *Device) Write(ctx context.Context, path string, data []byte) error {
-	_, err := d.bridge.Call(ctx, map[string]any{"op": "write", "path": path, "b64": base64.StdEncoding.EncodeToString(data)})
+	_, err := d.call(ctx, map[string]any{"op": "write", "path": path, "b64": base64.StdEncoding.EncodeToString(data)})
 	return err
 }
 
 func (d *Device) Delete(ctx context.Context, path string) error {
-	_, err := d.bridge.Call(ctx, map[string]any{"op": "delete", "path": path})
+	_, err := d.call(ctx, map[string]any{"op": "delete", "path": path})
 	return err
 }
 
 func (d *Device) Mkdir(ctx context.Context, path string) error {
-	_, err := d.bridge.Call(ctx, map[string]any{"op": "mkdir", "path": path})
+	_, err := d.call(ctx, map[string]any{"op": "mkdir", "path": path})
 	return err
 }
 
-func (d *Device) Close() error { return d.bridge.Close() }
+func (d *Device) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.bridge.Close()
+}
