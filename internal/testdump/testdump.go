@@ -5,7 +5,6 @@ package testdump
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -15,12 +14,7 @@ import (
 func Root(tb testing.TB) string {
 	tb.Helper()
 
-	_, self, _, ok := runtime.Caller(0)
-	if !ok {
-		tb.Fatal("testdump: cannot locate the repository")
-	}
-
-	internal := filepath.Dir(filepath.Dir(self))
+	internal := filepath.Join(repositoryRoot(tb), "internal")
 	root := tb.TempDir()
 
 	for _, d := range []string{"Apps", "Settings", "Activity", "Music"} {
@@ -45,4 +39,28 @@ func Root(tb testing.TB) string {
 	}
 
 	return root
+}
+
+// Locate fixtures from the test's working directory, including when a test
+// binary was cross-compiled in Docker and runs on a Windows host.
+func repositoryRoot(tb testing.TB) string {
+	tb.Helper()
+
+	dir, err := os.Getwd()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	for {
+		if info, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !info.IsDir() {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			tb.Fatal("testdump: cannot locate the repository from the working directory")
+		}
+
+		dir = parent
+	}
 }

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/hostexec"
 	"github.com/DevWolk/garminctl/internal/paths"
 )
 
@@ -136,7 +137,8 @@ func Start(ctx context.Context) (*Bridge, error) {
 
 	// The bridge outlives ctx (which only bounds the start-up); Close stops it.
 	//nolint:gosec // argv is fixed: ps is powershell.exe as found by PowerShellPath, sp our script file
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", sp)
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), ps, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", sp)
+	hostexec.HideConsole(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -295,12 +297,34 @@ func Devices(ctx context.Context) ([]device.Info, error) {
 		return nil, err
 	}
 
-	resp, err := b.call(ctx, map[string]any{"op": "devices"})
+	list, err := b.devices(ctx)
 	if err != nil {
 		return nil, errors.Join(err, b.Close())
 	}
 
-	return resp.Devices, b.Close()
+	return list, b.Close()
+}
+
+// devices asks the bridge which portable devices Windows sees.
+func (b *Bridge) devices(ctx context.Context) ([]device.Info, error) {
+	resp, err := b.call(ctx, map[string]any{"op": "devices"})
+	if err != nil {
+		return nil, err
+	}
+
+	return trimInfo(resp.Devices), nil
+}
+
+// trimInfo trims the names Windows reports, in place. A USB drive reports
+// its vendor padded with spaces ("TUF     "). IDs are kept as they are,
+// because -device matches them exactly.
+func trimInfo(list []device.Info) []device.Info {
+	for i := range list {
+		d := &list[i]
+		d.Name, d.Manufacturer, d.Description = strings.TrimSpace(d.Name), strings.TrimSpace(d.Manufacturer), strings.TrimSpace(d.Description)
+	}
+
+	return list
 }
 
 // Device is an opened MTP device.
@@ -318,42 +342,20 @@ var (
 )
 
 // Open connects to the device with the given ID. An empty ID selects the
-// first Garmin device, or the only device present.
+// first Garmin device and nothing else; see pick.
 func Open(ctx context.Context, id string) (*Device, error) {
 	b, err := Start(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := b.call(ctx, map[string]any{"op": "devices"})
+	list, err := b.devices(ctx)
 	if err != nil {
 		return nil, errors.Join(err, b.Close())
 	}
 
-	var info device.Info
-
-	for _, d := range resp.Devices {
-		if id != "" && d.ID == id {
-			info = d
-			break
-		}
-
-		if id == "" && (strings.EqualFold(d.Manufacturer, "Garmin") || strings.Contains(strings.ToLower(d.ID), "vid_091e")) {
-			info = d
-			break
-		}
-	}
-
-	if info.ID == "" && id == "" && len(resp.Devices) == 1 {
-		info = resp.Devices[0]
-	}
-
-	if info.ID == "" {
-		err := fmt.Errorf("device %q not found among %d portable devices", id, len(resp.Devices))
-		if len(resp.Devices) == 0 {
-			err = errors.New("no portable device connected; plug the watch in over USB")
-		}
-
+	info, err := pick(list, id)
+	if err != nil {
 		return nil, errors.Join(err, b.Close())
 	}
 
@@ -362,6 +364,50 @@ func Open(ctx context.Context, id string) (*Device, error) {
 	}
 
 	return &Device{bridge: b, info: info}, nil
+}
+
+// pick chooses the device to open from what Windows lists. An explicit id
+// must match exactly. An empty id takes the first Garmin device, recognised
+// by its manufacturer or by USB vendor 091E in the device path. No other
+// device qualifies: Windows lists phones and USB drives through the same
+// API, and a USB drive must not be taken for the watch.
+func pick(devices []device.Info, id string) (device.Info, error) {
+	if len(devices) == 0 {
+		return device.Info{}, errors.New("no portable device connected; plug the watch in over USB")
+	}
+
+	for _, d := range devices {
+		if matches(d, id) {
+			return d, nil
+		}
+	}
+
+	if id != "" {
+		return device.Info{}, fmt.Errorf("device %q not found among %d portable devices", id, len(devices))
+	}
+
+	names := make([]string, 0, len(devices))
+	for _, d := range devices {
+		names = append(names, describe(d))
+	}
+
+	return device.Info{}, fmt.Errorf("no Garmin device among %d portable device(s): %s", len(devices), strings.Join(names, ", "))
+}
+
+func matches(d device.Info, id string) bool {
+	if id != "" {
+		return d.ID == id
+	}
+
+	return strings.EqualFold(d.Manufacturer, "Garmin") || strings.Contains(strings.ToLower(d.ID), "vid_091e")
+}
+
+func describe(d device.Info) string {
+	if d.Manufacturer == "" {
+		return d.Name
+	}
+
+	return d.Name + " (" + d.Manufacturer + ")"
 }
 
 // Info implements device.Device.

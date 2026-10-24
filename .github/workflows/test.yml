@@ -26,6 +26,10 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
+      - name: Install native USB build headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+
       - name: Verify dependencies
         run: |
           go mod verify
@@ -47,3 +51,9 @@ jobs:
       - name: Test
         if: runner.os == 'Windows'
         run: go test -shuffle=on ./...
+
+  desktop:
+    name: Native packages
+    uses: ./.github/workflows/packages.yml
+    with:
+      version: v0.0.0-ci

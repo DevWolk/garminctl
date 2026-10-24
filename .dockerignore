@@ -1,0 +1,6 @@
+.git
+bin
+dist
+*.log
+.cache
+.make/options.local.mk

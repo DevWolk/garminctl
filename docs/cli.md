@@ -1,5 +1,28 @@
 # CLI reference
 
+## Global flags and device selection
+
+```sh
+garminctl [global flags] <command> [args]
+garminctl -h
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `-device ID` | Select the ID reported by `devices`. |
+| `-root DIR` | Use a directory dump or mounted watch instead of opening USB. Defaults to `GARMINCTL_ROOT` when set. |
+| `-json` | Return JSON where the command supports it. |
+
+On Windows/WSL, `devices` lists portable devices Windows sees, including phones
+and USB drives. Automatic selection opens the first device whose manufacturer
+is Garmin or whose path contains USB vendor `091E`. On native Linux, the
+libusb-enabled build lists Garmin USB devices and requires `-device ID` when
+more than one is present. IDs are specific to each transport.
+
+The portable CLI archive supports WPD on Windows/WSL and directory dumps;
+direct Linux USB needs the CLI from the DEB/RPM package or a CGO-enabled source
+build. See [installation](desktop.md).
+
 ## Commands
 
 ```sh
@@ -8,6 +31,9 @@ garminctl devices
 garminctl info
 garminctl ls GARMIN/Activity
 garminctl cat -o Settings.fit GARMIN/Settings/Settings.fit
+garminctl put local-file.bin GARMIN/NewFiles/local-file.bin
+garminctl rm GARMIN/NewFiles/local-file.bin
+garminctl mkdir GARMIN/Example
 garminctl decode GARMIN/Sports/WalkingWalk.fit
 garminctl settings
 garminctl settings -all
@@ -35,28 +61,62 @@ garminctl app-show Archery
 garminctl app-pending
 garminctl app-restore ~/.cache/garminctl/OUT.BIN-…
 garminctl autostart on
+garminctl autostart status
+garminctl autostart off
 garminctl health extras
 garminctl health history 365
 garminctl health weight 80.5
 garminctl hidden GARMIN/Apps/Media
+garminctl desktop
+garminctl serve
+garminctl serve -addr 127.0.0.1:8791 -autosync=false
 garminctl serve -autosync=false
+garminctl mcp
 garminctl store search solar face
 garminctl store list -type widget -sort mostPopular
 garminctl store info 7c993e2b-70b3-459a-bbe0-db48a89af5a8
 garminctl backup ~/garmin-backup
 garminctl cloud login
+garminctl cloud mfa 123456
 garminctl cloud status
+garminctl cloud logout
 garminctl cloud sync
+garminctl cloud messages
 garminctl cloud settings
 garminctl cloud settings set timeFormat=time_twenty_four_hr
 garminctl -root /path/to/dump info
 ```
 
-`devices` lists portable devices Windows sees. `info` reports the model, unit
-ID, firmware, and pending files. `-root DIR` operates on a directory dump
-instead of the watch. `version` prints the version the binary was built from.
+`info` reports the model, unit ID, firmware, installed entry count, pending
+files, and storage capacity/free space. `version` prints the version the binary
+was built from.
 `backup` copies the watch's storage to a local directory; music is left out by
 default.
+
+## Desktop, web server, and MCP
+
+| Command | Behavior |
+| --- | --- |
+| `garminctl desktop` | Open the installed native app; from WSL, open the Windows installation. Install Setup or a Linux package first. It takes no arguments. |
+| `garminctl serve` | Start the web UI, HTTP API, and MCP endpoint on `127.0.0.1:8787`; USB watching and automatic sync are enabled by default. |
+| `garminctl serve -addr 127.0.0.1:8791 -autosync=false` | Choose a port and disable USB watching/automatic sync. Connect manually in the UI or through an MCP tool. |
+| `garminctl mcp` | Run a separate stdio MCP server until the client disconnects. |
+| `garminctl autostart on\|off\|status` | Manage the Windows sign-in shortcut for the background `serve` process. Works from Windows or WSL; does not launch the desktop window. |
+
+The desktop window starts its own HTTP MCP endpoint at `/mcp` and shares one
+watch connection with it. Connect assistants to the URL in **AI & MCP**; see
+[MCP setup and installed-app verification](mcp.md). A separately launched
+`garminctl mcp` has its own watch connection and session history.
+
+The installed `garmin-desktop` executable accepts `-addr IP:PORT` and
+`-root DIR`; these are application flags, not arguments to `garminctl desktop`.
+`-root` also disables the automatic USB watcher. Full examples and Windows CLI
+paths are in the [desktop guide](desktop.md).
+
+Standalone CLI commands open their own USB connection. Close the desktop app
+and stop background servers before using them against the same watch. The
+`hidden` diagnostic currently requires WPD; `hidden -write-test PATH` writes
+and deletes a temporary file and is a write test.
 
 ## Settings and updates
 

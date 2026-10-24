@@ -4,12 +4,21 @@ See CLAUDE.md for the working rules. Module map:
 
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
-  `plainCommand` (no watch: devices, serve, mcp, autostart, cloud login) and
+  `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
   the `deviceCommands` table (everything else opens the device via
   `openDevice`, MTP bridge or `-root` directory, and closes it afterwards).
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
   `serve.go`, `autostart.go`.
+- `cmd/garmin-desktop`, `internal/desktop`: Wails v2 native window (build tag
+  `desktop`), owned/reused loopback backend, private-origin proxy, native Save
+  dialog and lifecycle/edit protection. `internal/devicehost` selects DirFS,
+  WPD on Windows/WSL, or native Linux MTP.
+- `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
+  transactions and filesystem operations, including Garmin's `0x9002` hidden
+  listing. Non-CGO CLI builds retain WPD/DirFS support. Linux packages include
+  the libusb-enabled CLI; the portable WSL CLI stays free of shared-library
+  dependencies. Hardware verification of the native Linux path is pending.
 - `internal/device`: `Device` interface (List/Stat/Read/Write/Delete/Mkdir).
   `DirFS` serves a directory through an `os.Root`, so watch paths cannot
   escape it. `wpd/wpd.ps1` is the PowerShell+C# bridge, `wpd/client.go` its
@@ -54,12 +63,17 @@ See CLAUDE.md for the working rules. Module map:
   repeat groups). `server_test.go` registers everything over an in-memory
   transport and calls the read tools against a dump, so a type the schema
   inferrer rejects fails the test instead of crashing `garminctl mcp`.
+  `http.go` exposes the same tools over local Streamable HTTP with bounded
+  session/tool-call metadata for the web UI's AI & MCP tab.
 
 Quality gate: `make check` (golangci-lint with `.golangci.yml`, govet
 included, race tests, govulncheck) must pass; the tools are pinned in
-`tools.mod`. `make install` rebuilds both binaries and rolls them out on
+`tools.mod`. Make targets in `.make/` use `docker/docker-compose.yml` and a
+host-UID toolchain container. `make package` builds native installers in `dist/`.
+`make install` rebuilds the CLI and desktop binaries and rolls the CLI out on
 this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
-the Windows autostart copy); `make update` pulls main first. The web and MCP servers share `garmin.Lazy` (one lazily opened
+the Windows autostart copy, keeping stopped servers stopped); `make update`
+pulls the current branch first. The web and HTTP MCP servers share `garmin.Lazy` (one lazily opened
 watch); `internal/paths` names the cache directory; tests over a dump use
 `internal/testdump`. `tools/expresswatch` is the daily Garmin Express
 release check (state in `docs/express-release.json`, workflow

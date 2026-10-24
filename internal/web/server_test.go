@@ -342,6 +342,7 @@ func TestServer_UIRoutes(t *testing.T) {
 		{"/", http.StatusOK, true},
 		{"/apps/EASY+", http.StatusOK, true},
 		{"/files/GARMIN/Settings", http.StatusOK, true},
+		{"/files/GARMIN/Activity/run.fit?view=decode", http.StatusOK, true},
 		{"/store?q=solar", http.StatusOK, true},
 		{"/app.js", http.StatusOK, false},
 		{"/nope/EASY+", http.StatusNotFound, false},
@@ -371,4 +372,95 @@ func TestServer_UIRoutes(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("manifest", func(t *testing.T) {
+		t.Parallel()
+		testUIManifest(t, ts)
+	})
+}
+
+func testUIManifest(t *testing.T, ts *httptest.Server) {
+	t.Helper()
+
+	body := getUIAsset(t, ts, "/manifest.json", "application/json")
+
+	var manifest struct {
+		ID            string `json:"id"`
+		StartURL      string `json:"start_url"`
+		Scope         string `json:"scope"`
+		Display       string `json:"display"`
+		LaunchHandler struct {
+			ClientMode string `json:"client_mode"`
+		} `json:"launch_handler"`
+		Icons []struct {
+			Src  string `json:"src"`
+			Type string `json:"type"`
+		} `json:"icons"`
+	}
+
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"id", manifest.ID, "/"},
+		{"start_url", manifest.StartURL, "/"},
+		{"scope", manifest.Scope, "/"},
+		{"display", manifest.Display, "minimal-ui"},
+		{"launch_handler", manifest.LaunchHandler.ClientMode, "focus-existing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tc.got != tc.want {
+				t.Errorf("%s = %q, want %q", tc.name, tc.got, tc.want)
+			}
+		})
+	}
+
+	if len(manifest.Icons) == 0 {
+		t.Fatal("manifest has no icons")
+	}
+
+	for _, icon := range manifest.Icons {
+		t.Run(icon.Src, func(t *testing.T) {
+			t.Parallel()
+			getUIAsset(t, ts, icon.Src, icon.Type)
+		})
+	}
+}
+
+func getUIAsset(t *testing.T, ts *httptest.Server, path, contentType string) []byte {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s: status %d, want %d", path, resp.StatusCode, http.StatusOK)
+	}
+
+	if got := resp.Header.Get("Content-Type"); got != contentType {
+		t.Errorf("%s: Content-Type = %q, want %q", path, got, contentType)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return body
 }

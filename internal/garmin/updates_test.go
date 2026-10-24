@@ -128,6 +128,8 @@ func TestInstallPRGRejectsGarbage(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	t.Cleanup(func() { _ = dfs.Close() })
+
 	svc := New(dfs)
 	if _, err := svc.InstallPRG(context.Background(), []byte("not a prg")); err == nil {
 		t.Fatal("expected rejection")

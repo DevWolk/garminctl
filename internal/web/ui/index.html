@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#14181d">
 <title>garminctl</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%2314161b' stroke='%23ff7a2a' stroke-width='3'/%3E%3Cpath d='M16 9v7l5 3' stroke='%23ff7a2a' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -33,6 +36,7 @@
       <button class="nav-item" data-tab="updates"><span class="nav-ico">⇡</span>Updates<span class="nav-badge" id="badge-updates" hidden></span></button>
       <button class="nav-item" data-tab="cloud"><span class="nav-ico">⇅</span>Garmin Connect<span class="nav-badge" id="badge-cloud" hidden></span></button>
       <button class="nav-item" data-tab="files"><span class="nav-ico">▤</span>Files</button>
+      <button class="nav-item" data-tab="ai"><span class="nav-ico">◇</span>AI &amp; MCP</button>
       <details class="nav-group" id="nav-online">
       <summary>Garmin online</summary>
       <a class="nav-item ext" href="https://connect.garmin.com/app/home" target="garmin-connect" rel="noopener" title="Activities, health stats, cloud device settings"><span class="nav-ico">◉</span>Connect website<span class="ext-mark" aria-hidden="true">↗</span></a>
@@ -382,6 +386,44 @@
           <tbody><tr><td colspan="4" class="muted">Connect the watch to browse.</td></tr></tbody>
         </table>
       </div>
+      <section class="panel panel-gap decode-panel" id="decode-panel" aria-labelledby="decode-title" hidden>
+        <div class="toolbar">
+          <h2 id="decode-title">Decoded FIT</h2>
+          <span class="spacer"></span>
+          <a class="btn small" id="decode-download" download>Download JSON</a>
+          <a class="btn small" id="decode-close">Back to folder</a>
+        </div>
+        <p class="muted" id="decode-status" role="status"></p>
+        <div id="decode-groups" class="decode-groups"></div>
+      </section>
+    </section>
+    <section class="tab" id="tab-ai">
+      <div class="page-head"><h1>AI &amp; MCP</h1><button class="btn" id="mcp-refresh">Refresh</button></div>
+      <p class="lede">Connect an AI assistant to work with your watch through garminctl. Keep garminctl running while the assistant uses it.</p>
+      <p id="mcp-status" role="status" class="muted">Loading connection details…</p>
+      <section class="panel">
+        <h2>Connect an assistant</h2>
+        <label for="mcp-endpoint">Streamable HTTP endpoint</label>
+        <div class="mcp-copy"><input id="mcp-endpoint" readonly><button class="btn small" data-mcp-copy="mcp-endpoint">Copy URL</button></div>
+        <label for="mcp-claude">Claude Code — run once in your terminal</label>
+        <div class="mcp-copy"><input id="mcp-claude" readonly><button class="btn small" data-mcp-copy="mcp-claude">Copy command</button></div>
+        <p class="hint">For other MCP clients, add an HTTP server using the endpoint above. This address is local to this computer.</p>
+      </section>
+      <section class="panel panel-gap">
+        <h2>Open sessions</h2>
+        <p class="hint">An open session may be idle. Last seen shows when the client last contacted garminctl. Client names are reported by the clients themselves.</p>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Open MCP sessions">
+          <table class="files"><thead><tr><th scope="col">Client</th><th scope="col">Version</th><th scope="col">Connected</th><th scope="col">Last seen</th></tr></thead><tbody id="mcp-clients"></tbody></table>
+        </div>
+        <details class="mcp-recent"><summary>Recent clients</summary><div id="mcp-recent" class="muted"></div></details>
+      </section>
+      <section class="panel panel-gap">
+        <h2>Recent tool calls</h2>
+        <div class="table-wrap tall" tabindex="0" role="region" aria-label="Recent MCP tool calls">
+          <table class="files"><thead><tr><th scope="col">Time</th><th scope="col">Client</th><th scope="col">Tool</th><th scope="col">Result</th><th scope="col">Duration</th></tr></thead><tbody id="mcp-activity"></tbody></table>
+        </div>
+        <p class="hint">The last 100 calls are kept until garminctl stops. Arguments and response contents are not recorded here.</p>
+      </section>
     </section>
   </main>
 
@@ -408,5 +450,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="/face.js"></script>
 <script src="/app.js"></script>
+<script src="/mcp.js"></script>
 </body>
 </html>

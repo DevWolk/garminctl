@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=garminctl
+Comment=Manage your Garmin watch
+Exec=garmin-desktop
+Icon=garminctl
+Terminal=false
+Categories=Utility;
+StartupWMClass=garminctl

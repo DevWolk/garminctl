@@ -13,15 +13,12 @@ import (
 	"text/tabwriter"
 
 	"github.com/DevWolk/garminctl/internal/device/wpd"
+	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
 )
 
 func (c *cli) devices(ctx context.Context, _ []string) error {
-	if !wpd.Available() {
-		return errors.New("no MTP bridge on this host")
-	}
-
-	devs, err := wpd.Devices(ctx)
+	devs, err := devicehost.Devices(ctx)
 	if err != nil {
 		return err
 	}

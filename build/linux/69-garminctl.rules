@@ -1,0 +1,2 @@
+# Grant the active local user access to Garmin USB devices; no world-write access.
+SUBSYSTEM=="usb", ATTR{idVendor}=="091e", TAG+="uaccess"

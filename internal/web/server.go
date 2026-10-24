@@ -22,6 +22,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/mcpserver"
 )
 
 //go:embed ui
@@ -38,10 +39,12 @@ const (
 
 // Server holds the lazily connected device service.
 type Server struct {
-	svc   *garmin.Lazy
-	cloud *gc.Client
-	job   syncJob
-	auto  autoState
+	svc     *garmin.Lazy
+	cloud   *gc.Client
+	job     syncJob
+	auto    autoState
+	version string
+	mcp     *mcpserver.HTTPServer
 }
 
 // syncJob is the one background sync run at a time.
@@ -74,34 +77,68 @@ type statusResponse struct {
 }
 
 // Serve runs the HTTP server until ctx ends.
-func Serve(ctx context.Context, addr string, open garmin.Opener, autoSync bool) error {
-	s := newServer(open, autoSync)
-	if autoSync {
-		go s.watch(ctx)
-	}
+func Serve(ctx context.Context, addr string, open garmin.Opener, autoSync bool, version string) error {
+	var config net.ListenConfig
 
-	h, err := s.handler(addr)
+	listener, err := config.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return err
 	}
 
-	// No read or write timeout on purpose: track uploads and syncs run for minutes.
-	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second}
+	return ServeListener(ctx, listener, open, autoSync, version)
+}
 
+// ServeListener serves an already-bound listener and owns its lifetime. Desktop
+// launchers use it to reserve a port before showing the window.
+func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opener, autoSync bool, version string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	s := newServer(open, autoSync)
+
+	s.version = version
+	defer s.svc.Drop()
+
+	if autoSync {
+		go s.watch(ctx)
+	}
+
+	addr := listener.Addr().String()
+
+	h, err := s.handler(addr)
+	if err != nil {
+		_ = listener.Close()
+		return err
+	}
+
+	// No read or write timeout on purpose: track uploads and syncs run for minutes.
+	srv := &http.Server{
+		Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second,
+		BaseContext: func(_ net.Listener) context.Context { return ctx },
+	}
+
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
+
 		<-ctx.Done()
 
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer cancel()
 
-		_ = srv.Shutdown(sctx)
-
-		s.svc.Drop()
+		if err := srv.Shutdown(sctx); err != nil {
+			_ = srv.Close()
+		}
 	}()
 
 	slog.Info("garminctl web UI listening", "url", "http://"+addr)
 
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err = srv.Serve(listener)
+
+	cancel()
+	<-stopped
+
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 
@@ -160,6 +197,16 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 var uiTab = regexp.MustCompile(`data-tab="([a-z]+)"`)
 
 func (s *Server) routes(mux *http.ServeMux) {
+	s.mcp = mcpserver.NewHTTPServer(s.svc, s.cloud, s.version)
+	mux.Handle("GET /mcp", s.mcp)
+	mux.Handle("POST /mcp", s.mcp)
+	mux.Handle("DELETE /mcp", s.mcp)
+	mux.HandleFunc("GET /api/mcp", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"endpoint": "http://" + r.Host + "/mcp", "status": s.mcp.Snapshot()})
+	})
+	mux.HandleFunc("GET /api/server", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
+	})
 	mux.HandleFunc("GET /api/health/activities", s.healthActivities)
 	mux.HandleFunc("GET /api/health/activities/{name}", s.healthActivity)
 	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
@@ -263,7 +310,7 @@ func crossSiteCall(r *http.Request) bool {
 
 	isNavigation := r.Header.Get("Sec-Fetch-Mode") == "navigate"
 	isRead := r.Method == http.MethodGet || r.Method == http.MethodHead
-	isPage := !strings.HasPrefix(r.URL.Path, "/api/")
+	isPage := !strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/mcp"
 
 	return !isNavigation || !isRead || !isPage
 }

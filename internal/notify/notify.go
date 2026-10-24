@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/device/wpd"
+	"github.com/DevWolk/garminctl/internal/hostexec"
 )
 
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
@@ -28,6 +29,8 @@ func Send(ctx context.Context, title, text string) {
 
 	//nolint:gosec // argv is fixed: ps is powershell.exe as found by PowerShellPath; title and text are quoted
 	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
+	hostexec.HideConsole(cmd)
+
 	if err := cmd.Start(); err != nil {
 		return
 	}

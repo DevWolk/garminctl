@@ -1,13 +1,15 @@
 version: 2
 
 project_name: garminctl
+# Keep Make-generated installers outside the directory cleaned by GoReleaser.
+dist: dist/release
 
 builds:
   - main: ./cmd/garminctl
     env:
       - CGO_ENABLED=0
-    # The watch is reached through Windows (natively or from WSL), so only
-    # those two targets are useful.
+    # Portable archives use WPD on Windows/WSL or directory dumps. The native
+    # Linux USB CLI is built separately and included in the DEB/RPM packages.
     goos:
       - windows
       - linux
@@ -17,6 +19,9 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
+    hooks:
+      post:
+        - cmd: 'bash scripts/sign-release-binary.sh "{{ .Os }}" "{{ .Path }}"'
 
 archives:
   - formats: [tar.gz]
@@ -26,6 +31,7 @@ archives:
         formats: [zip]
     files:
       - README.md
+      - LICENSE
       - docs/*
 
 checksum:

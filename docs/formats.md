@@ -17,6 +17,10 @@ Windows build. Operations verified on the real watch: list with sizes and
 dates, read, create, overwrite (delete + create), delete. No dialogs, no
 driver changes, no extra installs.
 
+WPD also lists phones and USB drives (path `swd#wpdbusenum#...`, name = volume
+label, manufacturer = vendor padded with spaces). The bridge opens only a
+device with manufacturer `Garmin` or `vid_091e` in its path.
+
 Explorer's `Shell.Application` COM object also reaches the device (that is how
 the first exploration was done) but it hides file extensions, reports size 0,
 copies asynchronously and shows confirmation dialogs on delete.
@@ -387,3 +391,12 @@ sparse object with only the changed key; Connect then queues a
 - Express re-sends Garmin Connect's whole settings snapshot (83 field
   changes for this watch) on every sync; the phone app is expected to do the
   same over Bluetooth. Fields in that snapshot are marked `managedByConnect`.
+
+## Native Linux transport (implementation, hardware verification pending)
+
+`internal/device/mtp` uses libusb via `google/gousb`, filters USB vendor `091e`
+before opening a device, and claims its MTP interface. It uses the standard
+operations and Garmin `0x9002` described above, including undefined object and
+thumbnail formats when sending files. No kernel-driver detach or USB reset is
+performed. USB framing and filesystem behavior are tested with a simulated
+transport; this path has not yet been exercised on the physical watch.

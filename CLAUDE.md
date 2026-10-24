@@ -6,7 +6,8 @@ web UI and MCP server over the watch's MTP file system.
 - Read `docs/formats.md` before touching `internal/fit`, `internal/ciq`,
   `internal/garmin` or the WPD bridge; it records what the watch actually
   does and which facts were verified on the device.
-- The watch is reachable only through Windows. From WSL the bridge spawns
+- Live watch behavior has been verified through Windows; the new Linux libusb
+  transport still needs hardware verification. From WSL the bridge spawns
   `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`; use
   `-root DIR` with a dump for offline work (a dump is a copy of `GARMIN/`).
 - Never rewrite `GARMIN/Settings/Settings.fit` directly; device settings go

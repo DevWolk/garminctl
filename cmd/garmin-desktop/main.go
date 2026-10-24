@@ -1,0 +1,49 @@
+//go:build desktop
+
+// garmin-desktop starts the local server and opens its native application window.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+
+	"github.com/DevWolk/garminctl/internal/desktop"
+	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/devicehost"
+)
+
+var version = "dev"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	addr := flag.String("addr", "127.0.0.1:8787", "local server address")
+	root := flag.String("root", "", "watch directory for offline testing")
+
+	flag.Parse()
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	open := func(ctx context.Context) (device.Device, error) {
+		return devicehost.Open(ctx, *root, "")
+	}
+
+	backend, err := desktop.StartBackend(ctx, *addr, open, *root == "", version)
+	if err != nil {
+		return errors.Join(err, desktop.ShowError(err))
+	}
+
+	err = desktop.Run(backend)
+
+	return errors.Join(err, backend.Close())
+}

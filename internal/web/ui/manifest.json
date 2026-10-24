@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "garminctl",
+  "short_name": "garminctl",
+  "description": "Garmin vívoactive 5 manager: apps, settings, health and files, without Garmin Express",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "minimal-ui",
+  "background_color": "#f2f3f5",
+  "theme_color": "#ffffff",
+  "launch_handler": { "client_mode": "focus-existing" },
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

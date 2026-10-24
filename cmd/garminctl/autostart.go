@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/device/wpd"
+	"github.com/DevWolk/garminctl/internal/hostexec"
 )
 
 // autostart installs or removes a Windows Startup shortcut that runs the
@@ -70,7 +71,9 @@ func (c *cli) autostart(ctx context.Context, args []string) error {
 	}
 
 	//nolint:gosec // argv is fixed: ps is powershell.exe as found by PowerShellPath; the script is built from literals and a quoted path
-	out, err := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
+	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command", script)
+	hostexec.HideConsole(cmd)
+	out, err := cmd.CombinedOutput()
 	c.out.Print(strings.TrimRight(string(out), "\r\n") + "\n")
 
 	return err

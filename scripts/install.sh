@@ -6,7 +6,7 @@
 #   2. When the Windows autostart is on, its copy of garminctl.exe is
 #      refreshed; the Windows server is stopped first and started again
 #      afterwards if it was running (Windows will not overwrite a running exe).
-#   3. If nothing serves afterwards, the dev server is started here.
+#   3. If no server was running, keep it stopped; desktop starts its own server.
 #
 # The MCP registration points at bin/garminctl, so Claude Code picks the new
 # build up at its next connection (/mcp).
@@ -95,11 +95,13 @@ if have_windows; then
 	esac
 fi
 
-if [ "$was_wsl" = 1 ] || ! windows_serving; then
+if [ "$was_wsl" = 1 ]; then
 	start_wsl
 	wait_ready wsl
-else
+elif windows_serving; then
 	wait_ready windows
+else
+	echo "No development server was running; binaries updated without starting one."
 fi
 
 "$BIN" version

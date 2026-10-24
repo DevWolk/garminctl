@@ -9,7 +9,7 @@ const state = {
   connected: false, summary: null,
   rows: [], pending: new Map(),
   apps: [], app: null, appItems: [], appSchema: null, appValues: {}, appPending: new Map(), installed: { type: 'all', visibility: 'all', sort: prefs.get('instSort', 'watch') },
-  path: '', tab: 'overview',
+  path: '', decodePath: '', tab: 'overview',
   preview: { screen: 1, aod: false, timer: null },
 };
 
@@ -64,20 +64,21 @@ function setConn(kind, text) {
 }
 
 // ---------- tabs ----------
-document.querySelectorAll('.nav-item').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+document.querySelectorAll('.nav-item[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function showTab(tab, fromRoute) {
   state.tab = tab;
   document.querySelectorAll('.nav-item').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab));
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + tab));
   if (!fromRoute) { const [item, params] = tabRoute(tab); setRoute(tab, item, params); }
   if (state.connected) loadTab(tab); else if (tab === 'cloud') loadCloud(); else if (tab === 'store' && !state.store.loaded) loadStore();
+  if (tab === 'ai' && window.loadMCP) window.loadMCP();
   updateActionBar();
 }
 function loadTab(tab) {
   if (tab === 'settings' && !state.rows.length) loadSettings();
   if (tab === 'apps' && !$('#apps-list').querySelector('.app-item')) loadApps();
   if (tab === 'installed') loadInstalled();
-  if (tab === 'files') loadFiles(state.path);
+  if (tab === 'files') loadFiles(state.path, state.decodePath);
   if (tab === 'updates' && !state.updates.checkedAt) loadUpdates();
   if (tab === 'cloud') loadCloud();
   if (tab === 'store' && !state.store.loaded) loadStore();
@@ -116,29 +117,35 @@ function tabRoute(tab) {
   if (tab === 'apps') return [state.app ? state.app.name : ''];
   if (tab === 'store') return [state.store.selected || '', storeParams()];
   if (tab === 'health') return [state.health.selAct || ''];
-  if (tab === 'files') return [state.path];
+  if (tab === 'files') return [state.decodePath || state.path, state.decodePath ? new URLSearchParams({ view: 'decode' }) : null];
   return [''];
 }
 function storeParams() { const p = new URLSearchParams(); if (state.store.q) p.set('q', state.store.q); return p; }
-function go(tab, item) { setRoute(tab, item); applyRoute(); }
+function navigate(tab, item) { setRoute(tab, item); applyRoute(); }
 // The app a URL names: by name, settings file or store id, case-insensitive, like the CLI's app-settings.
 function findApp(ref) {
   const r = ref.toLowerCase();
   return state.apps.find((a) => a.fileName && [a.name, a.fileName, a.id].some((v) => v && v.toLowerCase() === r));
 }
-// Drives the UI from the hash: on load, on Back/Forward and from go(). An item whose data is
+// Drives the UI from the URL: on load, on Back/Forward and from navigate(). An item whose data is
 // not here yet is picked up by its loader (loadApps, loadActivities, loadFiles) when it arrives.
-function applyRoute() {
+let routeTurn = 0;
+async function applyRoute() {
+  const turn = ++routeTurn;
   const r = parseRoute();
   if (r.tab === 'apps' && r.item && $('#apps-list .app-item')) {
     const a = findApp(r.item);
-    if (a && (!state.app || state.app.fileName !== a.fileName)) selectApp(a, true);
+    if (a && !await selectApp(a, true)) return;
+    if (turn !== routeTurn) return;
   }
   if (r.tab === 'health') {
     state.health.selAct = r.item || null;
     if (!r.item) { $('#act-detail').hidden = true; if (state.health.acts) renderActivities(); } else if (state.connected) showActivity(r.item);
   }
-  if (r.tab === 'files') state.path = r.item;
+  if (r.tab === 'files') {
+    state.decodePath = r.params.get('view') === 'decode' ? r.item : '';
+    state.path = state.decodePath ? r.item.slice(0, Math.max(0, r.item.lastIndexOf('/'))) : r.item;
+  }
   if (r.tab === 'store') {
     const q = r.params.get('q') || '';
     if (q !== state.store.q) { state.store.q = q; $('#store-q').value = q; if (state.store.loaded) loadStore(); }
@@ -152,6 +159,18 @@ window.addEventListener('popstate', applyRoute);
 window.addEventListener('beforeunload', (ev) => {
   if (state.pending.size || state.appPending.size || state.cloudPending.size) { ev.preventDefault(); ev.returnValue = true; }
 });
+
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer((params) => {
+    if (!params.targetURL) return;
+    const u = new URL(params.targetURL);
+    if (u.origin !== location.origin || (u.pathname === '/' && !u.search)) return;
+    const p = u.pathname + u.search;
+    if (p === location.pathname + location.search) return;
+    history.pushState(null, '', p);
+    applyRoute();
+  });
+}
 
 // ---------- connection + overview ----------
 async function connect() {
@@ -274,7 +293,7 @@ async function loadRecentActs() {
     for (const a of acts) {
       const li = el(`<li><span><span class="sport">${esc(humanize(a.sport))}</span> <span class="when">${esc(new Date(a.start).toLocaleDateString([], { month: 'short', day: 'numeric' }))}</span></span><span class="num">${a.distanceM ? (a.distanceM / 1000).toFixed(2) + ' km' : ''}</span><span class="num">${fmtDur(a.timerSec)}</span></li>`);
       li.style.cursor = 'pointer';
-      li.onclick = () => go('health', a.file);
+      li.onclick = () => navigate('health', a.file);
       ul.appendChild(li);
     }
     if (list.pending) setTimeout(loadRecentActs, 3000);
@@ -493,14 +512,31 @@ async function loadApps() {
       // The app named in the URL, else the watch face, else the first one.
       const want = parseRoute(), shown = state.apps.filter((a) => seen.has(a.fileName));
       const pick = (want.tab === 'apps' && want.item && findApp(want.item)) || shown.find((a) => a.typeName === 'watchface') || shown[0];
-      if (pick) selectApp(pick, true);
+      if (pick) await selectApp(pick, true);
     }
   } catch (e) { root.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
-function selectApp(app, replace) {
+let appSelection = 0, appDiscardPrompt = null;
+async function selectApp(app, replace) {
+  const selection = ++appSelection;
+  if (state.app && state.app.fileName === app.fileName) return true;
+  const current = state.app;
+  if (current && state.appPending.size) {
+    if (!appDiscardPrompt) {
+      appDiscardPrompt = confirmDialog({
+        title: 'Discard unsaved changes?',
+        body: `<p>${state.appPending.size} changes to ${esc(current.name)} are not applied yet.</p>`,
+        ok: 'Discard',
+      }).finally(() => { appDiscardPrompt = null; });
+    }
+    const discard = await appDiscardPrompt;
+    if (selection !== appSelection || state.app !== current) return false;
+    if (!discard) { setRoute('apps', current.name, null, true); showTab('apps', true); return false; }
+  }
   document.querySelectorAll('.app-item').forEach((x) => x.classList.toggle('active', x.dataset.file === app.fileName));
   loadAppSettings(app);
   setRoute('apps', app.name, null, replace);
+  return true;
 }
 async function loadAppSettings(app) {
   state.app = app; state.appPending.clear(); state.appSchema = null; state.appItems = []; updateActionBar();
@@ -514,6 +550,7 @@ async function loadAppSettings(app) {
   const notice = $('#app-notice'); notice.hidden = true; state.appReadOnly = false;
   try {
     const as = await api('GET', `/api/apps/${encodeURIComponent(app.fileName)}/settings`);
+    if (state.app !== app) return;
     state.appValues = as.values || {}; state.appItems = as.items || [];
     if (!state.appItems.length) {
       notice.hidden = false;
@@ -525,10 +562,15 @@ async function loadAppSettings(app) {
     } else if (as.schemaError) {
       notice.hidden = false;
       notice.textContent = `The settings definition could not be loaded from the store (${as.schemaError}). Values are shown raw, without labels.`;
-    } else state.appSchema = await api('GET', `/api/apps/${encodeURIComponent(app.fileName)}/schema`).catch(() => null);
+    } else {
+      const schema = await api('GET', `/api/apps/${encodeURIComponent(app.fileName)}/schema`).catch(() => null);
+      if (state.app !== app) return;
+      state.appSchema = schema;
+    }
     renderAppSettings();
     setupPreview(app);
   } catch (e) {
+    if (state.app !== app) return;
     if (/not found/i.test(e.message)) { // no .SET on the watch: the app has no properties at all
       notice.hidden = false;
       notice.textContent = `${app.name} keeps no settings file on the watch, so there is nothing to configure here.`;
@@ -625,7 +667,8 @@ function appRow({ k, sc, v, text }) {
     if (sw && typeof nv === 'number') sw.style.background = nv >= 0 ? '#' + hex6(nv) : 'transparent';
     renderPreview();
   };
-  ctl.addEventListener('change', onChange);
+  // Track typing before Back or a captured link can switch the selected app.
+  ctl.addEventListener(isBool || ctl.tagName === 'SELECT' ? 'change' : 'input', onChange);
   if (picker) picker.addEventListener('input', () => { ctl.value = picker.value.slice(1).toUpperCase(); onChange(); });
   return row;
 }
@@ -700,9 +743,13 @@ async function applyAppChanges() {
 }
 
 // ---------- files ----------
-async function loadFiles(path) {
+let filesRequest = 0;
+async function loadFiles(path, decodePath = '') {
+  const request = ++filesRequest;
   state.path = path;
-  setRoute('files', path);
+  state.decodePath = decodePath;
+  setRoute('files', decodePath || path, decodePath ? new URLSearchParams({ view: 'decode' }) : null);
+  loadDecode(decodePath);
   const parts = path ? path.split('/') : [];
   let acc = '';
   const crumbs = [`<a href="#" data-p="">Watch</a>`];
@@ -713,9 +760,10 @@ async function loadFiles(path) {
   tb.innerHTML = '<tr><td colspan="4" class="muted">Reading…</td></tr>';
   try {
     const entries = await api('GET', '/api/files?path=' + encodeURIComponent(path));
+    if (request !== filesRequest) return;
     state.files = { path, entries };
     renderFiles();
-  } catch (e) { tb.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`; }
+  } catch (e) { if (request === filesRequest) tb.innerHTML = `<tr><td colspan="4" class="muted">${esc(e.message)}</td></tr>`; }
 }
 state.filesSort = { key: 'name', dir: 1 };
 document.querySelectorAll('#files-table th.sortable').forEach((th) => th.onclick = () => {
@@ -744,7 +792,14 @@ function renderFiles() {
         tr.onclick = () => loadFiles(full);
       } else {
         const isFit = /\.fit$/i.test(e.name);
-        tr.innerHTML = `<td>${esc(e.name)}</td><td class="num">${e.size.toLocaleString()}</td><td class="muted">${esc((e.modified || '').replace('T', ' '))}</td><td class="actions"><a href="/api/file?path=${encodeURIComponent(full)}">Download</a>${isFit ? `<a href="/api/decode?path=${encodeURIComponent(full)}" target="_blank" rel="noopener">Decode</a>` : ''}<button class="btn small danger">Delete</button></td>`;
+        const decodeParams = new URLSearchParams({ view: 'decode' });
+        tr.innerHTML = `<td>${esc(e.name)}</td><td class="num">${e.size.toLocaleString()}</td><td class="muted">${esc((e.modified || '').replace('T', ' '))}</td><td class="actions"><a href="/api/file?path=${encodeURIComponent(full)}">Download</a>${isFit ? `<a class="decode-link" href="${esc(routePath('files', full, decodeParams))}">Decode</a>` : ''}<button class="btn small danger">Delete</button></td>`;
+        if (isFit) tr.querySelector('.decode-link').onclick = (ev) => {
+          if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+          ev.preventDefault();
+          setRoute('files', full, decodeParams);
+          applyRoute();
+        };
         tr.querySelector('button').onclick = async () => {
           if (!await confirmDialog({ title: 'Delete from the watch?', body: `<p>${esc(full)} will be removed permanently.</p>`, ok: 'Delete' })) return;
           try { await api('DELETE', '/api/file?path=' + encodeURIComponent(full)); toast('Deleted ' + e.name); } catch (err) { toast(err.message, 'bad'); }
@@ -754,6 +809,69 @@ function renderFiles() {
       tb.appendChild(tr);
     }
   }
+}
+async function loadDecode(path) {
+  const panel = $('#decode-panel'), groups = $('#decode-groups'), status = $('#decode-status');
+  panel.hidden = !path;
+  if (!path) { state.decodeView = null; groups.replaceChildren(); return; }
+  if (state.decodeView && state.decodeView.path === path) return;
+  const view = state.decodeView = { path };
+  $('#decode-title').textContent = path.split('/').pop();
+  $('#decode-download').href = '/api/decode?path=' + encodeURIComponent(path);
+  $('#decode-download').download = path.split('/').pop() + '.json';
+  $('#decode-close').href = routePath('files', state.path);
+  $('#decode-close').onclick = (ev) => { ev.preventDefault(); navigate('files', state.path); };
+  status.textContent = 'Decoding FIT…';
+  groups.replaceChildren();
+  try {
+    const messages = await api('GET', '/api/decode?path=' + encodeURIComponent(path)) || [];
+    if (state.decodeView !== view) return;
+    const byName = new Map();
+    for (const message of messages) {
+      const name = message.name || `Message ${message.num}`;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(message);
+    }
+    status.textContent = `${messages.length.toLocaleString()} messages in ${byName.size} groups. Expand a group to view its values.`;
+    for (const [name, records] of byName) {
+      const details = el(`<details><summary>${esc(name)} <span class="muted">(${records.length.toLocaleString()})</span></summary></details>`);
+      let rendered = false;
+      details.addEventListener('toggle', () => {
+        if (!details.open || rendered) return;
+        rendered = true;
+        renderDecodeGroup(details, name, records);
+      });
+      groups.appendChild(details);
+    }
+  } catch (e) { if (state.decodeView === view) status.textContent = e.message; }
+}
+function renderDecodeGroup(details, name, records) {
+  const fields = new Map();
+  for (const m of records) for (const f of m.fields || []) if (!fields.has(f.num)) fields.set(f.num, f);
+  const columns = [...fields.values()];
+  const wrapper = el(`<div class="table-wrap tall" tabindex="0" role="region" aria-label="${esc(name)} messages">
+    <table class="files decode-table"><caption>${esc(name)} messages</caption><thead><tr><th scope="col">#</th>${columns.map((f) => `<th scope="col">${esc(f.name || 'Field ' + f.num)}${f.units ? ` (${esc(f.units)})` : ''}</th>`).join('')}</tr></thead><tbody></tbody></table>
+  </div>`);
+  details.appendChild(wrapper);
+  // Bound the DOM even for activity files whose decoded JSON is many megabytes.
+  const pageSize = 100;
+  let offset = 0;
+  const pager = el('<div class="toolbar decode-pager"><button type="button" class="btn small">Previous</button><span role="status"></span><button type="button" class="btn small">Next</button></div>');
+  const [previous, next] = pager.querySelectorAll('button');
+  function renderPage() {
+    wrapper.querySelector('tbody').innerHTML = records.slice(offset, offset + pageSize).map((m, i) => {
+      const values = new Map((m.fields || []).map((f) => [f.num, f.value]));
+      return `<tr><th scope="row">${m.index === undefined ? offset + i + 1 : m.index + 1}</th>${columns.map((f) => `<td>${esc(values.get(f.num) == null ? '–' : fmt(values.get(f.num)))}</td>`).join('')}</tr>`;
+    }).join('');
+    previous.disabled = offset === 0;
+    next.disabled = offset + pageSize >= records.length;
+    pager.querySelector('span').textContent = `${offset + 1}–${Math.min(offset + pageSize, records.length)} of ${records.length.toLocaleString()}`;
+    wrapper.scrollTop = 0;
+  }
+  previous.onclick = () => { offset -= pageSize; renderPage(); };
+  next.onclick = () => { offset += pageSize; renderPage(); };
+  if (records.length > pageSize) details.appendChild(pager);
+  renderPage();
 }
 $('#upload-file').addEventListener('change', async () => {
   const f = $('#upload-file').files[0];
@@ -1182,7 +1300,7 @@ function renderInstalled() {
     }
     if (a.fileName) {
       const b = el('<button class="btn small" type="button">Settings</button>');
-      b.onclick = () => go('apps', a.name);
+      b.onclick = () => navigate('apps', a.name);
       act.appendChild(b);
     }
     if (!a.native && a.id) act.appendChild(el(`<a class="btn small" href="https://apps.garmin.com/apps/${esc(a.id)}" target="garmin-store" rel="noopener">Store ↗</a>`));
@@ -1370,7 +1488,7 @@ async function showStoreApp(id) {
       ${d.whatsNew ? `<h3>What's new</h3><div class="text">${esc(d.whatsNew)}</div>` : ''}
       ${d.reviews && d.reviews.length ? `<h3>Reviews</h3>${d.reviews.filter((r) => r.text).slice(0, 6).map((r) => `<div class="review"><b>${'★'.repeat(r.rating)}</b> ${esc(r.reviewer)}${r.version ? ' · v' + esc(r.version) : ''}<div>${esc(r.text)}</div></div>`).join('')}` : ''}`;
     const edit = $('#store-edit');
-    if (edit) edit.onclick = async () => { const apps = await fetchApps().catch(() => []); const a = apps.find((x) => x.fileName && x.name.toLowerCase().startsWith(d.name.toLowerCase().slice(0, 4))); go('apps', a ? a.name : ''); };
+    if (edit) edit.onclick = async () => { const apps = await fetchApps().catch(() => []); const a = apps.find((x) => x.fileName && x.name.toLowerCase().startsWith(d.name.toLowerCase().slice(0, 4))); navigate('apps', a ? a.name : ''); };
   } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
 let storeTimer = null;

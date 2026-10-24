@@ -1,4 +1,4 @@
-// Package mcpserver exposes the watch to AI assistants over MCP (stdio).
+// Package mcpserver exposes the watch to AI assistants over MCP.
 package mcpserver
 
 import (

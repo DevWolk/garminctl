@@ -13,10 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/device/wpd"
+	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
 )
 
@@ -31,7 +30,7 @@ Global flags:
   -json          machine-readable output where applicable
 
 Commands:
-  devices                         list portable devices Windows sees
+  devices                         list devices available through the host transport
   info                            device summary
   ls [PATH]                       list a directory on the watch
   cat [-o FILE] PATH              read a file (prints text or writes to FILE)
@@ -74,14 +73,13 @@ Commands:
   store list [-type watchface] [-sort mostPopular]   browse by type
   store info APP_ID               details and reviews of one store app
   backup DIR [-skip Music,Podcasts,Audiobooks]   copy the watch's storage to a folder
+  desktop                        open the installed native app (Windows app from WSL)
   serve [-addr 127.0.0.1:8787]    run the web UI and HTTP API
   mcp                             run the MCP server on stdio
   version                         print the version this binary was built from
 
 Exit status: 0 ok, 1 failure, 2 usage error, 130 interrupted.
 `
-
-const openTimeout = 90 * time.Second
 
 // version is set at build time: -ldflags "-X main.version=v1.2.3".
 var version = "dev"
@@ -235,6 +233,7 @@ func (c *cli) plainCommands() map[string]plainCommand {
 		"version":   c.version,
 		"devices":   c.devices,
 		"serve":     c.serve,
+		"desktop":   c.desktop,
 		"autostart": c.autostart,
 		"mcp":       c.mcp,
 	}
@@ -288,18 +287,7 @@ func (c *cli) open(ctx context.Context) (*garmin.Service, error) {
 }
 
 func openDevice(ctx context.Context, root, devID string) (device.Device, error) {
-	if root != "" {
-		return device.NewDirFS(root)
-	}
-
-	if !wpd.Available() {
-		return nil, errors.New("no MTP bridge on this host (needs Windows or WSL); use -root DIR for a directory")
-	}
-
-	octx, cancel := context.WithTimeout(ctx, openTimeout)
-	defer cancel()
-
-	return wpd.Open(octx, devID)
+	return devicehost.Open(ctx, root, devID)
 }
 
 // flagSet creates a subcommand flag set whose messages go to stderr.
