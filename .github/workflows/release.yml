@@ -14,8 +14,20 @@ permissions:
   contents: read
 
 jobs:
+  source:
+    name: Verify release commit is on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Require tagged commit to be merged into main
+        if: github.event_name == 'push'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
   packages:
     name: Verify release packages
+    needs: source
     uses: ./.github/workflows/packages.yml
     with:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}

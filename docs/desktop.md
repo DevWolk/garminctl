@@ -1,9 +1,9 @@
 # Desktop application
 
-As of 2026-10-24, native installers have been built locally but have not yet
-been published in a tagged release. See [validation status](desktop-validation.md)
-for completed checks and remaining limits. Once published, download the
-installer from [GitHub Releases](https://github.com/DevWolk/garminctl/releases):
+Download the native installer from
+[GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
+See [validation status](desktop-validation.md) for completed checks and
+remaining limits.
 
 | System | File | Installation |
 | --- | --- | --- |

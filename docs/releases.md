@@ -1,8 +1,9 @@
 # Windows signing and releases
 
-Status checked on 2026-10-24. The desktop release workflow described here has
-been prepared locally; it takes effect on GitHub when the corresponding commit
-is pushed. No desktop release has been published yet.
+Status checked on 2026-10-24. PR #9 is merged. The signed snapshot pipeline
+passed on GitHub, and its exact Setup installed and ran on the user's Windows
+with Smart App Control enabled. See [recorded evidence](windows-selfsign-test.md).
+The first tagged desktop release is being prepared as `v0.5.0`.
 
 ## Personal Windows builds
 
@@ -220,20 +221,22 @@ the configured PFX secrets. Neither route deploys the app onto this computer.
 CI fixture tests do not verify physical USB compatibility or SAC acceptance
 on a user's Windows installation; those need separate hardware/host checks.
 
-The tag filter does not require the tagged commit to be on `main` or wait for
-all separate branch CI workflows to finish. Tag a reviewed commit whose branch
-checks have passed; the Release job then repeats its own `make check`.
-The updated package pipeline must be exercised on GitHub before a final tag
-is published; [validation status](desktop-validation.md) tracks that evidence.
+The release workflow first requires the tagged commit to be reachable from
+`main`. Merge the PR, update the user instructions, and only then create the
+version tag. The Release job repeats `make check` and installed-package tests
+before publication. The signed snapshot pipeline and its Windows/Ubuntu/Fedora
+installation checks passed in [run 40103875337](https://github.com/DevWolk/garminctl/actions/runs/40103875337).
 
 For example, after committing, pushing, and checking the chosen release commit:
 
 ```sh
+git switch main
+git pull --ff-only
 git tag -a v0.5.0 -m "Release v0.5.0"
 git push origin v0.5.0
 ```
 
-`v0.5.0` is an example version, not a version already selected or published.
+`v0.5.0` is the selected first desktop release version.
 Creating a local tag alone does not start Actions. Ordinary branch pushes do
 not publish a release. The application currently has no desktop self-updater;
 install a newer package to update it.
