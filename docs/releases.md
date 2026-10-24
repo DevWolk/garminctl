@@ -3,7 +3,11 @@
 Status checked on 2026-10-24. PR #9 is merged. The signed snapshot pipeline
 passed on GitHub, and its exact Setup installed and ran on the user's Windows
 with Smart App Control enabled. See [recorded evidence](windows-selfsign-test.md).
-The first tagged desktop release is being prepared as `v0.5.0`.
+The first tagged desktop release,
+[v0.5.0](https://github.com/DevWolk/garminctl/releases/tag/v0.5.0), is published.
+Its [tag pipeline](https://github.com/DevWolk/garminctl/actions/runs/40107216215)
+passed the main-ancestry guard, quality gate, package installation checks and
+publication. Published payload checksums were verified after download.
 
 ## Personal Windows builds
 
@@ -227,16 +231,17 @@ version tag. The Release job repeats `make check` and installed-package tests
 before publication. The signed snapshot pipeline and its Windows/Ubuntu/Fedora
 installation checks passed in [run 40103875337](https://github.com/DevWolk/garminctl/actions/runs/40103875337).
 
-For example, after committing, pushing, and checking the chosen release commit:
+For the next release, after committing, pushing, and checking the chosen
+release commit (replace the example version with the selected version):
 
 ```sh
 git switch main
 git pull --ff-only
-git tag -a v0.5.0 -m "Release v0.5.0"
-git push origin v0.5.0
+git tag -a v0.5.1 -m "Release v0.5.1"
+git push origin v0.5.1
 ```
 
-`v0.5.0` is the selected first desktop release version.
+`v0.5.0` is already published; `v0.5.1` above is only an example next version.
 Creating a local tag alone does not start Actions. Ordinary branch pushes do
 not publish a release. The application currently has no desktop self-updater;
 install a newer package to update it.
