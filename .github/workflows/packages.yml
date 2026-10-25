@@ -130,5 +130,5 @@ jobs:
           TEST_IMAGE: ${{ matrix.image }}
         run: |
           package=$(find dist/smoke -maxdepth 1 -name "*.$PACKAGE_FORMAT" -print -quit)
-          docker run --rm --mount "type=bind,src=$PWD,target=/src,readonly" "$TEST_IMAGE" \
+          docker run --rm --init --mount "type=bind,src=$PWD,target=/src,readonly" "$TEST_IMAGE" \
             bash /src/scripts/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION"

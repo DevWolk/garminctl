@@ -11,6 +11,8 @@ and follow the [desktop installation guide](docs/desktop.md). It covers Windows,
 WSL, Linux, and USB support limits. Native Linux USB remains experimental and
 has not been verified on physical hardware.
 
+For an existing installation, follow the [update instructions](docs/desktop.md#update-an-installed-package).
+
 Launch **garminctl**, connect the watch by USB, and check **Overview**. Use
 **Garmin Connect** to sign in for cloud data and sync, or **AI & MCP** to connect
 an assistant.

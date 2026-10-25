@@ -1,4 +1,4 @@
-.PHONY: test race test-windows lint lint-fix fmt vet vuln tidy check quality ci tools-update
+.PHONY: test race test-package-runner test-windows lint lint-fix fmt vet vuln tidy check quality ci tools-update
 
 test: up ## Run all Go tests, including the desktop packages
 	$(GO) test -tags $(DESKTOP_TAGS) ./...
@@ -28,7 +28,10 @@ vuln: up ## Check reachable vulnerabilities in application dependencies
 tidy: up ## Check module metadata without modifying files
 	$(GO) mod tidy -diff
 
-check: tidy lint race vuln ## Run the complete required quality gate
+test-package-runner: up ## Check installed-package process cleanup
+	$(DOCKER_EXEC) python3 -m unittest discover -s scripts -p 'test_*.py'
+
+check: tidy lint race test-package-runner vuln ## Run the complete required quality gate
 
 quality: check ## Alias for the complete quality gate
 

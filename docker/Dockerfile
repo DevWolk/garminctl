@@ -2,7 +2,7 @@ FROM golang:1.27.3-bookworm AS go
 FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+    ca-certificates curl python3 build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
     libusb-1.0-0-dev nsis librsvg2-bin dpkg-dev rpm xvfb xauth dbus-x11 \
     openssl osslsigncode \
     && rm -rf /var/lib/apt/lists/*

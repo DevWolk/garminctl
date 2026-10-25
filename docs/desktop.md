@@ -87,8 +87,34 @@ Linux paths respect `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`. Windows and WSL have
 separate data directories, so switching between them can require another
 Connect sign-in.
 
-Install a newer package to update the application. The **Updates** tab updates
-watch software and apps; the desktop app has no self-updater. Uninstall through
+### Update an installed package
+
+Choose **Help → Download updates…** in the desktop app, or open
+[GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
+Download the newer package for the same system and architecture, then quit
+garminctl before installing it. Stop any separate `garminctl serve` process too.
+
+| Installation | Update |
+| --- | --- |
+| Windows/WSL desktop | Run the new Setup using the existing installation directory. |
+| Ubuntu DEB | Run `sudo apt install ./garminctl_NEW_VERSION_linux_amd64.deb`. |
+| Fedora RPM | Run `sudo dnf upgrade ./garminctl_NEW_VERSION_linux_amd64.rpm`. |
+| Portable CLI archive | Replace the existing CLI binary with the new one. |
+| CLI installed with Go | Run `go install github.com/DevWolk/garminctl/cmd/garminctl@latest`. |
+
+Replace `NEW_VERSION` with the downloaded version. Packages preserve the data
+locations above. Reopen garminctl after updating; a running server must restart
+to use the new binary. MCP configuration can stay unchanged when its URL or
+executable path stays the same.
+
+The menu opens the release page; it does not download or install updates.
+The **Updates** tab manages watch software and apps. The GitHub packages do not
+configure an APT/DNF repository, so system updates alone will not fetch newer
+versions of garminctl.
+
+### Uninstall
+
+Uninstall through
 Windows Installed Apps (**garminctl Desktop**), `sudo apt remove garminctl`, or
 `sudo dnf remove garminctl`. Uninstall preserves configuration and caches.
 

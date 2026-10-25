@@ -7,3 +7,4 @@ coverage.out
 .cache/
 .make/options.local.mk
 cmd/garmin-desktop/*.syso
+__pycache__/

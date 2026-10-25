@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import signal
 import subprocess
 import tempfile
 import time
@@ -49,7 +50,7 @@ def check_package(desktop, cli, repo, version, work):
     log_path = work / "desktop.log"
     env = dict(os.environ, XDG_CONFIG_HOME=str(work / "config"), XDG_CACHE_HOME=str(work / "cache"))
     with log_path.open("wb") as log:
-        app = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env)
+        app = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
     try:
         deadline = time.monotonic() + 45
         while True:
@@ -130,14 +131,47 @@ def check_package(desktop, cli, repo, version, work):
                 raise AssertionError("App-owned server remained running after normal close")
         return {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model}
     finally:
+        try:
+            stop_app(app)
+        finally:
+            print(log_path.read_text(errors="replace"))
+
+
+def stop_app(app):
+    """Stop the test application's process group before deleting WebKit caches."""
+    try:
         if app.poll() is None:
             app.terminate()
+        try:
+            app.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            app.kill()
+            app.wait(timeout=5)
+    finally:
+        if os.name != "nt":
             try:
-                app.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                app.kill()
-                app.wait()
-        print(log_path.read_text(errors="replace"))
+                os.killpg(app.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            deadline = time.monotonic() + 5
+            while group_running(app.pid):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Desktop child processes did not stop")
+                time.sleep(0.01)
+
+
+def group_running(group):
+    """Report Linux process-group members that can still write to the cache."""
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            fields = (entry / "stat").read_text(errors="replace").rsplit(")", 1)[1].split()
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        if int(fields[2]) == group and fields[0] not in ("Z", "X"):
+            return True
+    return False
 
 
 if __name__ == "__main__":

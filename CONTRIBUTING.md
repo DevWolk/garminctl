@@ -41,7 +41,7 @@ the toolchain without publishing an application port or passing through USB.
 | `make all` | Linux/WSL and Windows CLIs, plus Linux and Windows desktop binaries in `bin/`. |
 | `make build-linux-usb` | Native libusb CLI at `bin/garminctl-linux`; the portable `bin/garminctl` has CGO disabled. |
 | `make package VERSION=v1.2.3` | Windows Setup and Linux amd64 DEB/RPM packages in `dist/`, using the chosen version. See [releases](docs/releases.md). |
-| `make check` | Module consistency, pinned linters including govet, race tests and reachable-vulnerability checks, including desktop code. |
+| `make check` | Module consistency, pinned linters including govet, race tests, package-runner regression tests and reachable-vulnerability checks, including desktop code. |
 | `make test`, `make race` | Go tests, with race detection and shuffled order for `race`. |
 | `make lint-fix`, `make fmt` | Available linter fixes, or Go formatting. |
 | `make test-windows` | Compile tests in Docker and execute them on a Windows host through PowerShell, using checkout fixtures. |

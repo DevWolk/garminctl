@@ -55,6 +55,11 @@ func Run(backend *Backend) error {
 	view.AddSeparator()
 	view.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) { wailsruntime.Quit(app.ctx) })
 
+	help := appMenu.AddSubmenu("Help")
+	help.AddText("Download updates…", nil, func(_ *menu.CallbackData) {
+		wailsruntime.BrowserOpenURL(app.ctx, "https://github.com/DevWolk/garminctl/releases/latest")
+	})
+
 	return wails.Run(&options.App{
 		Title: "garminctl", Width: 1280, Height: 850, MinWidth: 720, MinHeight: 540,
 		AssetServer:   &assetserver.Options{Handler: Proxy(backend.URL, desktopScript)},
