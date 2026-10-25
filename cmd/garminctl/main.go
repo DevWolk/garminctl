@@ -1,4 +1,4 @@
-// Command garminctl manages a Garmin watch over USB without Garmin Express.
+// Command garminctl manages Garmin watches over USB and syncs with Garmin Connect.
 package main
 
 import (
@@ -20,61 +20,73 @@ import (
 )
 
 //nolint:dupword // command names repeat at the start of consecutive usage lines
-const usage = `garminctl - manage a Garmin watch over USB (no Garmin Express needed)
+const usage = `garminctl - manage a Garmin watch over USB
 
 Usage: garminctl [global flags] <command> [args]
 
 Global flags:
-  -root DIR      use a directory (mass-storage mount or dump) instead of the MTP watch
-  -device ID     portable device id (default: first Garmin device)
-  -json          machine-readable output where applicable
+  -root DIR                       use a mounted watch folder or dump (or set GARMINCTL_ROOT)
+  -device ID                      device ID (default: first Garmin device)
+  -json                           machine-readable output where applicable
 
 Commands:
-  devices                         list devices available through the host transport
-  info                            device summary
+  devices                         list connected devices
+  info                            show the connected watch
   ls [PATH]                       list a directory on the watch
   cat [-o FILE] PATH              read a file (prints text or writes to FILE)
   put FILE PATH                   write a local file to the watch
   rm PATH                         delete a file on the watch
   mkdir PATH                      create a folder on the watch
-  hidden [-write-test] PATH       list a folder including what MTP hides (the app folder)
+  hidden [-write-test] PATH       list hidden files through the Windows MTP bridge
+  mtp OPCODE [PARAM...]           read a raw PTP operation through the Windows MTP bridge
   decode PATH                     decode any FIT file on the watch
-  settings [-all]                 show device settings (documented fields; -all includes unknown)
+  settings [-all]                 show watch settings; -all includes undocumented fields
   settings set M.F=V [...]        change settings, e.g. deviceSettings.backlightMode=manual
-                                  userProfile.weight=79.5  deviceSettings[0].104[4]=8
-  apps                            list installed apps and watch faces
+  apps                            list apps, watch faces, glances and activities
   app-settings APP                show a Connect IQ app's settings (name or file id)
   app-settings set APP K=V [...]  change Connect IQ app settings (V may be an option label)
   app-schema APP [KEY]            show labels and dropdown options of an app's settings
   app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
-  app-hide APP | app-show APP     hide a built-in activity, glance or app from the watch's lists, or show it (applied on unplug)
-  app-pending                     app-list changes waiting for the next unplug
-  app-restore FILE                queue a saved copy of the app list (from ~/.cache/garminctl) for the watch
-  autostart on|off|status         run "garminctl serve" at Windows sign-in, like Garmin Express did
+  app-hide APP | app-show APP     hide or show an activity, glance or app on unplug
+  app-pending                     show pending app-list changes
+  app-restore FILE                restore a saved app list on unplug
+  autostart on|off|status         manage the background server at Windows sign-in
   updates                         check Garmin for firmware/data updates and app updates
-  updates install PART            download and write one update (e.g. 006-DA094-00)
+  updates install PART            download and queue a part number from updates
   software                        installed software components (device.fit)
-  cloud login [-email X]          sign in to Garmin Connect (password prompted; GARMIN_EMAIL/GARMIN_PASSWORD env work too)
-  cloud mfa CODE                  finish a sign-in that asked for a verification code
-  cloud status | logout           session state / forget the session
-  cloud sync [-no-upload] [-no-download]   upload recorded files, pull what Connect queued for the watch
+  cloud login [-email X]          sign in and enter a verification code when prompted
+                                  or use GARMIN_EMAIL and GARMIN_PASSWORD for credentials
+  cloud mfa CODE                  submit a code (requires an in-process sign-in attempt)
+  cloud status | logout           show account status or sign out
+  cloud sync [-no-upload] [-no-download]
+                                  upload recorded files and download queued items
   cloud messages                  what Garmin Connect has queued for the watch
   cloud settings                  device settings kept by Garmin Connect
-  cloud settings set K=V ...      change them (Connect then generates the settings file for the watch)
-  activities [-n N] [-wait]       activities recorded on the watch (decoded locally, cached)
+  cloud settings set K=V ...      save settings in Connect and fetch queued changes
+  cloud get|post|get1|post1 URL [BODY]
+                                  call Connect APIs; get1/post1 use OAuth1
+  activities [-n N] [-wait]       list activities; -wait finishes decoding all files
   activity FILE                   one activity with laps and a downsampled track
-  health [-days N]                daily steps, resting HR, stress, body battery, sleep (Garmin Connect)
+  health [-days N]                daily health from Garmin Connect
   health day YYYY-MM-DD           intraday heart rate, stress, body battery and sleep stages
+  health history [DAYS]           health history for up to a year
+  health extras                   fitness metrics, records, badges and weight history
+  health weight KG                log a weigh-in in Garmin Connect
   workouts                        workouts stored in Garmin Connect
-  workouts create FILE.json [-send] [-local]   create from a spec (see docs); -send queues it for the watch, -local writes the FIT directly
-  workouts send ID                queue an existing Connect workout for the watch
+  workouts create FILE.json [-send] [-local]
+                                  save in Connect; -send attempts USB delivery, -local saves only to the watch
+  workouts send ID                send an existing Connect workout to the watch
   music ls | music add [-folder Music] FILE... | music rm PATH | music playlist NAME TRACK...
-  store search WORDS [-type T] [-sort S]   search the Connect IQ store for this watch
-  store list [-type watchface] [-sort mostPopular]   browse by type
+  store search WORDS [-type T] [-sort S]
+                                  search the Connect IQ store for this watch
+  store list [-type watchface] [-sort mostPopular]
+                                  browse by type
   store info APP_ID               details and reviews of one store app
-  backup DIR [-skip Music,Podcasts,Audiobooks]   copy the watch's storage to a folder
-  desktop                        open the installed native app (Windows app from WSL)
-  serve [-addr 127.0.0.1:8787]    run the web UI and HTTP API
+  backup DIR [-skip Music,Podcasts,Audiobooks]
+                                  copy the watch's storage to a folder
+  desktop                         open the installed native app
+  serve [-addr 127.0.0.1:8787] [-autosync=false]
+                                  run the web UI, HTTP API and HTTP MCP server
   mcp                             run the MCP server on stdio
   version                         print the version this binary was built from
 
@@ -92,8 +104,7 @@ type cli struct {
 	errOut *printer // prompts and diagnostics
 }
 
-// printer writes a command's output and remembers the first write error,
-// so commands print freely and run reports a failure once at the end.
+// printer retains the first output error for run to report.
 type printer struct {
 	w   io.Writer
 	err error
@@ -186,8 +197,8 @@ func (c *cli) run(args []string) error {
 	fs := c.flagSet("garminctl")
 	fs.Usage = func() { c.errOut.Print(usage) }
 
-	fs.StringVar(&c.root, "root", os.Getenv("GARMINCTL_ROOT"), "directory to use instead of the MTP watch")
-	fs.StringVar(&c.devID, "device", "", "portable device id")
+	fs.StringVar(&c.root, "root", os.Getenv("GARMINCTL_ROOT"), "watch folder or dump instead of MTP (default: GARMINCTL_ROOT)")
+	fs.StringVar(&c.devID, "device", "", "device ID")
 	fs.BoolVar(&c.asJSON, "json", false, "JSON output")
 
 	if err := parseFlags(fs, args); err != nil {
@@ -338,9 +349,7 @@ func flagsFirst(fs *flag.FlagSet, args []string) []string {
 	return append(flags, pos...)
 }
 
-// takesValue reports whether a, as written on the command line, needs the
-// next argument as its value: a flag fs knows that is not a boolean and
-// carries no "=value". The FlagSet is the one source of what each flag is.
+// takesValue identifies known non-boolean flags without an inline value.
 func takesValue(fs *flag.FlagSet, a string) bool {
 	name := strings.TrimLeft(a, "-")
 	if strings.Contains(name, "=") {
@@ -382,7 +391,7 @@ func onOff(b bool, yes, no string) string {
 	return no
 }
 
-// parseScalar turns a CLI value into JSON-ish: true/false, numbers, JSON objects/arrays, else string.
+// parseScalar accepts booleans, numbers and JSON objects or arrays, otherwise a string.
 func parseScalar(v string) any {
 	switch v {
 	case "true":

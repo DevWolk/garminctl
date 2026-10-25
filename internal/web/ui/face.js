@@ -1,6 +1,5 @@
 'use strict';
-// Easy+ watch face emulator: draws the face from the app's settings values.
-// Geometry follows the store screenshots of the Round layout on a 390x390 AMOLED.
+// Easy+ preview uses the app's settings, sample metrics and the current time.
 window.EasyFace = (() => {
   const APP_ID = '7c993e2b-70b3-459a-bbe0-db48a89af5a8';
   const W = 390, C = 195;
@@ -154,10 +153,7 @@ window.EasyFace = (() => {
     return `M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 ${large} ${sweep} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
   }
 
-  // Field slots on the round layout, measured from photos of the watch: every
-  // value stays upright; the icon sits on the side nearer the time (below the
-  // value in the upper half and beside it on the left/right, above the value
-  // in the lower half). Offsets from the centre in pixels, y down.
+  // Round-layout offsets from the centre in pixels; y increases downwards.
   const SLOTS = {
     1: { tx: 0, ty: -150, ix: 0, iy: -118 }, 2: { tx: 90, ty: -118, ix: 82, iy: -84 }, 3: { tx: 138, ty: -34, ix: 138, iy: 2 },
     4: { tx: 97, ty: 98, ix: 92, iy: 62 }, 5: { tx: 0, ty: 152, ix: 0, iy: 118 }, 6: { tx: -97, ty: 98, ix: -92, iy: 62 },
@@ -179,9 +175,7 @@ window.EasyFace = (() => {
 
   let seq = 0;
   function render(v, opts) {
-    // Every render gets its own id namespace: two faces on one page (Overview hero and the editor)
-    // would otherwise share gradient ids, and url(#id) resolves to the first one in the document
-    // even when that one sits inside a hidden tab and paints nothing.
+    // Unique IDs prevent gradients in the hero and editor from sharing a hidden definition.
     const ns = `ef${++seq}-`;
     const screen = opts.screen === 2 && v.secondscreen ? 2 : 1;
     const sfx = screen === 2 ? 'b' : 'a';

@@ -1,6 +1,6 @@
 'use strict';
 const $ = (s) => document.querySelector(s);
-// Per-browser preferences (sort orders, filters); a blocked localStorage just means defaults.
+// Use default preferences when browser storage is unavailable.
 const prefs = {
   get(key, fallback) { try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch (e) {} },
@@ -50,7 +50,7 @@ function confirmDialog({ title, body, ok }) {
     const dlg = $('#dlg');
     $('#dlg-title').textContent = title;
     $('#dlg-body').innerHTML = body;
-    $('#dlg-ok').textContent = ok || 'OK';
+    $('#dlg-ok').textContent = ok || 'Confirm';
     dlg.returnValue = 'cancel';
     dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
     dlg.showModal();
@@ -88,10 +88,8 @@ function loadTab(tab) {
 }
 
 // ---------- routes ----------
-// The path says where you are (/tab, /tab/item, ?q= for the store search), so F5, Back,
-// Forward and a pasted link return to the same view; the server answers every tab path
-// with index.html. How you like to see it (sort orders, filters) lives in localStorage;
-// unsaved edits stay in memory behind the leave guard below.
+// Paths preserve the selected tab and item; query parameters preserve store searches.
+// Preferences use localStorage; unsaved edits stay in memory.
 const tabNames = new Set([...document.querySelectorAll('.nav-item[data-tab]')].map((b) => b.dataset.tab));
 function parseRoute() {
   const [tab, ...rest] = location.pathname.replace(/^\//, '').split('/');
@@ -106,13 +104,12 @@ function routePath(tab, item, params) {
   if (q) p += '?' + q;
   return p === '/overview' ? '/' : p;
 }
-// Puts the view in the URL: a new history entry, or the current one replaced (searches, default picks).
+// Replace history for searches and default selections; push it for navigation.
 function setRoute(tab, item, params, replace) {
   const p = routePath(tab, item, params);
   if (p === location.pathname + location.search) return;
   history[replace ? 'replaceState' : 'pushState'](null, '', p);
 }
-// What a tab is showing right now: its open item and, for the store, the search.
 function tabRoute(tab) {
   if (tab === 'apps') return [state.app ? state.app.name : ''];
   if (tab === 'store') return [state.store.selected || '', storeParams()];
@@ -122,13 +119,12 @@ function tabRoute(tab) {
 }
 function storeParams() { const p = new URLSearchParams(); if (state.store.q) p.set('q', state.store.q); return p; }
 function navigate(tab, item) { setRoute(tab, item); applyRoute(); }
-// The app a URL names: by name, settings file or store id, case-insensitive, like the CLI's app-settings.
+// App references accept names, settings files and store IDs, ignoring case.
 function findApp(ref) {
   const r = ref.toLowerCase();
   return state.apps.find((a) => a.fileName && [a.name, a.fileName, a.id].some((v) => v && v.toLowerCase() === r));
 }
-// Drives the UI from the URL: on load, on Back/Forward and from navigate(). An item whose data is
-// not here yet is picked up by its loader (loadApps, loadActivities, loadFiles) when it arrives.
+// Loaders resolve route items whose data has not arrived yet.
 let routeTurn = 0;
 async function applyRoute() {
   const turn = ++routeTurn;
@@ -155,7 +151,7 @@ async function applyRoute() {
   showTab(r.tab, true);
 }
 window.addEventListener('popstate', applyRoute);
-// Unsaved edits live only in memory; the browser asks before F5 or a closed tab throws them away.
+// Ask before reloading or closing with unsaved edits.
 window.addEventListener('beforeunload', (ev) => {
   if (state.pending.size || state.appPending.size || state.cloudPending.size) { ev.preventDefault(); ev.returnValue = true; }
 });
@@ -179,6 +175,7 @@ async function connect() {
   try {
     const st = await api('POST', '/api/connect');
     state.connected = true; state.summary = st.summary;
+    storeConnectionChanged();
     setConn('ok', 'Connected');
     $('#devname').textContent = st.summary.model;
     renderOverview(st.summary);
@@ -186,32 +183,30 @@ async function connect() {
     loadTab(state.tab);
     $('#btn-connect').textContent = 'Reconnect';
   } catch (e) {
+    const wasConnected = state.connected;
     state.connected = false;
+    if (wasConnected) storeConnectionChanged();
     setConn('bad', 'Not connected');
     toast('Could not connect: ' + e.message, 'bad');
   } finally { $('#btn-connect').disabled = false; }
 }
-// Retail part numbers (the support site's "identifier"); the device XML only carries the firmware part.
-const retailSKU = { 'vívoactive 5': '010-02862-10', 'vivoactive 5': '010-02862-10' };
 function renderFree() { const el2 = $('#apps-free'); if (el2 && state.summary && state.summary.storage) el2.textContent = `${fmtSize(state.summary.storage.freeBytes)} free on the watch.`; }
 function renderOverview(s) {
   renderFree();
-  const sku = retailSKU[(s.model || '').toLowerCase()] || retailSKU[s.model];
-  $('#link-manual').href = sku ? `https://support.garmin.com/en-US/?identifier=${sku}&tab=manuals` : 'https://support.garmin.com/en-US/';
   $('#overview-empty').hidden = true;
   $('#overview').hidden = false;
   $('#hero-model').textContent = s.model;
-  $('#hero-sub').innerHTML = `<span>firmware <span class="mono">${esc(s.software)}</span></span><span>unit <span class="mono">${s.unitId}</span></span><span>part <span class="mono">${esc(s.partNumber)}</span></span><button class="linkish" id="hero-apps" type="button">${s.appCount} apps and glances</button>`;
+  $('#hero-sub').innerHTML = `<span>Software <span class="mono">${esc(s.software)}</span></span><span>Unit ID <span class="mono">${s.unitId}</span></span><span>Part <span class="mono">${esc(s.partNumber)}</span></span><button class="linkish" id="hero-apps" type="button">${s.appCount} apps and glances</button>`;
   $('#hero-apps').onclick = () => showTab('installed');
   const now = new Date();
   if (!state.heroValues) $('#hero-face').textContent = `${pad2(now.getHours())}\n${pad2(now.getMinutes())}`;
-  $('#overview-when').textContent = `read ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  $('#overview-when').textContent = `Read ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   renderHeroState();
   loadHeroFace();
   loadToday();
   loadRecentActs();
 }
-// The Easy+ face as it is configured on the watch right now, drawn by the same emulator as the editor.
+// Show the connected watch's Easy+ settings with the editor's sample metrics.
 async function loadHeroFace() {
   if (!window.EasyFace) return;
   try {
@@ -231,7 +226,7 @@ function renderHeroFace() {
   $('#hero-face').innerHTML = EasyFace.render(state.heroValues, { screen: 1, aod: false, systemIs24h: state.hero24h });
 }
 setInterval(() => { if (state.tab === 'overview') renderHeroFace(); }, 30000);
-// Follow the server's USB watcher: it connects on plug-in and syncs on its own.
+// Follow connection and sync events from the USB watcher.
 let autoSeen = Date.now();
 async function pollStatus() {
   try {
@@ -245,10 +240,12 @@ async function pollStatus() {
     }
     if (st.connected && !state.connected) {
       state.connected = true; state.summary = st.summary; setConn('ok', 'Connected');
+      storeConnectionChanged();
       $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect';
       renderOverview(st.summary); loadNewFiles(); loadTab(state.tab);
     } else if (!st.connected && state.connected) {
       state.connected = false; setConn('bad', 'Unplugged');
+      storeConnectionChanged();
       state.rows = []; state.apps = []; state.app = null;
     }
   } catch (e) {}
@@ -281,7 +278,7 @@ async function loadToday() {
       + tile('Body battery', `${d.bodyBatteryLow}–${d.bodyBatteryHigh}`, '', `stress avg ${d.avgStress}`, d.bodyBatteryHigh, true)
       + tile('Calories', d.calories.toLocaleString(), 'kcal', `${d.activeCalories.toLocaleString()} active`);
   } catch (e) {
-    box.innerHTML = `<div class="tile prompt"><div class="k">${/signed in/.test(e.message) ? 'Sign in to Garmin Connect to see today\'s steps, heart rate, sleep and body battery here.' : esc(e.message)}</div></div>`;
+    box.innerHTML = `<div class="tile prompt"><div class="k">${/signed in/.test(e.message) ? 'Sign in to Garmin Connect to view daily health.' : esc(e.message)}</div></div>`;
   }
 }
 async function loadRecentActs() {
@@ -323,7 +320,7 @@ async function loadNewFiles() {
     const total = entries.length + (changes.length ? 1 : 0);
     $('#badge-pending').hidden = total === 0;
     $('#badge-pending').textContent = total;
-    if (!total) { ul.innerHTML = '<li class="muted">Nothing waiting. The watch is up to date with this computer.</li>'; return; }
+    if (!total) { ul.innerHTML = '<li class="muted">No pending changes.</li>'; return; }
     ul.innerHTML = '';
     if (changes.length) {
       const li = el(`<li><div><div class="what">App list: ${changes.length} change${changes.length === 1 ? '' : 's'}</div><div class="meta">${esc(changes.map((c) => `${c.name} → ${c.hidden ? 'hidden' : 'shown'}`).join(', '))} · <span class="mono">GARMIN/Apps/IN.BIN</span></div></div><button class="btn small danger">Cancel</button></li>`);
@@ -364,7 +361,7 @@ const groupTitles = {
 };
 const groupOrder = ['deviceSettings', 'userProfile', 'ohrSettings', 'connectivity', 'alarm', 'sleepSchedule', 'hrZone', 'zonesTarget', 'bikeProfile', 'hrmProfile', 'sensorPairing'];
 async function loadSettings() {
-  $('#settings-groups').innerHTML = '<p class="muted">Reading Settings.fit…</p>';
+  $('#settings-groups').innerHTML = '<p class="muted">Loading watch settings…</p>';
   try {
     const data = await api('GET', '/api/settings');
     state.rows = data.rows;
@@ -414,7 +411,7 @@ function settingRow(r, repeated) {
   const key = rowKey(r);
   const label = (repeated ? `${r.index + 1}. ` : '') + humanize(r.field);
   const tags = [];
-  if (r.managedByConnect) tags.push('<span class="tag connect" title="Garmin Connect re-sends this field on every sync; change it in Connect too">Garmin Connect</span>');
+  if (r.managedByConnect) tags.push('<span class="tag connect" title="Also update this setting in Garmin Connect">Garmin Connect</span>');
   if (!r.known) tags.push('<span class="tag">undocumented</span>');
   else if (r.confidence) tags.push(`<span class="tag guess">${esc(r.confidence)}</span>`);
   const meta = [r.units, r.note].filter(Boolean).join(' · ');
@@ -455,7 +452,7 @@ function updateActionBar() {
   bar.hidden = n === 0;
   if (!n) return;
   const what = state.tab === 'apps' ? (state.app ? state.app.name : 'app') : state.tab === 'cloud' ? 'Garmin Connect' : 'watch';
-  $('#actionbar-text').textContent = state.tab === 'cloud' ? `${n} change${n > 1 ? 's' : ''} not yet saved in Garmin Connect` : `${n} ${what} change${n > 1 ? 's' : ''} not yet on the watch`;
+  $('#actionbar-text').textContent = `${n} unsaved change${n > 1 ? 's' : ''} · ${what}`;
 }
 $('#btn-discard').onclick = () => {
   if (state.tab === 'apps') { state.appPending.clear(); renderAppSettings(); renderPreview(); } else if (state.tab === 'cloud') { state.cloudPending.clear(); renderCloudSettings(); } else { state.pending.clear(); renderSettings(); }
@@ -464,12 +461,12 @@ $('#btn-discard').onclick = () => {
 $('#btn-review').onclick = () => (state.tab === 'apps' ? applyAppChanges() : state.tab === 'cloud' ? applyCloudChanges() : applySettings());
 async function applySettings() {
   const list = [...state.pending.values()];
-  const body = `<ul class="changes">${list.map((c) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">A settings-change file is written to the watch now. It is applied when the USB session ends: unplug the watch or eject it.</p>`;
-  if (!await confirmDialog({ title: 'Write to the watch?', body, ok: 'Write changes' })) return;
+  const body = `<ul class="changes">${list.map((c) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">Unplug the watch after saving to apply these changes.</p>`;
+  if (!await confirmDialog({ title: 'Save watch settings?', body, ok: 'Save changes' })) return;
   try {
     const res = await api('POST', '/api/settings/apply', { changes: list.map(({ mesg, index, field, value }) => ({ mesg, index, field, value })) });
     state.pending.clear(); updateActionBar();
-    toast(`Written. ${res.note}`, res.note.includes('Warning') ? 'warn' : '');
+    toast(res.note, res.note.includes('Warning') ? 'warn' : '');
     loadNewFiles();
   } catch (e) { toast(e.message, 'bad'); }
 }
@@ -505,7 +502,7 @@ async function loadApps() {
     }
     markAppUpdates();
     const natives = state.apps.filter((a) => !a.fileName).length;
-    const note = el(`<p class="apps-note">${natives} built-in glances, activities and apps have no settings file; see <button class="linkish" type="button">Apps &amp; glances</button>.</p>`);
+    const note = el(`<p class="apps-note">${natives} built-in entries in <button class="linkish" type="button">Apps &amp; glances</button>.</p>`);
     note.querySelector('button').onclick = () => showTab('installed');
     root.appendChild(note);
     if (!state.app) {
@@ -542,7 +539,7 @@ async function loadAppSettings(app) {
   state.app = app; state.appPending.clear(); state.appSchema = null; state.appItems = []; updateActionBar();
   $('#app-store').href = 'https://apps.garmin.com/apps/' + app.id; $('#app-store').hidden = !app.id;
   $('#app-title').textContent = app.name;
-  $('#app-hint').textContent = `${humanize(app.typeName)} · settings file ${app.fileName}.SET`;
+  $('#app-hint').textContent = `${humanize(app.typeName)} · ${app.fileName}.SET`;
   $('#app-filter').hidden = false;
   $('#app-remove').hidden = app.native || !app.fileName || /^toystore$/i.test(app.fileName);
   $('#app-remove').onclick = () => removeApp(app);
@@ -554,14 +551,13 @@ async function loadAppSettings(app) {
     state.appValues = as.values || {}; state.appItems = as.items || [];
     if (!state.appItems.length) {
       notice.hidden = false;
-      notice.textContent = `${app.name} keeps no settings file on the watch, so there is nothing to configure here.`;
+      notice.textContent = `No settings available for ${app.name}.`;
     } else if (as.schemaError && /404/.test(as.schemaError)) {
-      // The store builds its settings page from the app's settings.xml; a 404 means the app ships none.
       state.appReadOnly = true; notice.hidden = false;
-      notice.textContent = `${app.name} publishes no settings page in the Connect IQ store, so these are the app's internal properties as stored in ${app.fileName}.SET, shown for reference only. They are not meant to be changed by hand.`;
+      notice.textContent = 'No settings page found in the store. These values are read-only.';
     } else if (as.schemaError) {
       notice.hidden = false;
-      notice.textContent = `The settings definition could not be loaded from the store (${as.schemaError}). Values are shown raw, without labels.`;
+      notice.textContent = `Could not load setting labels from the store: ${as.schemaError}. Showing raw values.`;
     } else {
       const schema = await api('GET', `/api/apps/${encodeURIComponent(app.fileName)}/schema`).catch(() => null);
       if (state.app !== app) return;
@@ -571,9 +567,9 @@ async function loadAppSettings(app) {
     setupPreview(app);
   } catch (e) {
     if (state.app !== app) return;
-    if (/not found/i.test(e.message)) { // no .SET on the watch: the app has no properties at all
+    if (/not found/i.test(e.message)) {
       notice.hidden = false;
-      notice.textContent = `${app.name} keeps no settings file on the watch, so there is nothing to configure here.`;
+      notice.textContent = `No settings file found for ${app.name}.`;
       $('#app-hint').textContent = humanize(app.typeName);
       $('#app-groups').innerHTML = '';
       setupPreview(app);
@@ -583,7 +579,7 @@ async function loadAppSettings(app) {
 async function removeApp(app) {
   const ok = await confirmDialog({
     title: `Remove ${app.name} from the watch?`,
-    body: `<p>Deletes the app file and its settings and data files. The watch finishes the removal when you unplug it; until then it still shows in the list.</p><p class="note">If ${esc(app.name)} is the watch face in use, the watch switches to a built-in face; pick another face on the watch afterwards.</p>`,
+    body: '<p>Permanently deletes the app, its settings and data. Unplug the watch to finish removal.</p><p class="note">If this is your current watch face, choose another face on the watch afterwards.</p>',
     ok: 'Remove',
   });
   if (!ok) return;
@@ -731,7 +727,7 @@ $('#preview-aod').addEventListener('change', () => { state.preview.aod = $('#pre
 async function applyAppChanges() {
   if (!state.app) return;
   const list = [...state.appPending.entries()];
-  const body = `<ul class="changes">${list.map(([, c]) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">${esc(state.app.name)} reloads its settings right after the file is written.</p>`;
+  const body = `<ul class="changes">${list.map(([, c]) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">Changes are saved directly to the watch.</p>`;
   if (!await confirmDialog({ title: `Save to ${state.app.name}?`, body, ok: 'Save to watch' })) return;
   const values = Object.fromEntries(list.map(([k, c]) => [k, c.value]));
   try {
@@ -853,7 +849,7 @@ function renderDecodeGroup(details, name, records) {
     <table class="files decode-table"><caption>${esc(name)} messages</caption><thead><tr><th scope="col">#</th>${columns.map((f) => `<th scope="col">${esc(f.name || 'Field ' + f.num)}${f.units ? ` (${esc(f.units)})` : ''}</th>`).join('')}</tr></thead><tbody></tbody></table>
   </div>`);
   details.appendChild(wrapper);
-  // Bound the DOM even for activity files whose decoded JSON is many megabytes.
+  // Paginate large activity files to limit DOM size.
   const pageSize = 100;
   let offset = 0;
   const pager = el('<div class="toolbar decode-pager"><button type="button" class="btn small">Previous</button><span role="status"></span><button type="button" class="btn small">Next</button></div>');
@@ -891,7 +887,7 @@ async function loadUpdates() {
   if (!state.connected) { toast('Connect the watch first', 'warn'); return; }
   state.updates.busy = true;
   $('#btn-check-updates').disabled = true;
-  $('#updates-status').textContent = 'Asking Garmin…';
+  $('#updates-status').textContent = 'Checking for updates…';
   $('#sw-list').innerHTML = '<li class="muted">Checking Garmin\'s update service…</li>';
   $('#app-updates').innerHTML = '<li class="muted">Checking the Connect IQ store…</li>';
   const [sw, apps, inv] = await Promise.allSettled([api('GET', '/api/updates/software'), api('GET', '/api/updates/apps'), api('GET', '/api/software')]);
@@ -909,11 +905,11 @@ function renderUpdates() {
   const appAvail = (u.apps || []).filter((x) => x.updateAvailable);
   const n = swAvail.length + appAvail.length;
   $('#badge-updates').hidden = n === 0; $('#badge-updates').textContent = n;
-  $('#updates-status').textContent = `Checked ${u.checkedAt.toLocaleTimeString()} · ` + (n ? `${n} update${n > 1 ? 's' : ''} available` : 'everything is up to date');
+  $('#updates-status').textContent = `Checked ${u.checkedAt.toLocaleTimeString()} · ` + (n ? `${n} update${n > 1 ? 's' : ''} available` : u.softwareError || u.appsError ? 'some checks failed' : 'no updates found');
 
   const sw = $('#sw-list'); sw.innerHTML = '';
   if (u.softwareError) sw.innerHTML = `<li class="muted">Could not reach Garmin: ${esc(u.softwareError)}</li>`;
-  else if (!u.software.length) sw.innerHTML = '<li class="muted">Garmin offers nothing for this watch right now.</li>';
+  else if (!u.software.length) sw.innerHTML = '<li class="muted">No software updates found.</li>';
   for (const x of u.software || []) {
     const written = u.written.has(x.partNumber);
     const tag = written ? '<span class="tag new">Written · unplug to install</span>' : x.isProductInstalled ? '<span class="tag ok">Installed</span>' : `<span class="tag new">Update</span>`;
@@ -965,7 +961,7 @@ async function installUpdate(x) {
   const restart = x.isRestartRequired || x.isPrimaryFirmware;
   const ok = await confirmDialog({
     title: `${x.isProductInstalled ? 'Reinstall' : 'Install'} ${x.productName} ${x.version}?`,
-    body: `<p>${fmtSize(x.sizeBytes)} is downloaded from Garmin, checked against its checksum and written to <code>${esc(x.installPath)}/${esc(x.fileName)}</code>. The watch installs it after you unplug it${restart ? ', then restarts. Keep it charged and do not interrupt the restart' : ''}.</p>${notes.length ? `<ul class="notes">${notes.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}`,
+    body: `<p>Download ${fmtSize(x.sizeBytes)} from Garmin. Unplug the watch to install the update.${restart ? ' The watch will restart. Keep it charged and let the restart finish.' : ''}</p>${notes.length ? `<ul class="notes">${notes.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}`,
     ok: 'Download and install',
   });
   if (!ok) return;
@@ -982,7 +978,7 @@ $('#btn-check-updates').onclick = loadUpdates;
 $('#prg-file').addEventListener('change', async () => {
   const f = $('#prg-file').files[0];
   if (!f) return;
-  const ok = await confirmDialog({ title: 'Install this app on the watch?', body: `<p>${esc(f.name)} (${fmtSize(f.size)}) is copied to <code>GARMIN/APPS/MEDIA</code>, where Garmin Express puts new apps. The watch registers it after you unplug it.</p>`, ok: 'Install' });
+  const ok = await confirmDialog({ title: 'Install app on the watch?', body: `<p>Copy ${esc(f.name)} (${fmtSize(f.size)}) to the watch. Unplug it to finish installation.</p>`, ok: 'Install' });
   if (ok) {
     try { const res = await api('POST', '/api/apps/install', await f.arrayBuffer(), true); toast(res.note); state.apps = []; loadNewFiles(); } catch (e) { toast(e.message, 'bad'); }
   }
@@ -1037,8 +1033,8 @@ async function loadHealth() {
   if (!state.connected) return;
   const days = Number($('#health-days').value) || 14;
   if (!state.health.daily || state.health.loadedDays !== days) {
-    $('#health-status').textContent = 'Asking Garmin Connect…';
-    try { state.health.daily = await api('GET', '/api/health/daily?days=' + days); state.health.loadedDays = days; $('#health-status').textContent = days > 14 ? 'Long ranges come from Connect\'s daily totals; calories are not in them.' : ''; loadExtras(); }
+    $('#health-status').textContent = 'Loading from Garmin Connect…';
+    try { state.health.daily = await api('GET', '/api/health/daily?days=' + days); state.health.loadedDays = days; $('#health-status').textContent = days > 14 ? 'Calories are unavailable for ranges over 14 days.' : ''; loadExtras(); }
     catch (e) { $('#health-charts').innerHTML = `<p class="muted">${esc(e.message)}${/signed in/.test(e.message) ? ' (sign in on the Garmin Connect tab)' : ''}</p>`; $('#health-status').textContent = ''; }
   }
   if (state.health.daily) renderDaily();
@@ -1046,7 +1042,7 @@ async function loadHealth() {
 }
 function renderDaily() {
   const rows = state.health.daily.filter((r) => !r.error);
-  if (!rows.length) { $('#health-charts').innerHTML = '<p class="muted">Garmin Connect returned nothing for these days.</p>'; return; }
+  if (!rows.length) { $('#health-charts').innerHTML = '<p class="muted">No health data available for these days.</p>'; return; }
   const goal = rows[rows.length - 1].stepGoal;
   const last = rows[rows.length - 1];
   $('#health-charts').innerHTML = `
@@ -1060,7 +1056,7 @@ function renderDaily() {
 }
 async function loadExtras() {
   if (state.health.extras) return;
-  $('#extras-status').textContent = 'Asking Garmin Connect…';
+  $('#extras-status').textContent = 'Loading from Garmin Connect…';
   try { state.health.extras = await api('GET', '/api/health/extras'); $('#extras-status').textContent = ''; renderExtras(); }
   catch (e) { $('#extras-status').textContent = e.message; $('#extras-tiles').innerHTML = ''; }
 }
@@ -1078,7 +1074,7 @@ function renderExtras() {
     tb.appendChild(tr);
   }
   if (!x.records.length) tb.innerHTML = '<tr><td colspan="3" class="muted">No personal records yet.</td></tr>';
-  const wl = $('#weight-list'); wl.innerHTML = x.weight.length ? '' : '<li class="muted">No weigh-ins in the last year. Log one above; the watch shows it in the weight glance after a sync.</li>';
+  const wl = $('#weight-list'); wl.innerHTML = x.weight.length ? '' : '<li class="muted">No weigh-ins in the last year. Log your weight above.</li>';
   for (const w of x.weight.slice(-8).reverse()) wl.appendChild(el(`<li><span><span class="what">${w.kg.toFixed(1)} kg</span>${w.bmi ? ` <span class="meta">BMI ${w.bmi.toFixed(1)}</span>` : ''}</span><span class="meta">${esc(w.date)}</span></li>`));
   const bl = $('#badges-list'); bl.innerHTML = x.badges.length ? '' : '<li class="muted">No badges yet.</li>';
   for (const b of x.badges.slice(0, 8)) bl.appendChild(el(`<li><span><span class="what">${esc(b.name)}</span>${b.count > 1 ? ` <span class="tag">×${b.count}</span>` : ''}</span><span class="meta">${esc(b.date)} · ${b.points} pt</span></li>`));
@@ -1088,7 +1084,7 @@ $('#music-q').addEventListener('input', () => { if (state.music.lib) renderMusic
 $('#weight-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const kg = Number($('#weight-kg').value);
-  const ok = await confirmDialog({ title: `Log ${kg.toFixed(1)} kg in Garmin Connect?`, body: '<p>Saved as a manual weigh-in dated now. Garmin Connect shows it on the phone and the watch after their next sync.</p>', ok: 'Log it' });
+  const ok = await confirmDialog({ title: `Log ${kg.toFixed(1)} kg in Garmin Connect?`, body: '<p>Adds a manual weigh-in with the current date and time.</p>', ok: 'Log weight' });
   if (!ok) return;
   try {
     await api('POST', '/api/health/weight', { kg });
@@ -1149,7 +1145,7 @@ function renderActivities() {
     tr.onclick = () => showActivity(a.file);
     tb.appendChild(tr);
   }
-  if (!all.length) tb.innerHTML = '<tr><td colspan="7" class="muted">No activities decoded yet.</td></tr>';
+  if (!all.length) tb.innerHTML = '<tr><td colspan="7" class="muted">No activities available in this view.</td></tr>';
   if (all.length > state.health.actsShown) {
     const tr = el(`<tr><td colspan="7"><button class="btn small">Show ${Math.min(60, all.length - state.health.actsShown)} more of ${all.length}</button></td></tr>`);
     tr.querySelector('button').onclick = () => { state.health.actsShown += 60; renderActivities(); };
@@ -1226,11 +1222,11 @@ async function loadWorkouts() {
     }
   } catch (e) { ul.innerHTML = `<li class="muted">${esc(e.message)}</li>`; }
 }
-function wkSpec() { try { return JSON.parse($('#wk-spec').value); } catch (e) { toast('The workout is not valid JSON: ' + e.message, 'bad'); return null; } }
+function wkSpec() { try { return JSON.parse($('#wk-spec').value); } catch (e) { toast('Check the workout JSON: ' + e.message, 'bad'); return null; } }
 let wkTimer = null;
 $('#wk-spec').addEventListener('input', () => { clearTimeout(wkTimer); wkTimer = setTimeout(previewWorkout, 500); });
 async function previewWorkout() {
-  let spec; try { spec = JSON.parse($('#wk-spec').value); } catch (e) { $('#wk-preview').textContent = 'Not valid JSON yet.'; return; }
+  let spec; try { spec = JSON.parse($('#wk-spec').value); } catch (e) { $('#wk-preview').textContent = 'Complete the JSON to preview the workout.'; return; }
   try { const r = await api('POST', '/api/workouts/preview', { spec }); $('#wk-preview').textContent = describeSteps(r.spec.steps, 0) + `\n≈ ${fmtDur(r.connect.estimatedDurationInSecs)} total`; }
   catch (e) { $('#wk-preview').textContent = e.message; }
 }
@@ -1257,7 +1253,7 @@ const kindPlural = { activity: 'Activities', glance: 'Glances', app: 'Apps', wat
 const kindOrder = Object.keys(kindLabel);
 async function loadInstalled() {
   const tb = $('#inst-table tbody');
-  if (!state.apps.length) tb.innerHTML = '<tr><td colspan="6" class="muted">Reading the app registry…</td></tr>';
+  if (!state.apps.length) tb.innerHTML = '<tr><td colspan="6" class="muted">Loading installed apps…</td></tr>';
   try { await fetchApps(); state.installed.pending = await api('GET', '/api/apps/pending').catch(() => []); renderInstalled(); }
   catch (e) { tb.innerHTML = `<tr><td colspan="6" class="muted">${esc(e.message)}</td></tr>`; }
 }
@@ -1311,7 +1307,7 @@ function renderInstalled() {
     }
     tb.appendChild(tr);
   }
-  if (!rows.length) tb.innerHTML = '<tr><td colspan="6" class="muted">Nothing matches.</td></tr>';
+  if (!rows.length) tb.innerHTML = '<tr><td colspan="6" class="muted">No apps match these filters.</td></tr>';
   const ciq = rows.filter((a) => !a.native).length;
   const hidden = rows.filter((a) => a.hidden && ['activity', 'glance', 'app'].includes(a.typeName)).length;
   $('#inst-status').textContent = `${rows.length} of ${apps.length} · ${ciq} from Connect IQ, ${rows.length - ciq} built in · ${hidden} hidden from the lists${pending.size ? ` · ${pending.size} change${pending.size === 1 ? '' : 's'} waiting for unplug` : ''}`;
@@ -1347,11 +1343,11 @@ function renderMusic() {
     tb.appendChild(tr);
   }
   const prov = lib.providers || [];
-  if (!lib.tracks.length) tb.innerHTML = `<tr><td colspan="5" class="muted">${prov.length ? `No audio files added over USB. Downloads made by ${prov.map((p) => esc(p.name)).join(' and ')} live in the app's own protected cache and never show up here.` : 'No audio files on the watch. Add MP3, M4A, AAC, WAV or FLAC files above.'}</td></tr>`;
+  if (!lib.tracks.length) tb.innerHTML = `<tr><td colspan="5" class="muted">${prov.length ? 'No audio files found. Streaming downloads appear only in their apps.' : 'No audio files found. Add MP3, M4A, AAC, WAV or FLAC files above.'}</td></tr>`;
   const pv = $('#music-providers'); pv.hidden = !prov.length;
-  if (prov.length) pv.innerHTML = `<h2>Streaming apps</h2><ul class="pending">${prov.map((p) => `<li><span><div class="what">${esc(p.name)} <span class="tag">v${p.version}</span></div><div class="meta">downloads in its protected cache</div></span><span class="num">${fmtSize(p.cacheBytes)}</span></li>`).join('')}</ul><p class="hint">Streaming downloads are DRM-protected and kept in the hidden app area, so USB cannot list, copy or delete them. Manage them from the ${esc(prov[0].name)} app on the watch or from Connect IQ on the phone. Only files added on this page appear in the table.</p>`;
+  if (prov.length) pv.innerHTML = `<h2>Streaming apps</h2><ul class="pending">${prov.map((p) => `<li><span><div class="what">${esc(p.name)} <span class="tag">v${p.version}</span></div><div class="meta">Download cache</div></span><span class="num">${fmtSize(p.cacheBytes)}</span></li>`).join('')}</ul><p class="hint">Manage downloads in each app on the watch.</p>`;
   $('#music-status').textContent = `${lib.tracks.length} tracks · ${fmtSize(lib.bytes)}${state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free on the watch` : ''}`;
-  const ul = $('#music-playlists'); ul.innerHTML = lib.playlists.length ? '' : '<li class="muted">No playlists. Select tracks and press “Make playlist”.</li>';
+  const ul = $('#music-playlists'); ul.innerHTML = lib.playlists.length ? '' : '<li class="muted">Select tracks, then choose “Create playlist”.</li>';
   for (const p of lib.playlists) {
     const li = el(`<li><div><div class="what">${esc(p.name)}</div><div class="meta">${p.tracks.length} tracks · <span class="mono">${esc(p.path)}</span></div></div><button class="btn small danger">Delete</button></li>`);
     li.querySelector('button').onclick = async () => { if (!await confirmDialog({ title: `Delete playlist “${p.name}”?`, body: '<p>The tracks stay on the watch.</p>', ok: 'Delete' })) return; try { await api('DELETE', '/api/music?path=' + encodeURIComponent(p.path)); loadMusic(); } catch (e) { toast(e.message, 'bad'); } };
@@ -1390,32 +1386,41 @@ function promptDialog(title, label, value) {
     const dlg = $('#dlg');
     $('#dlg-title').textContent = title;
     $('#dlg-body').innerHTML = `<label class="form" style="display:block">${esc(label)}<input id="dlg-input" type="text" value="${esc(value)}" style="width:100%;margin-top:6px"></label>`;
-    $('#dlg-ok').textContent = 'OK';
+    $('#dlg-ok').textContent = 'Create playlist';
     dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok' ? $('#dlg-input').value.trim() : null), { once: true });
     dlg.showModal(); $('#dlg-input').select();
   });
 }
 
 // ---------- Connect IQ store ----------
-state.store = { loaded: false, q: '', type: prefs.get('storeType', 'watchface'), sort: prefs.get('storeSort', 'mostPopular'), page: 0, apps: [], total: -1, selected: null, busy: false };
+state.store = { loaded: false, q: '', type: prefs.get('storeType', 'watchface'), sort: prefs.get('storeSort', 'mostPopular'), page: 0, apps: [], total: -1, selected: null, busy: false, generation: 0 };
+function storeConnectionChanged() {
+  const st = state.store;
+  st.generation++;
+  st.loaded = false; st.busy = false; st.page = 0; st.apps = []; st.total = -1;
+  if (state.tab === 'store') loadStore();
+  if (st.selected) showStoreApp(st.selected);
+}
 function fmtCount(n) { return n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
 function stars(r) { return r ? `★ ${Number(r).toFixed(1)}` : 'no rating'; }
 async function loadStore(more) {
   const st = state.store;
   if (st.busy) return;
+  const generation = st.generation;
   st.busy = true;
   if (!more) { st.page = 0; st.apps = []; $('#store-grid').innerHTML = '<p class="muted">Searching the store…</p>'; setRoute('store', st.selected, storeParams(), true); }
   try {
     const params = new URLSearchParams({ q: st.q, type: st.q ? st.type : (st.type || 'watchface'), sort: st.sort, page: st.page });
     const view = await api('GET', '/api/store?' + params.toString());
+    if (generation !== st.generation) return;
     st.loaded = true;
     if (!st.typesRendered) { renderStoreControls(view); st.typesRendered = true; }
     st.apps = st.apps.concat(view.apps); st.total = view.total;
     renderStore();
     $('#store-more').hidden = view.apps.length < 24;
     $('#store-count').textContent = st.total >= 0 ? `${st.apps.length} of ${st.total} results` : `${st.apps.length} shown`;
-  } catch (e) { $('#store-grid').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
-  finally { st.busy = false; }
+  } catch (e) { if (generation === st.generation) $('#store-grid').innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+  finally { if (generation === st.generation) st.busy = false; }
 }
 function renderStoreControls(view) {
   const types = $('#store-types'); types.innerHTML = '';
@@ -1447,9 +1452,9 @@ function renderStore() {
   const grid = $('#store-grid'); grid.innerHTML = '';
   const f = storeFilters();
   const shown = state.store.apps.filter((a) => storeMatches(a, f));
-  $('#store-filtered').textContent = shown.length === state.store.apps.length ? '' : `${shown.length} of ${state.store.apps.length} loaded match the filters; Show more loads more from the store`;
+  $('#store-filtered').textContent = shown.length === state.store.apps.length ? '' : `${shown.length} of ${state.store.apps.length} loaded apps match`;
   for (const a of shown) {
-    const badge = a.updateAvailable ? '<span class="tag new">Update</span>' : a.installed ? '<span class="tag ok">Installed</span>' : !a.compatible ? '<span class="tag">Not for this watch</span>' : '';
+    const badge = a.updateAvailable ? '<span class="tag new">Update</span>' : a.installed ? '<span class="tag ok">Installed</span>' : state.connected && !a.compatible ? '<span class="tag">Not for this watch</span>' : '';
     const card = el(`<button class="store-card${state.store.selected === a.id ? ' active' : ''}" data-id="${esc(a.id)}">
       ${a.iconUrl ? `<img src="${esc(a.iconUrl)}" alt="" loading="lazy">` : '<span class="app-ico">?</span>'}
       <span class="body"><span class="name">${esc(a.name)}</span><span class="dev">${esc(a.developer)}</span>
@@ -1458,18 +1463,20 @@ function renderStore() {
     card.onclick = () => showStoreApp(a.id);
     grid.appendChild(card);
   }
-  if (!state.store.apps.length) grid.innerHTML = '<p class="muted">Nothing found.</p>';
-  else if (!shown.length) grid.innerHTML = '<p class="muted">Nothing loaded so far matches the filters. Press Show more, or loosen them.</p>';
+  if (!state.store.apps.length) grid.innerHTML = '<p class="muted">No apps found. Try another search or app type.</p>';
+  else if (!shown.length) grid.innerHTML = '<p class="muted">No loaded apps match. Change the filters or select Show more.</p>';
 }
 document.querySelectorAll('#store-filters select, #store-filters input').forEach((x) => x.addEventListener('change', () => { if (state.store.loaded) renderStore(); }));
 async function showStoreApp(id) {
+  const generation = state.store.generation;
   state.store.selected = id;
   setRoute('store', id, storeParams());
   document.querySelectorAll('.store-card').forEach((c) => c.classList.toggle('active', c.dataset.id === id));
   const box = $('#store-detail'); box.hidden = false; box.innerHTML = '<p class="muted">Loading…</p>';
   try {
     const d = await api('GET', '/api/store/apps/' + encodeURIComponent(id));
-    const status = d.updateAvailable ? `<span class="tag new">Installed v${d.installedVersion} · store has v${d.internalVersion}</span>` : d.installed ? `<span class="tag ok">Installed v${d.installedVersion}</span>` : d.compatible ? '<span class="tag">Not installed</span>' : '<span class="tag">Not for this watch</span>';
+    if (generation !== state.store.generation || state.store.selected !== id) return;
+    const status = !state.connected ? '<span class="tag">Connect a watch to check compatibility</span>' : d.updateAvailable ? `<span class="tag new">Installed v${d.installedVersion} · store has v${d.internalVersion}</span>` : d.installed ? `<span class="tag ok">Installed v${d.installedVersion}</span>` : d.compatible ? '<span class="tag">Not installed</span>' : '<span class="tag">Not for this watch</span>';
     box.innerHTML = `
       <div class="head">${d.iconUrl ? `<img class="icon" src="${esc(d.iconUrl)}" alt="">` : ''}<div><h2>${esc(d.name)}</h2><div class="hint">${esc(d.developer)} · ${esc(d.type)}</div></div></div>
       <div>${status}</div>
@@ -1478,18 +1485,18 @@ async function showStoreApp(id) {
         <dt>Downloads</dt><dd>${fmtCount(d.downloads)}</dd>
         <dt>Version</dt><dd>${esc(d.version)}${d.updated ? ' · ' + esc(d.updated) : ''}</dd>
         <dt>Price</dt><dd>${esc(d.price || 'Free')}${d.trialMode ? ' (trial available)' : ''}</dd>
-        ${d.sizeBytes ? `<dt>Size</dt><dd>${fmtSize(d.sizeBytes)} on this watch${state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free` : ''}</dd>` : ''}
+        ${d.sizeBytes ? `<dt>Size</dt><dd>${fmtSize(d.sizeBytes)}${state.connected ? ' on this watch' : ''}${state.connected && state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free` : ''}</dd>` : ''}
         ${d.hasSettings !== undefined && d.hasSettings !== null ? `<dt>Settings</dt><dd>${d.hasSettings ? 'editable here once installed' : 'none'}</dd>` : ''}
         ${d.permissions && d.permissions.length ? `<dt>Permissions</dt><dd>${esc(d.permissions.join(', '))}</dd>` : ''}
       </dl>
       <div class="btns"><a class="btn primary" href="${esc(d.storeUrl)}" target="garmin-store" rel="noopener">Open in store ↗</a>${d.installed && d.hasSettings ? '<button class="btn" id="store-edit">Edit settings</button>' : ''}</div>
-      <p class="hint">${d.installed && !d.updateAvailable ? 'Installed and current.' : 'To install or update: queue it in the Connect IQ phone app (with Bluetooth off, so the phone cannot deliver it itself), then Sync in the Garmin Connect tab writes it to the watch over USB.'}</p>
+      <p class="hint">${d.installed && !d.updateAvailable ? 'No update found.' : 'Queue the install or update in the Connect IQ phone app, then sync on the Garmin Connect tab.'}</p>
       ${d.description ? `<h3>About</h3><div class="text">${esc(d.description)}</div>` : ''}
       ${d.whatsNew ? `<h3>What's new</h3><div class="text">${esc(d.whatsNew)}</div>` : ''}
       ${d.reviews && d.reviews.length ? `<h3>Reviews</h3>${d.reviews.filter((r) => r.text).slice(0, 6).map((r) => `<div class="review"><b>${'★'.repeat(r.rating)}</b> ${esc(r.reviewer)}${r.version ? ' · v' + esc(r.version) : ''}<div>${esc(r.text)}</div></div>`).join('')}` : ''}`;
     const edit = $('#store-edit');
     if (edit) edit.onclick = async () => { const apps = await fetchApps().catch(() => []); const a = apps.find((x) => x.fileName && x.name.toLowerCase().startsWith(d.name.toLowerCase().slice(0, 4))); navigate('apps', a ? a.name : ''); };
-  } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+  } catch (e) { if (generation === state.store.generation && state.store.selected === id) box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
 let storeTimer = null;
 $('#store-q').addEventListener('input', () => { clearTimeout(storeTimer); storeTimer = setTimeout(() => { state.store.q = $('#store-q').value.trim(); loadStore(); }, 350); });
@@ -1522,7 +1529,7 @@ async function loadCloudMessages() {
     state.cloud.messages = msgs;
     const fresh = msgs.filter((m) => m.messageStatus === 'new');
     $('#badge-cloud').hidden = fresh.length === 0; $('#badge-cloud').textContent = fresh.length;
-    if (!msgs.length) { ul.innerHTML = '<li class="muted">Nothing queued. Connect has delivered everything.</li>'; return; }
+    if (!msgs.length) { ul.innerHTML = '<li class="muted">No items queued.</li>'; return; }
     ul.innerHTML = msgs.map((m) => `<li><div><div class="what">${esc(m.metaData.messageName || m.messageType)} <span class="tag${m.messageStatus === 'new' ? ' new' : ''}">${esc(m.messageStatus)}</span></div><div class="meta">${esc(m.messageType)} · ${esc(m.metaData.fileType)} · ${esc(m.deviceXmlDataType)}</div></div></li>`).join('');
   } catch (e) { ul.innerHTML = `<li class="muted">${esc(e.message)}</li>`; }
 }
@@ -1557,7 +1564,7 @@ function renderCloudSettings() {
       if (it.options && it.options.length) v = JSON.parse(ctl.value);
       else if (it.type === 'bool') v = ctl.checked;
       else if (it.type === 'number') v = Number(ctl.value);
-      else if (it.type === 'list' || it.type === 'object') { try { v = JSON.parse(ctl.value); } catch (e) { toast('Not valid JSON', 'bad'); return; } }
+      else if (it.type === 'list' || it.type === 'object') { try { v = JSON.parse(ctl.value); } catch (e) { toast('Enter valid JSON for ' + humanize(it.key), 'bad'); return; } }
       else v = ctl.value;
       if (JSON.stringify(v) === JSON.stringify(it.value)) state.cloudPending.delete(it.key); else state.cloudPending.set(it.key, v);
       row.classList.toggle('changed', state.cloudPending.has(it.key));
@@ -1569,7 +1576,7 @@ function renderCloudSettings() {
 }
 async function applyCloudChanges() {
   const list = [...state.cloudPending.entries()];
-  const body = `<ul class="changes">${list.map(([k, v]) => { const it = state.cloud.settings.find((s) => s.key === k) || {}; return `<li><span>${esc(humanize(k))}</span><span><span class="from">${esc(fmt(it.value))}</span><span class="to">${esc(typeof v === 'object' ? JSON.stringify(v) : fmt(v))}</span></span></li>`; }).join('')}</ul><p class="note">Saved in Garmin Connect's record for this watch. Connect then generates a settings file, which is written to GARMIN/NewFiles and applied when you unplug the watch.</p>`;
+  const body = `<ul class="changes">${list.map(([k, v]) => { const it = state.cloud.settings.find((s) => s.key === k) || {}; return `<li><span>${esc(humanize(k))}</span><span><span class="from">${esc(fmt(it.value))}</span><span class="to">${esc(typeof v === 'object' ? JSON.stringify(v) : fmt(v))}</span></span></li>`; }).join('')}</ul><p class="note">Save in Garmin Connect and download any settings file it queues. Unplug the watch to apply downloaded changes.</p>`;
   if (!await confirmDialog({ title: 'Save in Garmin Connect?', body, ok: 'Save' })) return;
   try {
     const res = await api('PUT', '/api/cloud/settings', { changes: Object.fromEntries(list) });
@@ -1621,7 +1628,8 @@ async function pollSync() {
     const u = j.result.upload;
     const parts = [];
     if (u) parts.push(`uploaded ${u.uploaded}, already in Connect ${u.duplicate}, failed ${u.failed}, unchanged ${u.skipped}`);
-    parts.push(`${(j.result.pulled || []).length} item(s) written to the watch`);
+    const pulled = (j.result.pulled || []).length;
+    parts.push(`${pulled} item${pulled === 1 ? '' : 's'} written to the watch`);
     $('#sync-status').textContent = `Done ${new Date(j.endedAt).toLocaleTimeString()}: ${parts.join('; ')}`;
     if (!state.cloud.syncSeen || state.cloud.syncSeen !== j.endedAt) { state.cloud.syncSeen = j.endedAt; loadCloudMessages(); loadNewFiles(); if ((j.result.pulled || []).length) { state.apps = []; } }
   } else $('#sync-status').textContent = '';
@@ -1630,5 +1638,5 @@ async function pollSync() {
 // ---------- boot ----------
 applyRoute();
 api('GET', '/api/status').then((st) => {
-  if (st.connected) { state.connected = true; state.summary = st.summary; setConn('ok', 'Connected'); $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect'; renderOverview(st.summary); loadNewFiles(); loadTab(state.tab); }
+  if (st.connected) { state.connected = true; state.summary = st.summary; storeConnectionChanged(); setConn('ok', 'Connected'); $('#devname').textContent = st.summary.model; $('#btn-connect').textContent = 'Reconnect'; renderOverview(st.summary); loadNewFiles(); loadTab(state.tab); }
 }).catch(() => {});

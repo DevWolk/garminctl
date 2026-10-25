@@ -1,9 +1,6 @@
-// Package fit implements a lossless codec for Garmin FIT files.
-//
-// The codec keeps every record, including undocumented messages and fields,
-// as raw bytes so that a decoded file re-encodes byte-for-byte. A profile
-// layer (see Profile) names the messages and fields Garmin documents in the
-// public FIT SDK.
+// Package fit decodes and encodes Garmin FIT files, preserving record order
+// and raw field bytes, including unknown fields. Profile adds names and units
+// from the public FIT SDK. Encode normalizes the header and CRCs.
 package fit
 
 import (

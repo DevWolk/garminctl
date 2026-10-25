@@ -36,7 +36,7 @@ func (c *cli) updates(ctx context.Context, svc *garmin.Service, args []string) e
 	case swErr != nil:
 		c.out.Println("  error:", swErr)
 	case len(sw) == 0:
-		c.out.Println("  up to date")
+		c.out.Println("  no software updates found")
 	}
 
 	for _, u := range sw {

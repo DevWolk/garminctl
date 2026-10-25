@@ -7,14 +7,13 @@ import (
 	"math"
 )
 
-// App is an installed application as listed in GARMIN/Apps/OUT.BIN, the
-// protobuf the watch writes for Garmin Express.
+// App is an installed application listed in GARMIN/Apps/OUT.BIN.
 type App struct {
 	ID       string `json:"id"`
 	Type     int    `json:"type"`
 	TypeName string `json:"typeName"`
 	Name     string `json:"name"`
-	Hidden   bool   `json:"hidden"` // field 4: removed from the user's activity list / glance loop (verified on the watch)
+	Hidden   bool   `json:"hidden"` // field 4: hidden from activity, glance or app lists
 	Version  int    `json:"version,omitempty"`
 	FileName string `json:"fileName,omitempty"` // Connect IQ apps only, e.g. G5RG4154
 	Size     int    `json:"size,omitempty"`

@@ -1,197 +1,184 @@
 # CLI reference
 
-## Global flags and device selection
+## Installation
+
+Download a Windows or Linux CLI archive (amd64 or arm64) from
+[GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest), unpack it,
+and put `garminctl.exe` or `garminctl` on `PATH`. `checksums.txt` contains SHA-256
+sums. These portable builds support Windows/WSL and directory dumps; see
+[USB access](desktop.md#usb-access) for native Linux requirements.
+
+With Go, install the CLI from source:
 
 ```sh
-garminctl [global flags] <command> [args]
+go install github.com/DevWolk/garminctl/cmd/garminctl@latest
+```
+
+Native Linux USB builds require CGO, `pkg-config`, and libusb development headers
+(`libusb-1.0-0-dev` on Ubuntu). The [desktop packages](desktop.md) include a CLI.
+
+## Global options
+
+```sh
+garminctl [global flags] COMMAND [args]
 garminctl -h
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `-device ID` | Select the ID reported by `devices`. |
-| `-root DIR` | Use a directory dump or mounted watch instead of opening USB. Defaults to `GARMINCTL_ROOT` when set. |
-| `-json` | Return JSON where the command supports it. |
+| Flag | Default | Usage |
+| --- | --- | --- |
+| `-device ID` | Automatic selection | Select an ID from `devices`. |
+| `-root DIR` | `GARMINCTL_ROOT`, otherwise USB | Use a mounted watch or directory dump. |
+| `-json` | `false` | Return JSON where supported. |
 
-On Windows/WSL, `devices` lists portable devices Windows sees, including phones
-and USB drives. Automatic selection opens the first device whose manufacturer
-is Garmin or whose path contains USB vendor `091E`. On native Linux, the
-libusb-enabled build lists Garmin USB devices and requires `-device ID` when
-more than one is present. IDs are specific to each transport.
+Windows/WSL lists Windows portable devices and automatically selects the first
+Garmin. Native Linux lists Garmin USB devices and requires `-device ID` if
+several are present. IDs belong to their transport. Directory mode overrides USB
+selection; use `garminctl -root ./watch-dump info` with a directory containing
+`GARMIN/` for offline data.
 
-The portable CLI archive supports WPD on Windows/WSL and directory dumps;
-direct Linux USB needs the CLI from the DEB/RPM package or a CGO-enabled source
-build. See [installation](desktop.md).
+Standalone watch commands open their own connection. HTTP MCP and the UI share
+their server's connection; see [MCP](mcp.md). Exit codes are `0` for success,
+`1` for failure, `2` for usage errors, and `130` for interruption.
 
-## Commands
+## Files and device information
 
-```sh
-garminctl version
-garminctl devices
-garminctl info
-garminctl ls GARMIN/Activity
-garminctl cat -o Settings.fit GARMIN/Settings/Settings.fit
-garminctl put local-file.bin GARMIN/NewFiles/local-file.bin
-garminctl rm GARMIN/NewFiles/local-file.bin
-garminctl mkdir GARMIN/Example
-garminctl decode GARMIN/Sports/WalkingWalk.fit
-garminctl settings
-garminctl settings -all
-garminctl settings set deviceSettings.backlightMode=manual userProfile.weight=79.5
-garminctl apps
-garminctl app-settings easy
-garminctl app-schema easy bar1a
-garminctl app-settings set easy seconds=off "bar1a=Body Battery %" cust_color1=FF7A2A
-garminctl updates
-garminctl updates install 006-DA094-00
-garminctl software
-garminctl activities -n 20
-garminctl activity 2026-10-18-14-02-40.fit
-garminctl health -days 14
-garminctl health day 2026-10-22
-garminctl workouts
-garminctl workouts create plan.json -send
-garminctl workouts create plan.json -local
-garminctl music ls
-garminctl music add song.mp3
-garminctl music playlist Run track1 track2
-garminctl app-rm "Simply Large"
-garminctl app-hide Archery
-garminctl app-show Archery
-garminctl app-pending
-garminctl app-restore ~/.cache/garminctl/OUT.BIN-…
-garminctl autostart on
-garminctl autostart status
-garminctl autostart off
-garminctl health extras
-garminctl health history 365
-garminctl health weight 80.5
-garminctl hidden GARMIN/Apps/Media
-garminctl desktop
-garminctl serve
-garminctl serve -addr 127.0.0.1:8791 -autosync=false
-garminctl serve -autosync=false
-garminctl mcp
-garminctl store search solar face
-garminctl store list -type widget -sort mostPopular
-garminctl store info 7c993e2b-70b3-459a-bbe0-db48a89af5a8
-garminctl backup ~/garmin-backup
-garminctl cloud login
-garminctl cloud mfa 123456
-garminctl cloud status
-garminctl cloud logout
-garminctl cloud sync
-garminctl cloud messages
-garminctl cloud settings
-garminctl cloud settings set timeFormat=time_twenty_four_hr
-garminctl -root /path/to/dump info
+```text
+version                         Print the build version.
+devices                         List devices available through the host transport.
+info                            Show device, firmware, storage, and pending files.
+ls [PATH]                       List a directory; default is the storage root.
+cat [-o FILE] PATH              Read text or save a binary file locally.
+put FILE PATH                   Write a local file to the watch.
+rm PATH                         Delete a watch file.
+mkdir PATH                      Create a watch directory.
+decode PATH                     Decode a watch FIT file.
+backup DIR [-skip FOLDERS]      Copy storage; skips Music,Podcasts,Audiobooks by default.
+hidden [-write-test] PATH       List hidden entries through WPD.
+mtp OPCODE [PARAM...]           Run a raw WPD read operation; numbers are hexadecimal.
 ```
 
-`info` reports the model, unit ID, firmware, installed entry count, pending
-files, and storage capacity/free space. `version` prints the version the binary
-was built from.
-`backup` copies the watch's storage to a local directory; music is left out by
-default.
+`hidden -write-test` writes, reads, and deletes a temporary file. The diagnostic
+commands `hidden` and `mtp` require WPD.
 
-## Desktop, web server, and MCP
+## Settings and apps
 
-| Command | Behavior |
-| --- | --- |
-| `garminctl desktop` | Open the installed native app; from WSL, open the Windows installation. Install Setup or a Linux package first. It takes no arguments. |
-| `garminctl serve` | Start the web UI, HTTP API, and MCP endpoint on `127.0.0.1:8787`; USB watching and automatic sync are enabled by default. |
-| `garminctl serve -addr 127.0.0.1:8791 -autosync=false` | Choose a port and disable USB watching/automatic sync. Connect manually in the UI or through an MCP tool. |
-| `garminctl mcp` | Run a separate stdio MCP server until the client disconnects. |
-| `garminctl autostart on\|off\|status` | Manage the Windows sign-in shortcut for the background `serve` process. Works from Windows or WSL; does not launch the desktop window. |
+```text
+settings [-all]                 Show documented fields in text; -all includes unknown fields.
+settings set M.F=V [...]        Queue device settings changes.
+apps                            List installed apps, faces, glances, and activities.
+app-settings APP                Read a Connect IQ app's settings.
+app-settings set APP K=V [...]  Write app settings; option labels are accepted.
+app-schema APP [KEY]            Show setting labels, ranges, and choices.
+app-hide APP | app-show APP     Queue an app-list visibility change.
+app-pending                     Show queued app-list changes.
+app-restore FILE                Queue a saved app registry.
+app-rm APP                      Remove a Connect IQ app.
+updates                         Check software/data updates and app versions.
+updates install PART            Download, verify, and write one software/data update.
+software                        List installed software components.
+```
 
-The desktop window starts its own HTTP MCP endpoint at `/mcp` and shares one
-watch connection with it. Connect assistants to the URL in **AI & MCP**; see
-[MCP setup and installed-app verification](mcp.md). A separately launched
-`garminctl mcp` has its own watch connection and session history.
+Use an app name or file ID from `apps`. Settings addresses accept message names,
+message indexes, numeric fields, and array indexes:
 
-The installed `garmin-desktop` executable accepts `-addr IP:PORT` and
-`-root DIR`; these are application flags, not arguments to `garminctl desktop`.
-`-root` also disables the automatic USB watcher. Full examples and Windows CLI
-paths are in the [desktop guide](desktop.md).
+```sh
+garminctl settings set deviceSettings.backlightMode=manual
+garminctl settings set 'hrZone[5].highBpm=180' 'deviceSettings.104[4]=8'
+```
 
-Standalone CLI commands open their own USB connection. Close the desktop app
-and stop background servers before using them against the same watch. The
-`hidden` diagnostic currently requires WPD; `hidden -write-test PATH` writes
-and deletes a temporary file and is a write test.
+Device settings write change files to `GARMIN/NewFiles`; they never rewrite
+`GARMIN/Settings/Settings.fit`. App-list changes use `GARMIN/Apps/IN.BIN` and
+attempt a registry backup in the [cache directory](desktop.md#data-updates-and-uninstall).
+The watch applies queued changes and completes app removal after USB
+disconnection. App `.SET` files are rewritten immediately. Fields marked `managedByConnect`
+also need changing in [Connect settings](cloud-sync.md#manual-sync).
 
-## Settings and updates
+Updates check the MD5 when Garmin supplies one, then write Garmin's indicated
+path. The watch applies them after USB disconnection. Connect IQ app packages
+arrive through Connect's queue or `.PRG` sideloading in the [UI](web-ui.md).
 
-Settings addresses use `message.field`, with public FIT profile names such as
-`deviceSettings`, `userProfile`, `hrZone`, and `zonesTarget`. Repeated messages
-take an index (`hrZone[5].highBpm=180`); array fields take an element
-(`deviceSettings.104[4]=8`); undocumented fields take a number. See
-[formats](formats.md) for the settings-change file format and verified device
-behavior.
+## Health, workouts, music, and store
 
-`settings` shows documented fields; use `settings -all` for every field.
-`managedByConnect` fields are controlled by Connect, which pushes its own copy
-back on each Express or phone sync; change those in Garmin Connect too.
+```text
+activities [-n N] [-wait]       List activities; N defaults to 30; -wait finishes decoding.
+activity FILE                   Show an activity's laps and sampled GPS track.
+health [-days N]                Read daily Connect health; N defaults to 14.
+health day YYYY-MM-DD           Read intraday health.
+health history [DAYS]           Read daily history; defaults to 90 days.
+health extras                   Read fitness metrics, records, badges, and weight.
+health weight KG                Log a weigh-in in Connect.
+workouts                        List Connect workouts.
+workouts create FILE.json [-send] [-local]
+workouts send ID                Queue and fetch a Connect workout.
+music [ls]                      List tracks, playlists, and streaming-app cache sizes.
+music add [-folder Music] FILE...
+music rm PATH...                Delete tracks.
+music playlist NAME TRACK...    Write a playlist.
+store search WORDS [-type T] [-sort S] [-page N]
+store list [-type T] [-sort S] [-page N]
+store info APP_ID               Show app details and reviews.
+```
 
-`updates` checks Garmin's software/data service and compares installed app
-versions with the store. Software updates are downloaded, MD5-checked, and
-written to Garmin's indicated path; the watch installs them when the USB
-session ends. Connect IQ updates arrive through Connect's queue or as a
-sideloaded `.PRG` through the web UI.
+Activities are decoded locally and cached. Health and Connect workouts require
+sign-in. `workouts create` saves in Connect by default; `-send` also fetches the
+queued workout, while `-local` writes FIT directly to `GARMIN/NewFiles`.
 
-Connect IQ settings are written directly into the app's `.SET` file and take
-effect immediately. Labels, dropdown options, and value ranges come from the
-public settings page on apps.garmin.com and are cached under
-`~/.cache/garminctl/appsettings/`; dropdown choices may be entered by label.
-
-## Health, activities, workouts, and music
-
-Activities are decoded from `GARMIN/Activity/*.fit` on the watch (sessions,
-laps, and records) and cached in `~/.cache/garminctl/activities-<unit>.json`.
-Daily health includes steps, resting heart rate, stress, body battery, sleep,
-and calories; intraday data includes heart rate, stress, body battery, and
-sleep stages. These come from Garmin Connect, which retains history the watch
-itself discards after each sync. The web UI also maps activity GPS tracks; see
-[web UI](web-ui.md).
-
-Workouts use a JSON specification:
+A workout JSON specification contains a name, sport, and steps:
 
 ```json
-{"name":"4x400","sport":"running","steps":[
+{"name":"Intervals","sport":"running","steps":[
   {"type":"warmup","duration":"10:00"},
   {"repeat":4,"steps":[{"type":"interval","distance":"400m","target":"pace 4:30-4:45"},
                        {"type":"recovery","duration":"1:30"}]},
-  {"type":"cooldown","duration":"5:00","target":"hr zone 2"}]}
+  {"type":"cooldown","duration":"5:00"}]}
 ```
 
-Step types are warmup, cooldown, interval, recovery, rest, and other. A step
-has one end condition: `duration` (`10:00`, `90s`, `1h`), `distance` (`400m`,
-`2km`, `1mi`), `calories`, or `lap: true`. Targets include `hr 140-160`,
-`hr zone 3`, `pace 4:30-4:45` (min/km), `speed 10-12` (km/h),
-`cadence 170-180`, and `power 200-250`. A workout can be saved in Connect and
-queued to the watch, or written as a FIT file to `GARMIN/NewFiles`; both were
-verified against Connect's generated file. Courses are not offered because
-the vívoactive 5 has no course data type.
+Each step ends by `duration` (`10:00`, `90s`, `1h`), `distance` (`400m`, `2km`,
+`1mi`), `calories`, or `lap: true`. Types include warmup, cooldown, interval,
+recovery, rest, main, and other. Targets accept `hr 140-160`, `hr zone 3`,
+`pace 4:30-4:45` (min/km), `speed 10-12` (km/h), `cadence 170-180`, or `power 200-250`.
 
-Streaming-app downloads (YouTube Music, Spotify, and others) are DRM-protected
-and stored in the hidden app area; only their cache size is known and shown as
-"Streaming apps". Own audio files (mp3, m4a, aac, wav, flac) are written to
-`Music/<Artist>/<Album>/<Title>` from ID3 tags. Podcasts and audiobooks use
-their corresponding folders; playlists are `.m3u` files in `Music/`.
+Music accepts mp3, m4a, aac, adts, wav, and flac. `-folder` defaults to `Music`; it also
+accepts `Podcasts` or `Audiobooks`. Music paths use available ID3 tags; playlists
+use `.m3u`. Streaming downloads expose cache sizes only.
 
-## Connect IQ store and app registry
+The store needs no login and filters by the connected device. Types are
+`watchface`, `watch-app`, `widget`, `datafield`, or `audio-content-provider-app`.
+Listings default to `watchface`. Listing sort values are `mostPopular`,
+`highestRated`, `mostRecent`, or `trending`; an omitted sort uses the store's
+default. Search ignores sorting. `-page` defaults to `0`.
 
-The public store API needs no login. `store` commands browse and search apps
-filtered to this watch, with ratings, downloads, price, device-specific size,
-permissions, description, release notes, and reviews; results indicate
-installed apps and newer versions.
+## Servers
 
-The store website no longer handles installs. Queue an app in the Connect IQ
-phone app while the phone cannot reach the watch (Bluetooth off), then
-`cloud sync` pulls the queued `.PRG` and writes it to the watch. The watch
-hides its app folder from ordinary MTP listings; garminctl accesses it through
-Garmin's vendor PTP operation and raw SendObject. A watch face installed this
-way was registered by the watch on unplug on 2026-10-22. Sideloaded `.PRG`
-files use the same path, including writes to hidden `GARMIN/Apps/Media`.
+```text
+desktop                         Launch the installed app; accepts no arguments.
+serve [-addr IP:PORT] [-autosync=false]
+mcp                             Run an independent stdio MCP server.
+autostart [on|off|status]        Manage Windows background-server startup; defaults to status.
+```
 
-`app-hide` and `app-show` queue changes to the watch's app list for unplug;
-`app-pending` shows queued changes and `app-restore` restores a saved registry.
-`app-rm` removes a Connect IQ app, completed on unplug.
+`serve` starts the UI, HTTP API, and `/mcp` at `127.0.0.1:8787` by default.
+`-autosync` defaults to `true`; setting it to `false` disables USB watching and
+automatic sync. `-root` also disables watching. The desktop executable has
+[separate launch flags](desktop.md#launch-options).
+
+## Cloud commands
+
+```text
+cloud login [-email ADDRESS]    Sign in; credentials can also come from environment variables.
+cloud mfa CODE                  Cannot resume verification from another CLI invocation.
+cloud status | cloud logout     Inspect or remove the saved session.
+cloud sync [-no-upload] [-no-download]
+cloud messages                  Inspect queued files.
+cloud settings                  Read Connect-managed settings.
+cloud settings set K=V [...]    Update Connect settings and fetch its generated file.
+cloud get|post PATH [BODY]      Make a raw bearer-token API request.
+cloud get1|post1 URL [BODY]      Make a raw OAuth1 request to an absolute URL.
+```
+
+Sync defaults to both directions. Account commands (`login`, `mfa`, `logout`)
+need no watch. Complete MFA in the `cloud login` prompt; pending verification is
+not saved between CLI invocations. See [Garmin Connect](cloud-sync.md) for sync behavior.
+
+Sources: [command help and global flags](../cmd/garminctl/main.go),
+[command implementations](../cmd/garminctl), [workout schema](../internal/garmin/workouts.go).

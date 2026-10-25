@@ -13,11 +13,9 @@ import (
 	"github.com/DevWolk/garminctl/internal/device"
 )
 
-// Raw PTP/MTP operations. The vívoactive 5 (like the fēnix 8) keeps its Connect IQ
-// app folder out of the ordinary object listing; only Garmin's vendor operation
-// 0x9002 returns it, and the Windows MTP driver does not know such objects, so
-// files there are written with SendObjectInfo/SendObject directly, the way
-// Garmin Express and openExpress do.
+// Raw PTP/MTP operations reach hidden app folders through Garmin operation
+// 0x9002. Objects unavailable through WPD enumeration are written directly
+// with SendObjectInfo/SendObject.
 
 const (
 	opGetStorageInfo   = 0x1005
@@ -236,8 +234,8 @@ func parseObjectInfo(handle uint32, b []byte) (RawObject, error) {
 	return o, nil
 }
 
-// objectInfoDataset builds the ObjectInfo SendObjectInfo expects, with the format
-// and thumbnail format left "undefined" as Garmin Express sends them.
+// objectInfoDataset builds the SendObjectInfo dataset with undefined object
+// and thumbnail formats (0x3000).
 func objectInfoDataset(storage, parent uint32, name string, size uint32) ([]byte, error) {
 	// A PTP string carries its length in one byte, terminator included.
 	const maxPTPString = 254
@@ -423,10 +421,8 @@ func (d *Device) Storage(ctx context.Context) (device.Storage, error) {
 	return st, nil
 }
 
-// Battery reads the MTP device property BatteryLevel (0x5001). On the
-// vívoactive 5 it is a placeholder: the descriptor's factory default and the
-// current value are both 50 whatever the real charge, so nothing shows it.
-// Kept for devices that may report it properly.
+// Battery reads MTP BatteryLevel (0x5001). Devices may return a fixed default;
+// this value is not exposed as a reliable charge indicator.
 func (d *Device) Battery(ctx context.Context) (int, bool, error) {
 	data, code, _, err := d.MtpRead(ctx, 0x1015, []uint32{0x5001}) // GetDevicePropValue
 	if err != nil {

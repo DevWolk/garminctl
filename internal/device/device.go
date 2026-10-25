@@ -1,6 +1,5 @@
-// Package device abstracts the watch's file system. Garmin watches in MTP
-// mode are reached through the Windows Portable Devices bridge (see wpd);
-// a plain directory (a mass-storage mount or a dump) is served by DirFS.
+// Package device abstracts watch filesystems through WPD, native Linux MTP
+// or DirFS for mass-storage mounts and offline dumps.
 package device
 
 import (
@@ -31,9 +30,8 @@ type StorageReporter interface {
 	Storage(ctx context.Context) (Storage, error)
 }
 
-// HiddenFS is implemented by devices that can reach folders the ordinary
-// listing hides, such as the Connect IQ app folder on the vívoactive 5 and the
-// fēnix 8. Paths are the same slash-separated watch paths as elsewhere.
+// HiddenFS provides access to folders hidden from ordinary MTP listings.
+// Paths use the same slash-separated format as Device.
 type HiddenFS interface {
 	ListHidden(ctx context.Context, dir string) ([]Entry, error)
 	WriteHidden(ctx context.Context, dir, name string, data []byte) error

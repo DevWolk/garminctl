@@ -1,6 +1,3 @@
-/* garminctl — instrument panel for one watch.
-   Palette from the owner's "Amber Athletic" Easy+ theme: amber for actions, teal for what Garmin Connect owns,
-   cool blue-grey neutrals. Dark first; light scheme below. */
 :root {
   color-scheme: light dark;
   --bg: #0d1013;
@@ -335,7 +332,7 @@ table.files td.chk { width: 28px; }
 .store-card:hover { border-color: var(--line-strong); }
 .store-card.active { border-color: var(--accent); background: var(--accent-soft); }
 .store-card img, .store-detail img.icon { width: 48px; height: 48px; border-radius: 10px; background: var(--surface-2); object-fit: cover; }
-/* A store name may take two lines, so "Maps4Garmin (Free) with Weather" stays readable; the rest stays on one line. */
+/* Allow long store names to wrap to two lines. */
 .store-card .name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-weight: 700; line-height: 1.3; margin-bottom: 2px; }
 .store-card .dev, .store-card .meta { display: block; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .store-card .meta b { color: var(--fg-2); font-weight: 600; }

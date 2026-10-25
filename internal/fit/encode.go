@@ -1,7 +1,7 @@
 package fit
 
-// Encode serialises the file. Definition records are written where they
-// appear in Records, so a decoded file encodes to the same bytes.
+// Encode preserves record order and field bytes, and writes a 14-byte header
+// with recalculated header and file CRCs.
 func (f *File) Encode() []byte {
 	body := make([]byte, 0, 1024)
 

@@ -28,7 +28,7 @@ func (c *cli) devices(ctx context.Context, _ []string) error {
 	}
 
 	if len(devs) == 0 {
-		c.out.Println("no portable devices connected")
+		c.out.Println("no devices found")
 		return nil
 	}
 
@@ -174,9 +174,8 @@ func (c *cli) mkdir(ctx context.Context, svc *garmin.Service, args []string) err
 	return svc.Device().Mkdir(ctx, args[0])
 }
 
-// hidden lists a folder through Garmin's vendor MTP operation, which also returns
-// what the ordinary listing hides (the app folder). With -write-test it writes a
-// small temporary file into the folder and deletes it again in the same session.
+// hidden uses the vendor MTP listing to include hidden folders.
+// -write-test writes, reads and deletes a temporary file in the same session.
 func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) error {
 	fs := c.flagSet("hidden")
 	writeTest := fs.Bool("write-test", false, "write and delete a temporary file in the folder")
@@ -191,7 +190,7 @@ func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) er
 
 	dev, ok := svc.Device().(*wpd.Device)
 	if !ok {
-		return errors.New("hidden needs the MTP bridge, not -root")
+		return errors.New("hidden requires the Windows MTP bridge")
 	}
 
 	storage, handle, err := walkHidden(ctx, dev, fs.Arg(0))
@@ -286,12 +285,11 @@ func (c *cli) hiddenWriteTest(ctx context.Context, dev *wpd.Device, storage, han
 	return nil
 }
 
-// mtp runs a raw PTP operation with a data phase from the device, for
-// exploring: mtp OPCODE [PARAM...] (hex ok).
+// mtp reads a raw PTP operation; opcodes and parameters use hexadecimal.
 func (c *cli) mtp(ctx context.Context, svc *garmin.Service, args []string) error {
 	dev, ok := svc.Device().(*wpd.Device)
 	if !ok || len(args) < 1 {
-		return usageErrorf("usage: mtp OPCODE [PARAM...]  (needs the MTP bridge)")
+		return usageErrorf("usage: mtp OPCODE [PARAM...]  (requires the Windows MTP bridge)")
 	}
 
 	nums := make([]uint32, 0, len(args))

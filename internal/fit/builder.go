@@ -23,9 +23,8 @@ func TimestampTime(ts uint32) time.Time {
 	return FITEpoch.Add(time.Duration(ts) * time.Second)
 }
 
-// Builder constructs a FIT file from scratch. Like Garmin Connect it uses
-// local message slot 0 only and emits a definition record whenever the
-// record layout changes.
+// Builder constructs a FIT file using local message slot 0 and emits a
+// definition record whenever the layout changes.
 type Builder struct {
 	file      *File
 	bigEndian bool
@@ -33,7 +32,7 @@ type Builder struct {
 	lastDef   *Definition
 }
 
-// NewBuilder returns a builder. Garmin Connect writes big-endian files.
+// NewBuilder returns a builder with big-endian record definitions.
 func NewBuilder(profileVersion uint16, bigEndian bool) *Builder {
 	return &Builder{
 		file:      &File{ProtocolVersion: 0x10, ProfileVersion: profileVersion},

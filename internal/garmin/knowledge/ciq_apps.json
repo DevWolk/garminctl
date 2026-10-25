@@ -1,5 +1,5 @@
 {
-  "_comment": "Hints for Connect IQ app settings keyed by store app id. The authoritative labels and dropdown values come from the store's settings definition, which needs a Garmin login; these hints are inferred from the user's Easy+ notes and the .SET defaults.",
+  "_comment": "Fallback Connect IQ setting hints keyed by store app id. The store settings form supplies labels and available options when accessible.",
   "7c993e2b-70b3-459a-bbe0-db48a89af5a8": {
     "name": "Easy+",
     "valueHints": {
@@ -16,7 +16,7 @@
       "hour_color": "hours color; hour_color2 is the second gradient color (same value = no gradient)",
       "min_color": "minutes color; min_color2 is the second gradient color",
       "bar1a": "screen 1 left progress bar type; bar1b = right bar; bar2a/bar2b = screen 2",
-      "layout_type": "1 on this watch with the Round layout selected",
+      "layout_type": "layout selection; use the app schema for available values",
       "seconds": "show seconds",
       "leading0": "leading zero for hours",
       "metrics_scale": "metrics font size scale (1.0 = default)",

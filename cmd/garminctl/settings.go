@@ -143,7 +143,7 @@ func (c *cli) setAppHidden(ctx context.Context, svc *garmin.Service, cmd string,
 
 func (c *cli) appRestore(ctx context.Context, svc *garmin.Service, args []string) error {
 	if len(args) != 1 {
-		return usageErrorf("usage: app-restore FILE   (a copy of OUT.BIN from ~/.cache/garminctl)")
+		return usageErrorf("usage: app-restore FILE   (a saved app registry)")
 	}
 
 	b, err := os.ReadFile(args[0])

@@ -67,7 +67,7 @@ func (c *cli) musicList(ctx context.Context, svc *garmin.Service) error {
 	}
 
 	for _, p := range lib.Providers {
-		c.out.Printf("%s v%d keeps %.1f MB of downloads in its protected cache (hidden from USB)\n", p.Name, p.Version, float64(p.CacheBytes)/1e6)
+		c.out.Printf("%s v%d: %.1f MB download cache\n", p.Name, p.Version, float64(p.CacheBytes)/1e6)
 	}
 
 	return nil

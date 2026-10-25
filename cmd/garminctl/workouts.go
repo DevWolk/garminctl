@@ -56,8 +56,8 @@ func (c *cli) workoutsList(ctx context.Context, cloud *garmin.Cloud) error {
 
 func (c *cli) workoutsCreate(ctx context.Context, svc *garmin.Service, cloud *garmin.Cloud, args []string) error {
 	fs := c.flagSet("workouts create")
-	send := fs.Bool("send", false, "queue it for the watch through Garmin Connect")
-	local := fs.Bool("local", false, "write the FIT straight into GARMIN/NewFiles instead of Garmin Connect")
+	send := fs.Bool("send", false, "send to the watch through Garmin Connect")
+	local := fs.Bool("local", false, "save only to the watch, without Garmin Connect")
 
 	if err := parseFlags(fs, flagsFirst(fs, args)); err != nil {
 		return err
@@ -83,7 +83,7 @@ func (c *cli) workoutsCreate(ctx context.Context, svc *garmin.Service, cloud *ga
 			return err
 		}
 
-		c.out.Println("written to", p, "- unplug the watch; the workout appears under Training > Workouts")
+		c.out.Println("written to", p, "- unplug the watch to load the workout")
 
 		return nil
 	}

@@ -1,7 +1,4 @@
-# Dependabot for the application garminctl replaces: once a day, see whether
-# Garmin shipped a new Garmin Express for Windows. When it did, open a pull
-# request that records the release and Garmin's change notes, and ask
-# Copilot to check whether garminctl has to follow.
+# Monitor upstream releases for changes affecting supported Garmin services.
 name: Garmin Express watch
 
 on:
@@ -17,11 +14,8 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     env:
-      # A personal token (repo scope, or fine-grained: contents, pull requests,
-      # issues, actions read/write) does two things GITHUB_TOKEN cannot: the
-      # pull request it opens triggers the CI workflows, and the Copilot step
-      # below can start a task. Without it the PR still opens; CI has to be
-      # started by hand and the Copilot step is skipped.
+      # Enables CI on generated PRs and the optional Copilot task.
+      # Without it, open the PR with GITHUB_TOKEN and skip Copilot.
       WATCH_TOKEN: ${{ secrets.EXPRESS_WATCH_TOKEN }}
 
     steps:
@@ -58,11 +52,11 @@ jobs:
           VERSION: ${{ steps.check.outputs.version }}
         run: |
           {
-            echo "Garmin Express $VERSION for Windows was released. garminctl replaces Garmin Express for one vívoactive 5 (see README.md, AGENTS.md and docs/formats.md)."
+            echo "Garmin Express $VERSION for Windows was released. Read README.md, AGENTS.md and docs/formats.md for garminctl's supported functionality."
             echo
             cat "$RUNNER_TEMP/notes.md"
             echo
-            echo "Task: decide for each listed change whether garminctl needs a matching change (syncing, device settings, Connect IQ apps, software updates, music, anything about the vívoactive 5). Support for other devices needs nothing. Implement what is needed with tests, run make check, and record the assessment for $VERSION in docs/express-parity.md (one dated section per Express version: the change, needed or not, why). Open a pull request against main even when nothing but the assessment changed."
+            echo "Task: review changes affecting sync, device settings, Connect IQ apps, software updates or music. Verify relevant behavior against current code. Implement necessary fixes with tests, run make check and update the affected documentation. Summarize the assessment in the task response. Open a pull request against main only when source or documentation changes are needed; do not add historical release reports."
           } > "$RUNNER_TEMP/prompt.md"
           gh api -X POST "/agents/repos/${{ github.repository }}/tasks" \
             -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \

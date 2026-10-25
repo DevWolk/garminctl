@@ -2,7 +2,7 @@
   "id": "/",
   "name": "garminctl",
   "short_name": "garminctl",
-  "description": "Garmin vívoactive 5 manager: apps, settings, health and files, without Garmin Express",
+  "description": "Manage Garmin watch apps, settings, health and files.",
   "lang": "en",
   "start_url": "/",
   "scope": "/",

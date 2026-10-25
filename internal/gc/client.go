@@ -90,7 +90,8 @@ type pendingLogin struct {
 	email     string
 }
 
-// DefaultStorePath is ~/.config/garminctl/garmin-connect.json.
+// DefaultStorePath returns garminctl/garmin-connect.json under the platform
+// config directory, or the working directory if no config directory is available.
 func DefaultStorePath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -572,8 +573,7 @@ func (c *Client) Do(ctx context.Context, method, p, contentType string, body io.
 	return resp.StatusCode, b, nil
 }
 
-// DoOAuth1 performs a request to an absolute URL signed with the session's
-// OAuth1 token, the way Garmin Express talks to services.garmin.com.
+// DoOAuth1 signs a request to an absolute Garmin URL with the session's OAuth1 token.
 func (c *Client) DoOAuth1(ctx context.Context, method, absURL, contentType string, body []byte) (int, []byte, error) {
 	c.mu.Lock()
 	o1 := c.sess.OAuth1

@@ -342,7 +342,7 @@ func (s *Service) ApplyChanges(ctx context.Context, changes []Change) (*ApplyRes
 
 	s.invalidate(PathSettings)
 
-	note := "The watch applies files in GARMIN/NewFiles when the USB session ends; unplug the watch (or eject it) and check the setting."
+	note := "Disconnect the watch to apply the settings."
 
 	var managed []string
 
@@ -353,7 +353,7 @@ func (s *Service) ApplyChanges(ctx context.Context, changes []Change) (*ApplyRes
 	}
 
 	if len(managed) > 0 {
-		note += " Warning: Garmin Connect re-sends " + strings.Join(managed, ", ") + " on every Garmin Express or phone sync and will overwrite this change unless the same value is set in Garmin Connect."
+		note += " Warning: Garmin Connect may overwrite " + strings.Join(managed, ", ") + " during sync. Set the same values in Garmin Connect to keep them."
 	}
 
 	return &ApplyResult{Path: name, Bytes: len(data), Changes: resolved, Note: note}, nil
@@ -374,7 +374,7 @@ type SettingsRow struct {
 	Note      string   `json:"note,omitempty"`
 	Confident string   `json:"confidence,omitempty"`
 	Options   []string `json:"options,omitempty"` // enum names when the field type is an enum
-	// ManagedByConnect marks fields Garmin Connect re-sends on every sync.
+	// ManagedByConnect marks fields that Garmin Connect may overwrite during sync.
 	ManagedByConnect bool    `json:"managedByConnect,omitempty"`
 	Scale            float64 `json:"scale,omitempty"`
 	Offset           float64 `json:"offset,omitempty"`

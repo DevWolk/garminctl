@@ -225,7 +225,7 @@ namespace GarminCtl
 
         // Raw MTP operations through WPD's MTP extension commands (WpdMtpExtensions.h).
         // Needed for Garmin's vendor operation 0x9002, which lists the app folder that
-        // the ordinary enumeration hides on this watch.
+        // ordinary enumeration may hide.
         const string MtpExt = "4D545058-1A2E-4106-A357-771E0819FC56";
         const string CatCommon = "F0422A9C-5DC8-4440-B5BD-5DF28835658A";
         static PropertyKey WPD_PROPERTY_COMMON_COMMAND_CATEGORY = new PropertyKey(CatCommon, 1001);

@@ -1,402 +1,197 @@
-# What the watch speaks: formats and transport
+# File formats and transport
 
-Findings from reverse engineering a vívoactive 5 (firmware 17.05) and the
-Garmin Express 7.x install on 2026-10-21. Everything here is implemented in
-`internal/` and backed by samples in the `testdata/` directories.
+This reference describes the codecs and transfer rules in `internal/fit`,
+`internal/ciq`, `internal/device` and `internal/garmin`. Fixture tests cover the
+included samples; device contents and firmware behavior can differ.
 
-## Transport: MTP through Windows Portable Devices
+## Device paths and transport
 
-The watch enumerates as USB `VID_091E PID_514A`, an MTP "Portable Device",
-not a drive letter. Garmin Express talks to it through the WPD COM API
-(`Interop.PortableDeviceApiLib.dll`). garminctl does the same: a PowerShell
-process compiles a small C# helper (`internal/device/wpd/wpd.ps1`) that calls
-`IPortableDeviceManager`, `IPortableDeviceContent`, `IPortableDeviceProperties`
-and `IPortableDeviceResources`; Go talks to it over JSON lines on stdin and
-stdout. It works from WSL (`powershell.exe` interop) and from a native
-Windows build. Operations verified on the real watch: list with sizes and
-dates, read, create, overwrite (delete + create), delete. No dialogs, no
-driver changes, no extra installs.
+Paths are relative to device storage. [`GarminDevice.xml`](../internal/garmin/devicexml.go)
+describes data types, folders and transfer directions; use those capabilities
+rather than assuming that every device has the same files.
 
-WPD also lists phones and USB drives (path `swd#wpdbusenum#...`, name = volume
-label, manufacturer = vendor padded with spaces). The bridge opens only a
-device with manufacturer `Garmin` or `vid_091e` in its path.
+| Purpose | Path used by the service | Handling |
+| --- | --- | --- |
+| Capabilities and software inventory | `GARMIN/GarminDevice.xml`, `GARMIN/Device.fit` | Read device metadata and software messages. |
+| Device settings | `GARMIN/Settings/Settings.fit` | Read; write changes through `NewFiles`. |
+| Pending FIT input | `GARMIN/NewFiles/<uuid>.FIT` | Settings changes, workouts and downloaded FIT messages. |
+| Sport profiles | `GARMIN/Sports/*.fit` | FIT files. |
+| App settings | `GARMIN/Apps/SETTINGS/<file>.SET` | Read and rewrite the settings dictionary. |
+| App registry | `GARMIN/Apps/OUT.BIN`, `GARMIN/Apps/IN.BIN` | Read current entries; stage visibility changes in `IN.BIN`. |
+| App binaries | `GARMIN/APPS/MEDIA/<file>.PRG` | Use hidden-object operations when needed. |
+| Activities and local audio | `GARMIN/Activity`, `Music`, `Audiobooks`, `Podcasts` | Activity FIT files and user-managed audio. |
 
-Explorer's `Shell.Application` COM object also reaches the device (that is how
-the first exploration was done) but it hides file extensions, reports size 0,
-copies asynchronously and shows confirmation dialogs on delete.
+The [WPD bridge](../internal/device/wpd/client.go) exchanges JSON lines with a
+PowerShell/C# helper on Windows, including Windows PowerShell through WSL.
+Binary payloads are base64. Automatic selection requires manufacturer `Garmin`
+or USB vendor `091e` in the device ID; an explicit ID must match exactly.
 
-Paths are relative to the single storage (`Internal Storage`). Top level:
-`GARMIN/`, `Music/`, `Audiobooks/`, `Podcasts/`.
+The [native Linux transport](../internal/device/mtp/usb_linux.go) uses libusb
+with CGO, selects vendor `091e`, and claims an MTP interface. It does not detach
+kernel drivers or reset USB. Its protocol tests use a simulated wire and do not
+establish physical USB compatibility. [`DirFS`](../internal/device/dirfs.go)
+provides offline access through `os.Root`, with case-insensitive path matching
+and rejection of paths escaping the root.
 
-## Files on the watch
+Both MTP implementations combine standard `GetObjectHandles` (`0x1007`)
+with Garmin `GetObjectIds` (`0x9002`) for hidden listings. File writes use
+`SendObjectInfo` (`0x100C`) followed by `SendObject` (`0x100D`), with object
+and thumbnail formats `0x3000`. Replacements delete the existing object first.
+Hidden WPD writes and native Linux writes check the reported size after transfer.
+They do not compare the downloaded bytes with the uploaded bytes.
+See [WPD raw operations](../internal/device/wpd/raw.go) and the
+[native filesystem implementation](../internal/device/mtp/device.go).
 
-`GARMIN/GarminDevice.xml` lists every data type with its folder and transfer
-direction (also embedded in `C:\ProgramData\Garmin\CoreService\devices_list.xml`).
-The `FIT_TYPE_<n>` names are the `file_id.type` values.
+The native transport serializes complete operations, including two-command writes.
+The [protocol](../internal/device/mtp/protocol.go) invalidates the session after
+transfer or framing failures; a protocol response error alone does not.
+Keep command/data framing,
+transaction IDs and zero-length packet handling intact.
 
-| Purpose | Path | Notes |
-|---|---|---|
-| Device capabilities | `GARMIN/device.fit` | software parts, file and message capabilities |
-| Settings | `GARMIN/Settings/Settings.fit` | FIT type 2, read-only for the host |
-| Settings changes (input) | `GARMIN/NewFiles/*.FIT` | any FIT dropped here is consumed by the watch |
-| Sport profiles | `GARMIN/Sports/*.fit` | FIT type 3, one per activity |
-| Connect IQ app settings | `GARMIN/Apps/SETTINGS/<file>.SET` | Connect IQ serialization, read-write |
-| Connect IQ app data | `GARMIN/Apps/DATA/<file>.{DAT,IDX,STR,IMT}` | object store |
-| Installed apps | `GARMIN/Apps/OUT.BIN` | protobuf written by the watch |
-| Apps config from host | `GARMIN/Apps/IN.BIN` | protobuf written by Express |
-| Activities | `GARMIN/Activity/*.fit` | |
-| Workouts, Goals, Totals, Records, Sched, Location | `GARMIN/<dir>/*.fit` | |
+## FIT codec
 
-`.PRG` application binaries are not visible over MTP on this watch.
+[`internal/fit`](../internal/fit/) retains record order, local definitions,
+field bytes, developer fields and compressed timestamp headers. Definitions
+select their byte order. The profile names documented fields; raw unknown fields
+remain available without adding a profile entry.
 
-## Settings.fit
+`Decode` accepts 12- or 14-byte headers. It checks nonzero header CRCs in
+14-byte headers and file CRCs when present, returning decoded data alongside
+CRC errors. `Encode` writes a 14-byte header and recalculates both CRCs, so it
+normalizes those details. [Round-trip tests](../internal/fit/fit_test.go) require
+byte-identical output for the included fixtures.
 
-Standard FIT (header 14 bytes, little-endian, profile 21.184). Messages:
-`file_id`, `file_creator`, `device_settings` (96 fields, most undocumented),
-`user_profile`, `hrm_profile`, `bike_profile`, `connectivity`, `ohr_settings`,
-`zones_target` x5, `hr_zone` x24, and undocumented messages 139, 147 (20
-sensor slots), 222 (20 alarm slots), 242, 266, 296, 373, 379 (sleep schedule
-per weekday), 392, 415, 423. `internal/garmin/knowledge/device_settings.json`
-holds what has been inferred about the undocumented ones.
+`Builder` uses local slot 0 and emits a definition whenever the message number
+or field layout changes. Absent values use FIT invalid values. Field edits keep
+the existing width; scalar writes affect the first array element, while
+`SetElement` addresses an individual element. Notes on undocumented settings
+live in [device_settings.json](../internal/garmin/knowledge/device_settings.json).
 
-The FIT codec (`internal/fit`) keeps raw bytes per field so unknown data
-round-trips exactly; the profile layer names what the public FIT SDK
-(21.218) documents.
+## Settings-change files
 
-## Writing settings: the settings-change file
+[`ApplyChanges`](../internal/garmin/settings.go) writes
+`GARMIN/NewFiles/<uuid>.FIT` without rewriting `Settings.fit`. End the USB
+session and check the setting on the watch; a directory dump only records the
+pending file.
 
-Garmin Connect never rewrites Settings.fit. It downloads
-`devicesettings-service/settings-change/fit/<unitId>` and Express copies that
-file into `GARMIN/NewFiles/<uuid>.FIT`. Layout (big-endian, profile 21.217):
+`BuildChangeFile` uses big-endian FIT profile 21.217 and writes:
 
-- `file_id`: type 41, manufacturer 1, product 65534 (`connect`), time_created,
-  serial_number = unit id, number 1
-- `file_creator`: hardware_version 0, software_version = watch firmware
-- repeated message **217**, one per changed field:
-  - 0 `uint16` target message number (2 = device_settings, 3 = user_profile, 8 = hr_zone ...)
-  - 1 `uint16` message index (optional)
-  - 2 `uint8` field number
-  - 3 `uint8` array element index (optional)
-  - 4 `uint32` new value, unscaled integer
-  - 253 timestamp
-  - 6, 8, 9, 11 appear for zones, training settings and alarms (meaning unknown)
+- `file_id` (message 0): type 41, manufacturer 1, product 65534, creation
+  timestamp, device serial number and file number 1.
+- `file_creator` (message 49): hardware version 0 and the device software version.
+- One message 217 for each resolved change, using the fields below.
 
-Garmin uses local message slot 0 only and re-emits a definition whenever the
-field layout changes; `fit.Builder` reproduces its file byte for byte
-(`TestBuilderMatchesGarminLayout`). `garmin.BuildChangeFile` writes the same
-structure. Files stay in `NewFiles` while the USB session is open; the watch
-processes them when the session ends (Express's own pending files behaved the
-same way).
+| Field | Type | Meaning |
+| --- | --- | --- |
+| 0 | `uint16` | Target message number. |
+| 1 | `uint16` | Message index, included with indexed changes. |
+| 2 | `uint8` | Target field number. |
+| 3 | `uint8` | Array element index, included with indexed changes. |
+| 4 | `uint32` | Unscaled value; negative integers use two's complement. |
+| 253 | `uint32` | FIT timestamp. |
 
-## Connect IQ app settings (.SET)
+Resolution applies profile scaling and accepts numeric identifiers for
+undocumented messages and fields. String values cannot use this change format;
+integers must fit the signed-32-bit through unsigned-32-bit range.
 
-Big-endian. Optional string block (`AB CD AB CD`, uint32 length, entries of
-uint16 length + UTF-8 + NUL) then a data block (`DA 7A DA 7A`, uint32 length,
-one typed value). Type codes: 0x00 null, 0x01 int32, 0x02 float32, 0x03
-string (uint32 offset into the string block), 0x05 array (uint32 count),
-0x09 bool (1 byte), 0x0B dictionary (uint32 count, key/value pairs), 0x0E
-int64, 0x0F float64. The Easy+ watch face stores 88 keys. `internal/ciq`
-round-trips the real files byte for byte. The watch face picks the new values
-up on its own after the file is rewritten.
+## Connect IQ settings
 
-## Connect IQ .PRG
+[`internal/ciq`](../internal/ciq/ciq.go) implements big-endian serialization:
 
-Sections of `uint32 magic, uint32 length, bytes`. Seen: `D000D00D` header,
-`6060C0DE` entry points, `DA7ABABE` data, `C0DEBABE` code, `C0DE7AB1` link
-table, `C1A557B1` class defs, `F00D600D` resources (string table entries are
-`00 01 <uint16 len> <text>`), `6000DB01` permissions, `0ECE7105` exceptions,
-`5E771465` SETTINGS = default property values in .SET format, `E1C0DE12`
-developer signature, `00005161` store signature. The settings *UI definition*
-(labels, dropdown options and their values) is not in the PRG; the store
-serves it to Express and Garmin Connect Mobile.
+1. Optional string block: `0xABCDABCD`, `uint32` byte length, then strings
+   with a `uint16` length counting UTF-8 bytes and the NUL terminator.
+2. Data block: `0xDA7ADA7A`, `uint32` byte length, then one typed value.
 
-Store binaries download without authentication:
-`https://services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<appId>/versions/<versionId>/binaries/<deviceKey>`.
-Public metadata: `https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/<appId>`.
+| Type code | Value | Payload |
+| --- | --- | --- |
+| `0x00` | Null | None. |
+| `0x01`, `0x02` | Integer, float | `int32`, `float32`. |
+| `0x03` | String | `uint32` offset into the string block. |
+| `0x05` | Array | `uint32` count, then values. |
+| `0x09` | Boolean | One byte. |
+| `0x0B` | Dictionary | `uint32` count, then key/value pairs. |
+| `0x0E`, `0x0F` | Long, double | `int64`, `float64`. |
 
-## Connect IQ settings definition (labels and dropdown values)
+Dictionaries preserve insertion order; encoding interns strings in order of
+first appearance. The [fixture tests](../internal/ciq/ciq_test.go) require
+byte-identical round trips. Converting a dictionary to a JSON object loses order.
 
-Garmin Express does not render app settings itself. It opens
-`https://apps.garmin.com/en-US/appSettings2/<appId>/versions/<internalVersion>/devices/<partNumber>/edit?singlePage=true`
-in its embedded browser. That page is public (no login) and server-rendered:
-one `<label for=key>` plus a `<select>` (options carry the stored integer
-values), a checkbox, a text input (`maxlength`, `readonly`) or a number
-input (`min`, `max`, `step`) per setting. Express posts the device's `.SET`
-to the page, and on save the page's `.../binary` endpoint returns a new
-`.SET` that Express writes to `GARMIN/Apps/SETTINGS`. `internal/ciqstore`
-fetches and parses that page (installed version first, then the store's
-latest) and caches the result in `~/.cache/garminctl/appsettings/`.
+[`SetAppSettings`](../internal/garmin/service.go) edits existing keys, preserves
+stored value types, rewrites the `.SET` file and reads it back. When a
+[settings schema](../internal/garmin/appschema.go) is available, it resolves
+option labels and checks read-only fields, numeric bounds and text length.
+Without a schema, it coerces values to the existing types.
 
-The page exists only for apps that ship a `settings.xml`. For the others it
-answers 404 (verified 2026-10-22 for YouTube Music, the Connect IQ Store app
-and Komoot). YouTube Music still has a `.SET` with its internal properties
-(`SYNC_PAGE_SIZE`, `syncType`, `BASE_YMCA_URL`, `EPISODE_STREAM_FORMAT`,
-`BASE_OAUTH_URL`), which the web UI shows read-only with a notice; the Store
-app and Komoot have no `.SET` at all. `app-settings` on the CLI can still
-write raw values for such apps.
+[`internal/ciqstore`](../internal/ciqstore/ciqstore.go) fetches the settings page
+at `apps.garmin.com/en-US/appSettings2/<app>/versions/<version>/devices/<part>/edit?singlePage=true`.
+It parses labels, dropdown values and input constraints. Schema lookup tries
+the installed version, then the latest store version, and caches successful
+results. A missing schema does not imply a missing `.SET` file.
 
-## Installed apps (OUT.BIN)
+## App registry and binaries
 
-Protobuf: root field 3 -> field 2 -> repeated field 3 `App { 1: 16-byte id,
-2: list type (1 app, 2 glance, 3 watch face, 7 music provider, 8 activity),
-3: name, 4: flag, 5: version, 6: file name, 7: size, 8: native app id }`.
-Built-in apps use ids like `c0ffee15-600d-20d9-...`. The user's watch lists
-139 entries (64 activities, 33 glances, 40 apps, the watch face, YouTube
-Music); the registry has no "in the activity list / glance loop" marker.
+[`ParseAppsConfig`](../internal/garmin/appsconfig.go) reads protobuf nesting
+`root.3 -> config.2 -> repeated list.3`. Each app contains:
 
-`IN.BIN` is the same protobuf handed back by the host; the watch applies it
-on unplug and deletes it (verified: IN.BIN gone and OUT.BIN updated after
-the replug). `SetAppHidden` re-encodes the registry byte for byte with one
-field-4 value changed (identity re-encoding is checked first, a copy of
-OUT.BIN is kept in `~/.cache/garminctl`) and writes it as IN.BIN, using a
-pending IN.BIN as the base so several changes queue up; openExpress
-toggles built-in activities and glances the same way. Installing a `.PRG` needs no IN.BIN entry: the watch
-registered Simply Large from the file alone.
+| Field | Encoding | Meaning |
+| --- | --- | --- |
+| 1 | Bytes | 16-byte app ID. |
+| 2 | Varint | Registry type: 1 app, 2 glance, 3 watchface, 4 datafield, 5 widget, 6 audio, 7 music, 8 activity. |
+| 3 | String | Name. |
+| 4 | Varint | Hidden flag; nonzero means hidden. |
+| 5 | Varint | Internal version. |
+| 6 | String | File name for a Connect IQ app. |
+| 7 | Varint | Size. |
+| 8 | Varint | Native app ID. |
 
-Field 4 means "hidden": set when the entry is not in the user's activity
-list, glance loop or app list. Verified 2026-10-22: `app-show Archery`
-cleared the bit in IN.BIN, after the unplug Archery appeared in the activity
-list on the watch and OUT.BIN carried the cleared bit. On the user's watch
-the built-in entries he uses (Walk, Boxing, Yoga, the Steps/Weather/Heart
-Rate/Body Battery glances, Komoot) have it clear; unused ones and the
-Connect IQ watch face and music provider have it set. The Apps & glances
-tab shows it as Shown/Hidden with Hide/Show buttons; `app-hide`,
-`app-show`, `app-pending` on the CLI; `watch_set_app_hidden` for MCP.
+[`SetAppHidden`](../internal/garmin/appsconfig_write.go) uses pending `IN.BIN`
+as its base when present, otherwise `OUT.BIN`. It refuses writes if identity
+re-encoding changes any bytes, changes field 4 for the matched entry, attempts
+an `OUT.BIN` backup, and writes `IN.BIN`. Finish the USB session before checking
+visibility on the watch.
 
-## Software updates (OMT)
+[`InstallPRG`](../internal/garmin/updates.go) performs a minimal header check
+and writes a randomly named `.PRG` through `WriteAppFile`; it does not parse
+or validate every PRG section. A visible app folder uses ordinary writes;
+otherwise the service requires `device.HiddenFS`. Installation does not add
+an `IN.BIN` entry.
 
-Garmin Express asks `POST https://omt.garmin.com/api/device-software/v1/updates`
-with `{"GarminDeviceXml": <text of GARMIN/GarminDevice.xml>, "ClientInitiated":
-true, "Locale": "en-US"}` (camelCase keys also work; no authentication,
-verified 2026-10-22). The answer lists every deliverable for the device:
-`partNumber`, `productName`, `version`/`displayVersion`, `isPrimaryFirmware`,
-`dataType`, `severity`, `releaseNotes[{version, changeLog[]}]`, `eulaUrl`,
-`deliverable{downloadUrl, md5, sizeInBytes}` and `installation{
-isProductInstalled, path, fileName, isRestartRequired, isDelta, order}`.
-Express downloads the file and copies it to `installation.path/fileName`
-(golf course DBs go to `Garmin/RemoteSW/<name>.db`, deleting the old file
-first); the watch installs it when the USB session ends. For this watch the
-service currently offers only the four golf course databases, all installed.
-`garmin.CheckSoftwareUpdates`/`InstallSoftwareUpdate` implement this.
+## Workout FIT
 
-Connect IQ apps: the public store record at
-`apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/<appId>`
-carries `latestInternalVersion` (the number in OUT.BIN) and
-`latestExternalVersion` (the human version). The binary download
-(`services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/versions/<versionUUID>/binaries/<deviceKey>`)
-needs the version UUID, which only a logged-in Express session gets, so the
-tool detects updates and links to the store. Express installs apps by writing
-`GARMIN/APPS/MEDIA/<8 hex>.PRG`; the watch registers it on disconnect
-(`garmin.InstallPRG`).
+[`WorkoutSpec.FIT`](../internal/garmin/workouts.go) writes type-5 FIT with
+`workout` (26) and `workout_step` (27) messages. The encoding uses:
 
-Garmin Connect (`connect.garmin.com`) sends `x-frame-options: deny` and
-redirects to SSO, so the web UI links to it in a new tab instead of embedding.
+- Duration: time 0 in milliseconds, distance 1 in centimetres, calories 4,
+  open 5, repeat 6. A repeat stores the first step index as `duration_value`
+  and the repetition count as `target_value`.
+- Target: speed 0 in millimetres/second, heart rate 1, open 2, cadence 3,
+  power 4. Heart-rate zones use `target_value`; custom ranges use 0 there,
+  with heart rate encoded as bpm + 100 and power as watts + 1000.
+- Intensity: main 0, rest 1, warmup 2, cooldown 3, recovery 4, interval 5,
+  other 6.
 
-## Health and workouts (Garmin Connect)
+## Network transfers and local state
 
-With the session from `internal/gc`, these connectapi paths are used (all
-verified live on 2026-10-22): `GET /usersummary-service/usersummary/daily/<displayName>?calendarDate=D`
-(totalSteps, dailyStepGoal, restingHeartRate, min/maxHeartRate,
-averageStressLevel, bodyBatteryHighest/LowestValue, sleepingSeconds,
-totalKilocalories, activeKilocalories, floorsAscended, moderate/vigorous
-intensity minutes), `GET /wellness-service/wellness/dailyHeartRate/<displayName>?date=D`
-(`heartRateValues[[ms, bpm]]`), `GET /wellness-service/wellness/dailyStress/D`
-(`stressValuesArray[[ms, level]]`, `bodyBatteryValuesArray[[ms, status, level, …]]`),
-`GET /wellness-service/wellness/dailySleepData/<displayName>?date=D&nonSleepBufferMinutes=60`
-(`dailySleepDTO` with stage seconds and `sleepScores.overall`, `sleepLevels[{startGMT, activityLevel}]`),
-`GET /workout-service/workouts?start&limit&myWorkoutsOnly=true`,
-`POST /workout-service/workout` (Connect workout JSON; answers `workoutId`),
-`DELETE /workout-service/workout/<id>`, and the device-message push
-`POST /device-service/devicemessage/messages` with
-`[{deviceId, messageUrl: "workout-service/workout/FIT/<id>", messageType: "workouts", messageName, priority: 1, fileType: "FIT", metaDataId: <id>, groupName: null}]`,
-after which the queue holds the workout FIT. `displayName` is the opaque id
-from `/userprofile-service/socialProfile`.
+The implementation makes these network requests:
 
-Workout FIT (type 5): `workout` (sport, sub_sport, num_valid_steps,
-wkt_name) and `workout_step` messages: duration_type time=0 (ms),
-distance=1 (cm), calories=4, open=5, repeat_until_steps_cmplt=6
-(duration_value = index of the first step of the loop, target_value =
-repetitions); target_type speed=0 (custom low/high in mm/s), heart_rate=1
-(target_value = zone, or 0 with custom low/high = bpm + 100), open=2,
-cadence=3, power=4 (custom = watts + 1000); intensity active=0, rest=1,
-warmup=2, cooldown=3, recovery=4, interval=5. Connect's own file for the
-same spec matched this layout field for field.
+| Area | Implementation and behavior |
+| --- | --- |
+| Authentication | [`internal/gc`](../internal/gc/client.go) uses mobile SSO with MFA, OAuth1 preauthorization and OAuth2 bearer exchange. Token responses supply expiry times. |
+| Software updates | [`updates.go`](../internal/garmin/updates.go) POSTs `{"GarminDeviceXml": "..."}` to `https://omt.garmin.com/api/device-software/v1/updates`. Downloads check supplied size and MD5 before writing the manifest's installation path. |
+| Store | [`ciqstore/store.go`](../internal/ciqstore/store.go) requests public app metadata, search, device types and reviews under `apps.garmin.com/api/appsLibraryExternalServices/api/asw`. `startPageIndex` is a record offset. Store type IDs differ from registry type IDs. |
+| Cloud sync | [`cloud.go`](../internal/garmin/cloud.go) reads and updates device settings, downloads device messages, and uploads supported data types using `uploadTargets`. |
+| Health and workouts | [`health.go`](../internal/garmin/health.go), [`health_more.go`](../internal/garmin/health_more.go) and [`workouts.go`](../internal/garmin/workouts.go) define the Connect endpoints and payloads. |
+| Audio providers | [`music.go`](../internal/garmin/music.go) reports provider names and cache sizes from device XML separately from local audio files. |
 
-## Connect IQ store (public website API)
+Cloud downloads route `FIT` to `NewFiles`, `BRAIN`/`PRG` to the app folder,
+and other types to an input-capable XML path. Messages are acknowledged only
+after a successful write; unknown destinations remain queued. Uploads retain
+device files and record accepted or duplicate files in a per-device ledger.
+App update checks compare store metadata; the store browser does not queue
+app installations.
 
-`https://apps.garmin.com/api/appsLibraryExternalServices/api/asw` answers
-without authentication: `GET /deviceTypes` (id, partNumber, name; the
-vívoactive 5 is id 294), `GET /apps?appType=watchface|watch-app|widget|datafield|audio-content-provider-app&partNumber=…&sortType=mostPopular|highestRated|mostRecent|trending&startPageIndex=N&pageSize=N&countryCode=US`
-(array of records), `GET /apps/keywords?keywords=…&startPageIndex=N&pageSize=N&countryCode=US&locale=en-US`
-(`{totalCount, apps[], appTypeNames}`), `GET /apps/<id>?countryCode=US`
-(full record: `appLocalizations[{locale,name,description,whatsNew}]`,
-`latestExternalVersion`, `latestInternalVersion`, `averageRating`,
-`reviewCount`, `downloadCount`, `pricing.salePrice.formattedPrice`,
-`fileSizeInfo.byteCountByDeviceTypeId`, `settingsAvailabilityInfo`,
-`permissions`, `compatibleDevicePartNumbers`, `hasTrialMode`), and
-`GET /apps/<id>/reviews?pageSize=N&startPageIndex=0`. Record `typeId` is
-1 watchface, 2 app, 3 widget, 4 datafield, 5 music (not the device's OUT.BIN
-numbering). Icons: `https://services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/icon/<iconFileId>`
-(public PNG); the screenshot URL pattern was not found. `startPageIndex` is
-a record offset. Implemented in `internal/ciqstore/store.go`.
-
-The vívoactive 5 keeps `GARMIN/Apps/Media` (the PRG files of installed
-apps) out of the ordinary MTP listing, like the fēnix 8, and refuses to
-create the folder (E_FAIL). Garmin's vendor PTP operation 0x9002
-`GetObjectIds(storage, parent)` returns the hidden handles (same array
-format as GetObjectHandles; the folder's own files answer only to 0x9002,
-the standard listing of the folder is empty). The Windows MTP driver passes
-raw operations through WPD's MTP extension commands
-(`WPD_COMMAND_MTP_EXT_EXECUTE_COMMAND_WITH_DATA_TO_READ/WRITE`, object ids
-are `o<hex handle>`, storage `s<hex id>`; the driver does not know the hidden
-handles itself, so `EnumObjects("o…")` fails). Writing is
-SendObjectInfo(storage, parent) with an ObjectInfo dataset (format and thumb
-format 0x3000, as Express sends it) followed by SendObject; the new file
-shows in the ordinary listing with its size, reads back transformed (not
-byte-identical), and DeleteObject(handle) removes it. MTP `GetDevicePropValue(0x5001 BatteryLevel)` answers a constant 50 (the
-descriptor's factory default, enum 0..100 step 10) while the watch shows
-100 % on the charger, so the battery level is not available over USB.
-`GetStorageInfo` (0x1005) over the same raw path gives capacity and free
-space (3 706 159 104 and 1 844 510 720 bytes on 2026-10-22, "Internal
-Storage"). Verified 2026-10-22:
-"Simply Large" queued from the Connect IQ phone app (install_app message,
-fileType BRAIN, deviceXmlDataType IQWatchFaces, binary from
-`services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<id>/versions/<v>/binaries/vivoactive5?...`)
-was written as `57BF662A.PRG` and the watch registered it in OUT.BIN on
-unplug with no IN.BIN entry. Implemented in `internal/device/wpd/raw.go`
-(`device.HiddenFS`) and `Service.WriteAppFile`. The store website no longer
-offers a Download button (it points to the phone app); the phone app queues
-the install server-side when it cannot reach the watch.
-
-Audio content provider apps live in the same hidden area. The device XML's
-`Extensions/IQAppExt/Apps` list gives each Connect IQ app its
-`AppType`; providers (`audio-content-provider-app`, e.g. YouTube Music) add
-`<MediaCacheSize>` in bytes, the size of their DRM download cache
-(104 005 632 B for the user's 15 YouTube Music tracks on 2026-10-22).
-`Music/`, `Podcasts` and `Audiobooks` hold only files the user copies, so
-provider downloads cannot be listed, copied or deleted over MTP; the Music
-tab, `music ls` and `music_list` report them as "providers" by size only.
-
-## More Connect endpoints (health extras and history, verified 2026-10-22)
-
-- Range stats, used for anything over 14 days (every one of them refuses
-  spans over 28 days, so the tool asks in 28-day windows and caches days
-  older than two days in `~/.cache/garminctl/history-<unit>.json`): steps
-  `GET /usersummary-service/stats/steps/daily/{start}/{end}`
-  (`calendarDate, totalSteps, totalDistance, stepGoal`); resting heart rate
-  `GET /userstats-service/wellness/daily/{displayName}?fromDate&untilDate&metricId=60`
-  (`allMetrics.metricsMap.WELLNESS_RESTING_HEART_RATE[]`); stress
-  `GET /usersummary-service/stats/stress/daily/{start}/{end}`
-  (`values.overallStressLevel`); body battery
-  `GET /wellness-service/wellness/bodyBattery/reports/daily?startDate&endDate`
-  (`bodyBatteryValuesArray[[ms, level]]`); sleep
-  `GET /sleep-service/stats/sleep/daily/{start}/{end}`
-  (`individualStats[].values.totalSleepTimeInSeconds`, plus `overallStats`);
-  sleep score only: `GET /wellness-service/stats/daily/sleep/score/{start}/{end}`.
-  `/wellness-service/stats/sleep/daily/...` is 404.
-- VO2 max: `GET /metrics-service/metrics/maxmet/daily/{start}/{end}` →
-  `generic.vo2MaxPreciseValue`; fitness age:
-  `GET /fitnessage-service/fitnessage/{date}` → `fitnessAge, chronologicalAge`;
-  HRV: `GET /hrv-service/hrv/{date}` → `hrvSummary{weeklyAvg, lastNightAvg, status}`.
-- Personal records: `GET /personalrecord-service/personalrecord/prs/{displayName}`
-  → `typeId, value, activityId, activityType, prStartTimeGmtFormatted`. Type
-  ids seen: 1 (1 km run, seconds), 7 (longest run, m), 8 (longest ride, m),
-  9 (cycling, 637 on the day a "Climber 1" badge was earned: probably biggest
-  climb in m, unverified), 12/13/14 (most steps in a day/week/month), 15
-  (longest goal streak, days), 16 (value 0, unknown).
-- Badges: `GET /badge-service/badge/earned` → `badgeName, badgeKey,
-  badgeEarnedDate, badgePoints, badgeEarnedNumber`.
-- Weight: `GET /weight-service/weight/dateRange?startDate&endDate` →
-  `dateWeightList[]` (empty on this account); manual weigh-in
-  `POST /weight-service/user-weight` with `{dateTimestamp, gmtTimestamp
-  ("2006-01-02T15:04:05.00"), unitKey: "kg", sourceType: "MANUAL", value}`
-  (shape from python-garminconnect, not yet exercised here).
-- Gear: `GET /gear-service/gear/filterGear?userProfilePk={profileId}` (empty).
-- Express's app-store API (`services.garmin.com/express/appstore/rest/apps/
-  downloads|updates|installApps|removeInstalledApps`, OAuth1) answers 403
-  "X-garmin-client-id-header not found" for a token that is not Garmin
-  Express's own, so the Store tab cannot queue installs; the Connect IQ phone
-  app queues them and sync delivers.
-
-## Garmin Connect sync (what Express does with a login)
-
-Reconstructed from `ExpressDetailed.log` (structure only) and from the
-open-source garth client; implemented in `internal/gc` and
-`internal/garmin/cloud.go`. Verified live on 2026-10-22: sign-in, profile,
-device name (plain text answer), 202 uploads (200 recognised as duplicates
-of what the phone had synced, 2 new), the true-up message Connect queued in
-response, the sparse settings PUT producing a `settings-change` message
-within seconds, pulling it to `GARMIN/NewFiles` (a type-41 file identical in
-layout to the ones described above) and the acknowledgement
-(`PUT …/message/<id>?status=received` answers `true`; a no-op PUT queues
-nothing).
-
-Sign-in (Garmin Connect Mobile flow): GET
-`https://sso.garmin.com/mobile/sso/en/sign-in?clientId=GCM_ANDROID_DARK&locale=en-US&service=https://mobile.integration.garmin.com/gcm/android`
-(cookies), POST `/mobile/api/login` with the same query and JSON
-`{username, password, rememberMe:false, captchaToken:""}`;
-`responseStatus.type` is `SUCCESSFUL` (ticket in `serviceTicketId`) or
-`MFA_REQUIRED` (then POST `/mobile/api/mfa/verifyCode` with
-`{mfaMethod, mfaVerificationCode, rememberMyBrowser:false, reconsentList:[],
-mfaSetup:false}`). The ticket is traded at
-`connectapi.garmin.com/oauth-service/oauth/preauthorized?ticket=…&login-url=…&accepts-mfa-tokens=true`
-(OAuth 1.0 HMAC-SHA1, consumer key from thegarth.s3.amazonaws.com) for an
-OAuth1 token (valid about a year), which is exchanged at
-`oauth-service/oauth/exchange/user/2.0` for a bearer (about an hour; the
-exchange is repeated to refresh). Express itself signs in through an embedded
-browser and additionally holds a `services.garmin.com/api/oauth/token` bearer
-for its app-store endpoints (`express/appstore/rest/apps/updates|downloads|installApps`);
-those are not used here.
-
-Uploads: Express asks `omt.garmin.com/UploadConfigurationService/UnitUploadSettings/<unitId>`
-for a map of device-XML data type → upload URL. The map for this watch is
-embedded in `cloud.go` (`uploadTargets`): FIT_TYPE_4 Activity →
-`upload-service/upload/activity`, 32 Monitor and 49 Sleep → `/wellness`, 44
-Metrics → `/metrics`, 68 HRVStatus → `/hrvstatus` (consent), 70 HSA →
-`/partner`, 72 FbtBackup → `/lha-backup`, 74 FbtPtdBackup →
-`/primary-training-backup` (consent), 79 SlpDisr → `/sleep-disruptions`
-(consent), 41 ChngLog → `/changelog`, 38 Score → golf.garmin.com scorecard.
-Multipart POST, field `file`; answers 201/202 (accepted), 409 (duplicate,
-`detailedImportResult.failures[].messages[]`). Express deletes some types
-after upload (Monitor); garminctl keeps a ledger
-(`~/.cache/garminctl/uploaded-<unitId>.json`) instead and deletes nothing.
-
-Downloads: `GET device-service/devicemessage/messages?device_id=<unitId>`
-lists what Connect queued: `messageType` (`settings-change`, `install_app`,
-`golf_club`, `personal-records`, `true_up`, workouts, courses…),
-`deviceXmlDataType` (FIT_TYPE_41, IQWatchFaces…), `metaData.fileType`
-(`FIT`, `BRAIN` = PRG), `metaData.messageUrl` (absolute, or relative to
-connectapi), `metaData.absolute`. FIT files go to `GARMIN/NewFiles/<uuid>.FIT`,
-app binaries to `GARMIN/APPS/MEDIA/<8 hex>.PRG`; then
-`PUT device-service/devicemessage/message/<id>?status=received`
-(answers `true`). App binaries come from
-`services.garmin.com/appsLibraryBusinessServices_v0/rest/apps/<app>/versions/<versionUUID>/binaries/<deviceKey>?customerId=…&unitId=…&firmwareVersion=…`;
-Connect queues them when an app is installed or updated on the store website
-or by its auto-update.
-
-Device settings in the cloud: `GET/PUT device-service/deviceservice/device-info/settings/<unitId>`
-(`deviceId`, `timeFormat`, `dateFormat`, `measurementUnits`, `alarms[]`,
-`language` + `supportedLanguages[]`, `mountingSide`, `autoSync…`,
-`connectIQ.autoUpdate`, many nulls for unsupported keys). Express PUTs a
-sparse object with only the changed key; Connect then queues a
-`settings-change` message whose file is the type-41 FIT described above.
-
-## Garmin Express internals worth knowing
-
-- Logs: `C:\ProgramData\Garmin\Logs\Express\ExpressDetailed.log` contains
-  full REST responses, including the device-settings JSON from
-  `device-service/deviceservice/device-info/settings/<id>` (135 keys).
-- Device settings in Express are a cloud round trip: Express sends the choice
-  to Connect, Connect generates the type-41 file, Express downloads it.
-- Express re-sends Garmin Connect's whole settings snapshot (83 field
-  changes for this watch) on every sync; the phone app is expected to do the
-  same over Bluetooth. Fields in that snapshot are marked `managedByConnect`.
-
-## Native Linux transport (implementation, hardware verification pending)
-
-`internal/device/mtp` uses libusb via `google/gousb`, filters USB vendor `091e`
-before opening a device, and claims its MTP interface. It uses the standard
-operations and Garmin `0x9002` described above, including undefined object and
-thumbnail formats when sending files. No kernel-driver detach or USB reset is
-performed. USB framing and filesystem behavior are tested with a simulated
-transport; this path has not yet been exercised on the physical watch.
+[`paths.Cache`](../internal/paths/paths.go) uses the OS cache directory, falling
+back to the temporary directory, under `garminctl/`. It holds settings schemas,
+registry backups and per-device caches. The default Connect token store uses
+`os.UserConfigDir()/garminctl/garmin-connect.json`, falling back to the current
+directory if no config directory is available.

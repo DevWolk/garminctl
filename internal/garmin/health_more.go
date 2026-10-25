@@ -390,8 +390,7 @@ type WeightEntry struct {
 	Source  string  `json:"source,omitempty"`
 }
 
-// Record type ids as Connect numbers them; the ones seen on this account are
-// labelled, the rest show their number.
+// Known Connect record type labels; unknown types retain their numeric id.
 var recordLabels = map[int]string{
 	1: "1 km run", 2: "1 mile run", 3: "5 km run", 4: "10 km run", 5: "Half marathon", 6: "Marathon",
 	7: "Longest run", 8: "Longest ride", 12: "Most steps in a day", 13: "Most steps in a week", 14: "Most steps in a month", 15: "Longest goal streak",

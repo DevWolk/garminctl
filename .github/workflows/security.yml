@@ -24,11 +24,7 @@ jobs:
           make vuln
 
   codeql:
-    # Code scanning is available to public repositories and to private ones
-    # with GitHub Code Security, which a personal private repository lacks,
-    # so the job waits for the repository to go public. Dependabot's pull
-    # requests are skipped too: their read-only token cannot upload results,
-    # and the merged change is scanned on main anyway.
+    # Scan public repositories; skip Dependabot's restricted PR token.
     if: ${{ !github.event.repository.private && github.actor != 'dependabot[bot]' }}
     name: CodeQL
     runs-on: ubuntu-latest

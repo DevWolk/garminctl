@@ -21,7 +21,7 @@
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="3"/><path d="M16 9v7l5 3" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
       <div>
         <div class="brand-name">garminctl</div>
-        <div class="brand-sub" id="devname">no watch connected</div>
+        <div class="brand-sub" id="devname">No watch connected</div>
       </div>
     </div>
     <nav class="nav" aria-label="Sections">
@@ -39,12 +39,12 @@
       <button class="nav-item" data-tab="ai"><span class="nav-ico">◇</span>AI &amp; MCP</button>
       <details class="nav-group" id="nav-online">
       <summary>Garmin online</summary>
-      <a class="nav-item ext" href="https://connect.garmin.com/app/home" target="garmin-connect" rel="noopener" title="Activities, health stats, cloud device settings"><span class="nav-ico">◉</span>Connect website<span class="ext-mark" aria-hidden="true">↗</span></a>
-      <a class="nav-item ext" href="https://connect.garmin.com/app/devices" target="garmin-connect" rel="noopener" title="Device settings that Garmin Connect manages and pushes back on every sync"><span class="nav-ico">◍</span>Connect devices<span class="ext-mark" aria-hidden="true">↗</span></a>
+      <a class="nav-item ext" href="https://connect.garmin.com/app/home" target="garmin-connect" rel="noopener" title="Activities, health and account settings"><span class="nav-ico">◉</span>Connect website<span class="ext-mark" aria-hidden="true">↗</span></a>
+      <a class="nav-item ext" href="https://connect.garmin.com/app/devices" target="garmin-connect" rel="noopener" title="Device settings in Garmin Connect"><span class="nav-ico">◍</span>Connect devices<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://www.garmin.com/garmin-coach/overview/" target="garmin-coach" rel="noopener"><span class="nav-ico">⚑</span>Garmin Coach<span class="ext-mark" aria-hidden="true">↗</span></a>
-      <a class="nav-item ext" href="https://apps.garmin.com/pl-PL" target="garmin-store" rel="noopener"><span class="nav-ico">◈</span>Connect IQ store<span class="ext-mark" aria-hidden="true">↗</span></a>
+      <a class="nav-item ext" href="https://apps.garmin.com/en-US" target="garmin-store" rel="noopener"><span class="nav-ico">◈</span>Connect IQ store<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" id="link-manual" href="https://support.garmin.com/en-US/" target="garmin-support" rel="noopener"><span class="nav-ico">?</span>Manual &amp; support<span class="ext-mark" aria-hidden="true">↗</span></a>
-      <a class="nav-item ext" href="https://connect.garmin.com/status/" target="garmin-status" rel="noopener" title="Is Garmin Connect down?"><span class="nav-ico">◌</span>Garmin status<span class="ext-mark" aria-hidden="true">↗</span></a>
+      <a class="nav-item ext" href="https://connect.garmin.com/status/" target="garmin-status" rel="noopener" title="Garmin service status"><span class="nav-ico">◌</span>Garmin status<span class="ext-mark" aria-hidden="true">↗</span></a>
       <a class="nav-item ext" href="https://www.garmin.com/" target="garmin-www" rel="noopener"><span class="nav-ico">▲</span>garmin.com<span class="ext-mark" aria-hidden="true">↗</span></a>
       </details>
     </nav>
@@ -52,7 +52,7 @@
       <div class="conn" id="conn"><span class="dot"></span><span id="conn-text">Not connected</span></div>
       <div class="side-actions">
         <button id="btn-connect" class="btn primary">Connect watch</button>
-        <button id="btn-refresh" class="btn" title="Re-read everything from the watch">Reload</button>
+        <button id="btn-refresh" class="btn" title="Reload watch data">Reload</button>
       </div>
     </div>
   </aside>
@@ -60,17 +60,17 @@
   <main class="main">
     <section id="tab-overview" class="tab active">
       <header class="page-head">
-        <div><h1>Overview</h1><p class="lede">The watch as it is right now, today's numbers, and what is waiting to go onto it.</p></div>
+        <div><h1>Overview</h1><p class="lede">Watch status, daily health and pending changes.</p></div>
         <span class="hint" id="overview-when"></span>
       </header>
       <div id="overview-empty" class="empty">
-        <p>Plug the watch in over USB and press <b>Connect watch</b>. Garmin Express can stay closed; it is not needed.</p>
+        <p>Connect your watch by USB, then select <b>Connect watch</b>.</p>
       </div>
       <div id="overview" hidden>
         <div class="hero">
           <div class="hero-watch" id="hero-watch" title="Open the watch face settings"><div class="face" id="hero-face"></div></div>
           <div>
-            <div class="hero-title" id="hero-model">vívoactive 5</div>
+            <div class="hero-title" id="hero-model">Garmin watch</div>
             <div class="hero-sub" id="hero-sub"></div>
           </div>
           <div class="hero-state" id="hero-state"></div>
@@ -79,7 +79,7 @@
         <div class="grid-2">
           <div class="panel">
             <h2>Waiting to be applied</h2>
-            <p class="hint">Files in <code>GARMIN/NewFiles</code>. The watch reads them the moment the USB session ends: unplug it, or eject it in Windows.</p>
+            <p class="hint">Unplug the watch to apply pending changes.</p>
             <ul class="pending" id="newfiles"><li class="muted">Loading…</li></ul>
           </div>
           <div class="panel">
@@ -93,12 +93,12 @@
     <section id="tab-settings" class="tab">
       <header class="page-head">
         <h1>Watch settings</h1>
-        <p class="lede">From <code>Settings.fit</code>. Edit a value, then review and apply; the watch picks the change up when you unplug it.</p>
+        <p class="lede">Review and save changes, then unplug the watch to apply them.</p>
       </header>
       <div class="toolbar">
         <input id="settings-filter" type="search" placeholder="Find a setting" aria-label="Find a setting">
         <label class="check"><input type="checkbox" id="settings-unknown"> Show undocumented fields</label>
-        <span class="legend"><span class="tag connect">Garmin Connect</span> is re-sent by Connect on every sync</span>
+        <span class="legend"><span class="tag connect">Garmin Connect</span> settings are also managed in Connect</span>
       </div>
       <div class="chips jump" id="settings-jump" hidden></div>
       <div id="settings-groups"><p class="muted">Connect the watch to load settings.</p></div>
@@ -107,7 +107,7 @@
     <section id="tab-apps" class="tab">
       <header class="page-head">
         <h1>App settings</h1>
-        <p class="lede">Settings of the Connect IQ apps on the watch. They are written to the watch immediately and take effect on the next refresh of the face.</p>
+        <p class="lede">Edit settings for installed Connect IQ apps and watch faces.</p>
       </header>
       <div class="apps-layout">
         <div class="apps-side">
@@ -121,14 +121,14 @@
               </div>
               <label class="check"><input type="checkbox" id="preview-aod"> Always-on</label>
             </div>
-            <p class="preview-note">Live preview with sample metrics and the current time. Click a field to jump to its setting.</p>
+            <p class="preview-note">Sample metrics and current time. Select a field to edit its setting.</p>
           </div>
         </div>
         <div class="apps-editor">
           <div class="editor-head">
             <div>
               <h2><span id="app-title">Select an app</span> <a id="app-store" class="store-link" target="garmin-store" rel="noopener" hidden>Open in store ↗</a></h2>
-              <p class="hint" id="app-hint">Watch faces, widgets and music apps installed from the Connect IQ store appear on the left.</p>
+              <p class="hint" id="app-hint">Choose an installed app to edit its settings.</p>
             </div>
             <div class="toolbar tight">
               <input id="app-filter" type="search" placeholder="Find a setting" aria-label="Find a setting" hidden>
@@ -144,7 +144,7 @@
     <section id="tab-installed" class="tab">
       <header class="page-head">
         <h1>Apps &amp; glances</h1>
-        <p class="lede">Everything in the watch's app registry: built-in activities, glances and apps plus the Connect IQ installs. Hide them from the watch's lists or show them again here; the change takes effect when you unplug. Connect IQ settings are edited under App settings.</p>
+        <p class="lede">Show or hide apps, glances and activities. Unplug the watch to apply changes.</p>
       </header>
       <div class="toolbar">
         <input id="inst-filter" type="search" placeholder="Find an app, glance or activity" aria-label="Find an app, glance or activity">
@@ -161,13 +161,12 @@
         <label class="check">Order <select id="inst-sort"><option value="watch">as on the watch</option><option value="name">by name</option><option value="kind">by kind</option><option value="source">Connect IQ first</option></select></label>
       </div>
       <div class="table-wrap tall"><table class="files" id="inst-table"><thead><tr><th>Name</th><th>Kind</th><th>Source</th><th title="Whether it is in your activity list, glance loop or app list on the watch">On watch</th><th class="num">Size</th><th class="actions"></th></tr></thead><tbody><tr><td colspan="6" class="muted">Connect the watch to list apps.</td></tr></tbody></table></div>
-      <p class="hint">Shown means the entry is in your activity list, glance loop or app list on the watch; Hidden means it is not. Hide and Show queue a change in the watch's app list that it applies when you unplug it; a copy of the list is kept in <code>~/.cache/garminctl</code>.</p>
     </section>
 
     <section id="tab-health" class="tab">
       <header class="page-head">
         <h1>Health &amp; activities</h1>
-        <p class="lede">Daily health comes from Garmin Connect; activities are decoded from the files on the watch itself.</p>
+        <p class="lede">Daily health from Garmin Connect and activities from your watch.</p>
       </header>
       <div class="panel">
         <div class="toolbar tight">
@@ -207,12 +206,12 @@
     <section id="tab-training" class="tab">
       <header class="page-head">
         <h1>Workouts</h1>
-        <p class="lede">Describe a structured workout; it is saved in Garmin Connect and delivered to the watch over USB, or written to the watch directly without Connect.</p>
+        <p class="lede">Create a workout in Garmin Connect or save it directly to your watch.</p>
       </header>
       <div class="grid-2">
         <div class="panel">
           <h2>New workout</h2>
-          <p class="hint">Steps end by <b>duration</b> ("10:00", "90s"), <b>distance</b> ("400m", "2km"), <b>calories</b> or the lap button. Targets: "hr 140-160", "hr zone 3", "pace 4:30-4:45" (min/km), "speed 10-12" (km/h), "cadence 170-180", "power 200-250". A repeat group is {"repeat": 4, "steps": [...]}.</p>
+          <p class="hint">End each step by <b>duration</b> ("10:00", "90s"), <b>distance</b> ("400m", "2km"), <b>calories</b> or the lap button. Targets: "hr 140-160", "hr zone 3", "pace 4:30-4:45" (min/km), "speed 10-12" (km/h), "cadence 170-180", "power 200-250". Repeat steps with {"repeat": 4, "steps": [...]}.</p>
           <textarea id="wk-spec" spellcheck="false" rows="16">{
   "name": "4x400 intervals",
   "sport": "running",
@@ -226,8 +225,8 @@
   ]
 }</textarea>
           <div class="toolbar tight">
-            <button class="btn primary" id="wk-create">Save in Connect and send to watch</button>
-            <button class="btn" id="wk-local">Write to watch only</button>
+            <button class="btn primary" id="wk-create">Save in Connect and send</button>
+            <button class="btn" id="wk-local">Save to watch only</button>
             <span class="hint" id="wk-status"></span>
           </div>
           <div class="text" id="wk-preview"></div>
@@ -242,12 +241,12 @@
     <section id="tab-music" class="tab">
       <header class="page-head">
         <h1>Music</h1>
-        <p class="lede">Audio files you add over USB, sorted into Artist/Album folders from their tags, and playlists the Music app can play. Streaming apps keep their own downloads.</p>
+        <p class="lede">Add audio files and create playlists. Manage streaming downloads in their apps.</p>
       </header>
       <div class="toolbar">
         <label class="btn primary file-btn">Add audio files<input type="file" id="music-files" accept=".mp3,.m4a,.aac,.adts,.wav,.flac,audio/*" multiple hidden></label>
         <select id="music-folder"><option>Music</option><option>Podcasts</option><option>Audiobooks</option></select>
-        <button class="btn" id="music-playlist" disabled>Make playlist from selected</button>
+        <button class="btn" id="music-playlist" disabled>Create playlist</button>
         <button class="btn danger" id="music-delete" disabled>Delete selected</button>
         <input id="music-q" type="search" placeholder="Filter tracks" aria-label="Filter tracks" style="width:180px">
         <span class="spacer"></span><span class="hint" id="music-status"></span>
@@ -264,7 +263,7 @@
     <section id="tab-store" class="tab">
       <header class="page-head">
         <h1>Connect IQ store</h1>
-        <p class="lede">Watch faces, apps, widgets and data fields that fit this watch, from the store's public catalogue. Installing goes through Garmin Connect's queue: the store website no longer takes installs, so queue the app in the Connect IQ app on the phone with Bluetooth off, then Sync here delivers it over USB.</p>
+        <p class="lede">Browse Connect IQ watch faces, apps, widgets and data fields.</p>
       </header>
       <div class="toolbar">
         <input id="store-q" type="search" placeholder="Search the store" aria-label="Search the store">
@@ -292,7 +291,7 @@
     <section id="tab-updates" class="tab">
       <header class="page-head">
         <h1>Updates</h1>
-        <p class="lede">Checked against the same Garmin service that Garmin Express uses. Nothing is downloaded until you ask.</p>
+        <p class="lede">Check for watch software and app updates.</p>
       </header>
       <div class="toolbar">
         <button class="btn primary" id="btn-check-updates">Check for updates</button>
@@ -301,19 +300,19 @@
       <div class="grid-2">
         <div class="panel">
           <h2>Watch software</h2>
-          <p class="hint">Firmware and data files Garmin offers for this watch. An update is written to the watch and installs when you unplug it.</p>
+          <p class="hint">Unplug the watch to install downloaded updates.</p>
           <ul class="pending updates" id="sw-list"><li class="muted">Press <b>Check for updates</b>.</li></ul>
         </div>
         <div class="panel">
           <h2>Connect IQ apps</h2>
-          <p class="hint">Installed version against the store. Updates arrive through Garmin Connect's queue (queue them in the Connect IQ phone app, then Sync), or drop a <code>.PRG</code> file here; it is written into the app folder over USB and registered when you unplug. <span id="apps-free"></span></p>
+          <p class="hint">Queue updates in the Connect IQ phone app, then sync here. You can also install a <code>.PRG</code> file. <span id="apps-free"></span></p>
           <ul class="pending updates" id="app-updates"><li class="muted">Press <b>Check for updates</b>.</li></ul>
           <label class="btn file-btn self-start">Install a .PRG file<input type="file" id="prg-file" accept=".prg,.PRG" hidden></label>
         </div>
       </div>
       <div class="panel panel-gap">
         <h2>Installed components</h2>
-        <p class="hint">Software parts the watch reports in <code>GARMIN/device.fit</code>: firmware, sensor hub, languages, fonts and course data.</p>
+        <p class="hint">Software versions reported by the watch.</p>
         <div class="inventory" id="sw-inventory"><span class="muted">Not read yet.</span></div>
         <details id="sw-inventory-more" hidden><summary class="hint"></summary><div class="inventory" id="sw-inventory-rest"></div></details>
       </div>
@@ -322,11 +321,11 @@
     <section id="tab-cloud" class="tab">
       <header class="page-head">
         <h1>Garmin Connect</h1>
-        <p class="lede">Sign in once. The watch then syncs with Garmin's cloud over USB the way Garmin Express did.</p>
+        <p class="lede">Sync activities, apps, workouts and settings with Garmin Connect.</p>
       </header>
       <div id="cloud-login" class="panel login" hidden>
         <h2>Sign in to Garmin</h2>
-        <p class="hint">The password goes to Garmin's sign-in service only. What is kept is a session token in <code>~/.config/garminctl</code>, as the phone app keeps one.</p>
+        <p class="hint">Your session is saved on this computer.</p>
         <form id="login-form" class="form">
           <label>Email<input type="email" id="login-email" required autocomplete="username"></label>
           <label>Password<input type="password" id="login-password" required autocomplete="current-password"></label>
@@ -347,7 +346,7 @@
         <div class="grid-2">
           <div class="panel">
             <h2>Sync</h2>
-            <p class="hint">Uploads new activities and health files, then writes to the watch whatever Connect has queued: settings changes, Connect IQ app installs and updates, workouts, courses. Nothing is deleted from the watch.</p>
+            <p class="hint">Upload activities and health files; download queued apps, settings, workouts and courses.</p>
             <div class="toolbar tight">
               <button class="btn primary" id="btn-sync">Sync now</button>
               <label class="check"><input type="checkbox" id="sync-upload" checked> Upload</label>
@@ -358,13 +357,13 @@
           </div>
           <div class="panel">
             <h2>Queued for the watch</h2>
-            <p class="hint">What Garmin Connect is waiting to deliver. An app queued in the Connect IQ phone app while the phone cannot reach the watch lands here; Sync writes it into the watch's app folder over USB and the watch registers it on unplug.</p>
+            <p class="hint">Sync to download queued items to your watch.</p>
             <ul class="pending" id="cloud-messages"><li class="muted">Loading…</li></ul>
           </div>
         </div>
         <div class="panel panel-gap">
           <h2>Settings kept by Garmin Connect</h2>
-          <p class="hint">Connect pushes these back to the watch on every sync, so a watch-side change does not stick. Change them here instead: Connect saves them and generates the settings file for the watch.</p>
+          <p class="hint">Save these settings here so Garmin Connect uses the same values on future syncs.</p>
           <div class="rows" id="cloud-settings"><p class="muted">Loading…</p></div>
         </div>
       </div>
@@ -373,7 +372,7 @@
     <section id="tab-files" class="tab">
       <header class="page-head">
         <h1>Files</h1>
-        <p class="lede">The watch's storage as Windows sees it. FIT files can be decoded in place.</p>
+        <p class="lede">Browse watch storage or decode a FIT file.</p>
       </header>
       <div class="toolbar">
         <nav class="crumbs" id="crumbs" aria-label="Path"></nav>
@@ -399,7 +398,7 @@
     </section>
     <section class="tab" id="tab-ai">
       <div class="page-head"><h1>AI &amp; MCP</h1><button class="btn" id="mcp-refresh">Refresh</button></div>
-      <p class="lede">Connect an AI assistant to work with your watch through garminctl. Keep garminctl running while the assistant uses it.</p>
+      <p class="lede">Connect an AI assistant to your watch. Keep garminctl running during use.</p>
       <p id="mcp-status" role="status" class="muted">Loading connection details…</p>
       <section class="panel">
         <h2>Connect an assistant</h2>
@@ -407,11 +406,11 @@
         <div class="mcp-copy"><input id="mcp-endpoint" readonly><button class="btn small" data-mcp-copy="mcp-endpoint">Copy URL</button></div>
         <label for="mcp-claude">Claude Code — run once in your terminal</label>
         <div class="mcp-copy"><input id="mcp-claude" readonly><button class="btn small" data-mcp-copy="mcp-claude">Copy command</button></div>
-        <p class="hint">For other MCP clients, add an HTTP server using the endpoint above. This address is local to this computer.</p>
+        <p class="hint">In other MCP clients, add this URL as a Streamable HTTP server.</p>
       </section>
       <section class="panel panel-gap">
         <h2>Open sessions</h2>
-        <p class="hint">An open session may be idle. Last seen shows when the client last contacted garminctl. Client names are reported by the clients themselves.</p>
+        <p class="hint">Open sessions may be idle. Last seen is the client's latest request. Clients provide their own names.</p>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Open MCP sessions">
           <table class="files"><thead><tr><th scope="col">Client</th><th scope="col">Version</th><th scope="col">Connected</th><th scope="col">Last seen</th></tr></thead><tbody id="mcp-clients"></tbody></table>
         </div>
@@ -422,7 +421,7 @@
         <div class="table-wrap tall" tabindex="0" role="region" aria-label="Recent MCP tool calls">
           <table class="files"><thead><tr><th scope="col">Time</th><th scope="col">Client</th><th scope="col">Tool</th><th scope="col">Result</th><th scope="col">Duration</th></tr></thead><tbody id="mcp-activity"></tbody></table>
         </div>
-        <p class="hint">The last 100 calls are kept until garminctl stops. Arguments and response contents are not recorded here.</p>
+        <p class="hint">Keeps the last 100 calls until garminctl stops, without arguments or response contents.</p>
       </section>
     </section>
   </main>
@@ -440,7 +439,7 @@
     <div id="dlg-body"></div>
     <div class="dialog-actions">
       <button value="cancel" class="btn">Cancel</button>
-      <button value="ok" class="btn primary" id="dlg-ok">OK</button>
+      <button value="ok" class="btn primary" id="dlg-ok">Confirm</button>
     </div>
   </form>
 </dialog>

@@ -147,9 +147,7 @@ func (c *cli) cloud(ctx context.Context, svc *garmin.Service, args []string) err
 	return usageErrorf("unknown cloud command %q", args[0])
 }
 
-// cloudRaw makes raw Connect calls for exploring the API: get/post use the
-// bearer token on connectapi paths; get1/post1 sign an absolute URL with
-// OAuth1 like Garmin Express.
+// cloudRaw uses bearer authentication for get/post and OAuth1 for get1/post1.
 func (c *cli) cloudRaw(ctx context.Context, cl *gc.Client, args []string) error {
 	method, ct := http.MethodGet, ""
 

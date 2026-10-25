@@ -835,12 +835,10 @@ func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
 
 // ---------- Connect IQ store ----------
 
-const defaultPart = "006-B4426-00" // vívoactive 5 firmware part; replaced by the connected watch's
-
 // storeSvc returns the connected service (or nil) and the watch's part number.
 func (s *Server) storeSvc(ctx context.Context) (*garmin.Service, string) {
 	svc := s.svc.Current()
-	part := defaultPart
+	part := ""
 
 	if svc != nil {
 		if dx, err := svc.DeviceXML(ctx); err == nil && dx.PartNumber != "" {

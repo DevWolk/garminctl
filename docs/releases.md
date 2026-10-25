@@ -1,247 +1,101 @@
-# Windows signing and releases
+# Building and publishing releases
 
-Status checked on 2026-10-24. PR #9 is merged. The signed snapshot pipeline
-passed on GitHub, and its exact Setup installed and ran on the user's Windows
-with Smart App Control enabled. See [recorded evidence](windows-selfsign-test.md).
-The first tagged desktop release,
-[v0.5.0](https://github.com/DevWolk/garminctl/releases/tag/v0.5.0), is published.
-Its [tag pipeline](https://github.com/DevWolk/garminctl/actions/runs/40107216215)
-passed the main-ancestry guard, quality gate, package installation checks and
-publication. Published payload checksums were verified after download.
+[`release.yml`](../.github/workflows/release.yml) publishes the exact assets
+that pass [`packages.yml`](../.github/workflows/packages.yml). Local package
+builds and manual workflow runs produce artifacts without publishing a release.
 
-## Personal Windows builds
+## Build packages
 
-Windows Setup and the desktop executable can be built and distributed without
-code signing. Builds default to unsigned unless signing is explicitly
-configured. A paid signing subscription is not a prerequisite for producing a
-personal release. The [recorded self-signing tests](windows-selfsign-test.md)
-installed and launched garminctl successfully on this machine with SAC enabled.
+Follow [development setup](../CONTRIBUTING.md#development-setup), then set the
+chosen version in the command, for example:
 
-The blocker observed on this machine is specifically **Smart App Control**.
-The logged policy ID, `{0283ac0f-fff1-49ae-ada1-8a933130cad6}`, identifies
-Windows's built-in `VerifiedAndReputableDesktop` policy. A read-only check
-confirmed `VerifiedAndReputablePolicyState = 1` and that policy's presence.
-It is not evidence that this is a company-managed computer. See Microsoft's
-[built-in policy list](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/operations/inbox-appcontrol-policies).
+```sh
+make check
+make package VERSION=v1.2.3
+```
 
-Smart App Control has two acceptance paths: code recognized as safe by
-Microsoft's app intelligence, and publicly trusted signing when reputation
-does not establish trust. Therefore, public signing is not a universal
-requirement for an application to run with SAC enabled. See Microsoft's
-[SAC overview](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview).
+[`package-windows.sh`](../scripts/package-windows.sh) creates an amd64 Setup
+with the CLI, desktop app and WebView2 bootstrapper.
+[`package-linux.sh`](../scripts/package-linux.sh) creates amd64 DEB/RPM
+packages with the desktop app, native libusb CLI and udev rule.
+The outputs go to `dist/`; builds without `VERSION` use `git describe`, which
+can include a commit ID and `dirty`.
 
-| Route | Requirements | Effect on this machine |
-| --- | --- | --- |
-| Unsigned personal build | No certificate or signing account. | Known-safe code can run with SAC enabled. The current garmin-desktop build received a block; that does not prove a paid certificate is necessary for every personal build. |
-| Self-signed certificate | A private signing certificate; no publicly trusted signing identity is established. | Does not itself satisfy the public-signature path. Such a binary may still be accepted through reputation; self-signing is not a guaranteed fix for garmin-desktop. |
-| Publicly trusted signing | A supported code signing certificate or signing service, identity validation, and access to its signing mechanism. | The supported signing route for an unknown app with Smart App Control enabled; verify the final signed build actually launches. |
+CI also builds portable CLI archives using [GoReleaser](../.goreleaser.yml):
+Windows ZIP and Linux tar.gz archives for amd64 and arm64. These CLIs have CGO
+disabled; native Linux USB support is supplied by the DEB/RPM packages.
 
-Smart App Control's signing requirements are documented in
-[Microsoft's developer guide](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control).
+## Configure Windows signing
 
-### Comparison with UsbTreeView
+[`sign-windows.sh`](../scripts/sign-windows.sh) defaults to
+`WINDOWS_SIGNING_MODE=none`. Its supported modes are:
 
-The user-provided UsbTreeView 4.8.0 executable was inspected and launched on
-2026-10-24. Its window opened while `VerifiedAndReputablePolicyState = 1`.
-Its Authenticode signer and issuer are both Uwe Sieber; Windows reports
-`UnknownError`, with chain status `UntrustedRoot`. It is self-signed, not an
-example of a publicly trusted code signing certificate. The Sectigo timestamp
-on the signature does not change that signer-chain result.
+| Mode | Signing material |
+| --- | --- |
+| `none` | No signature. |
+| `certificate` | Existing `signing.pfx` and `password` files in `WINDOWS_SIGNING_DIR`, or both signing secrets below. Missing material fails the build. |
+| `self-signed` | Local builds only: create or reuse an identity in `WINDOWS_SIGNING_DIR`. |
 
-The user also reports that this executable runs without an internet connection.
-Windows's ISG mechanism caches file trust information locally; offline launch
-alone therefore does not identify which trust path allowed a file. See
-[Microsoft's ISG description](https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/design/use-appcontrol-with-intelligent-security-graph).
-The exact SAC acceptance reason for this UsbTreeView file was not established.
-
-A read-only EA comparison found `$KERNEL.PURGE.ESBCACHE` on UsbTreeView and no
-extended attributes on the tested garmin-desktop file. The contents of that
-cache were not decoded, so this is an observed difference, not proof of an
-allow decision. The garmin-desktop file in the temporary test directory has
-the same SHA-256 as the checkout's current Windows desktop build, and the
-Code Integrity log records its 3077/3033 block. A normal installed-app run
-was later verified successfully after self-signing Setup. No Windows protection
-or network settings were changed during these comparisons.
-
-A subsequent [normal-install attempt](windows-install-check.md) confirmed that
-Windows also rejects the current Setup before installation. Its event 3077
-flat hash matches the actual installer; the older successful installer test
-used a different artifact. The subsequent [self-signing experiment](windows-selfsign-test.md)
-resolved execution for the tested build, and its installed native app's MCP
-successfully read the connected watch.
-
-Turning off SAC is an owner-controlled alternative, not a mandatory step for
-unsigned builds. Its UI is Windows Security → App & browser control → Smart
-App Control settings → Off. This changes protection for the
-computer, not just garminctl; there is no per-app exception. Microsoft says
-recent Windows updates support re-enabling it without reinstalling Windows;
-check availability on the installed Windows version. These settings have not
-been changed by garminctl or its installer. See the
-[Smart App Control FAQ](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions).
-
-SmartScreen download warnings are a separate mechanism. Publishing a GitHub
-release, signing a Git tag, or supplying SHA-256 checksums does not add a Windows
-executable signature.
-
-## Free signing and the Let's Encrypt comparison
-
-The installer can be Authenticode-signed after building. Signing an unsigned
-file adds a signature; it does not borrow another application's identity.
-The signed build route signs application/CLI binaries before packaging, the
-NSIS-generated uninstaller, and the resulting Setup. Portable Windows CLI
-archives are signed before archiving and checksum calculation.
-
-Let's Encrypt certificates cannot supply the Windows code signing identity:
-they are TLS certificates, not code signing certificates. Let's Encrypt states
-this explicitly in its [FAQ](https://letsencrypt.org/docs/faq/#does-lets-encrypt-issue-certificates-for-anything-other-than-ssltls-for-websites).
-
-A self-signed code signing certificate is free to create and can sign our own
-files. That creates an integrity signature but not public trust or the trust
-history of another application. Installing a private certificate in a local
-certificate store must not be presented as a guaranteed SAC exemption.
-
-[SignPath Foundation](https://signpath.org/) offers free publicly trusted code
-signing for accepted open-source projects. Its [conditions](https://signpath.org/terms.html)
-require a maintained, released, documented OSS project, a verifiable build,
-defined signing roles, MFA, and manual approval of releases for signing.
-The certificate is issued to the Foundation; it does not hand out an unrestricted
-private key for arbitrary files. Admission is reviewed and not guaranteed.
-
-GitHub repository metadata was checked on 2026-10-24: `DevWolk/garminctl` is
-private. Free OSS signing is therefore an option to assess against the project's
-distribution plans and the Foundation's admission requirements, not an account
-that is already available. No repository visibility was changed or application
-submitted. The current release workflow has no SignPath integration.
-
-## If public signing is chosen
-
-Microsoft Artifact Signing is one option. Its published Basic price is
-US$9.99 per month for 5,000 signatures. Public Trust currently supports
-individual developers in the US/Canada and organizations in supported regions,
-including the EU. Do not assume an individual account outside those countries
-is eligible. See [pricing](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku)
-and [eligibility/setup](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart).
-Another option is a publicly trusted code signing certificate from a provider;
-the certificate must support the chosen local/CI signing mechanism.
-
-For Artifact Signing, the setup is: Azure subscription and tenant, a signing
-account, identity validation, a Public Trust certificate profile, and CI access
-to that profile. Signing keys belong in the provider's protected signing
-mechanism, not in the repository.
-
-The release implementation must then sign all shipped Windows binaries before
-embedding them in Setup, sign the resulting installer and generated uninstaller,
-verify signatures, and calculate checksums after signing. Signing the Setup
-alone leaves its installed executable unsigned. CLI binaries assembled by
-GoReleaser also need the signing step before archive/checksum creation.
-These signing steps are implemented by `scripts/sign-windows.sh`, the NSIS
-uninstaller hook, and the GoReleaser post-build hook. The build fails if signing
-or signature verification fails. Signing remains optional for unsigned builds.
-
-## Configure personal signing
-
-Use a persistent code signing certificate rather than generating a new identity
-for each CI run. A Linux-generated unrelated self-signed identity was blocked
-on the test machine; the persistent Windows-generated personal identity,
-exported as an encrypted PFX and used by the Linux builder, installed
-successfully. See the [exact results and limitations](windows-selfsign-test.md).
-Self-signing is not a promise of public trust or acceptance on another machine.
-
-For local builds, put `signing.pfx` and its password in a file named `password`
-inside a private, Git-ignored directory. Protect the directory with mode 700
-and both files with mode 600. For this checkout, `.make/options.local.mk` can
-select the existing personal identity without putting secrets in Make arguments:
+The default signing directory is `.cache/windows-signing`. For local certificate
+builds, place the PFX and password there, then set the mode in the ignored
+`.make/options.local.mk`:
 
 ```makefile
 WINDOWS_SIGNING_MODE := certificate
-WINDOWS_SIGNING_DIR := /src/.cache/windows-release-signing
 ```
 
-Then run `make package-windows VERSION=v0.5.0-test`. The `/src` path is the
-builder container's checkout path. Without these settings, `make package`
-builds unsigned binaries. `WINDOWS_SIGNING_MODE=self-signed` explicitly creates
-or reuses a local identity under `.cache/windows-signing`; this is useful for
-signature experiments, not a verified acceptance route on the user's Windows.
+Use `WINDOWS_SIGNING_DIR` to select another container-visible directory. The
+signer sets directory permissions to 700 and private-file permissions to 600.
+It retains local signing material for reuse. Optional `WINDOWS_TIMESTAMP_URL`
+adds an RFC 3161 timestamp request.
 
-For GitHub Releases, configure two repository **Actions secrets**:
+For CI, set the Actions variable `WINDOWS_SIGNING_MODE` to `certificate` and
+configure these Actions secrets:
 
 | Secret | Value |
 | --- | --- |
-| `WINDOWS_SIGNING_PFX_BASE64` | Base64 encoding of the encrypted PFX. |
-| `WINDOWS_SIGNING_PASSWORD` | Its password. |
+| `WINDOWS_SIGNING_PFX_BASE64` | Base64-encoded PFX. |
+| `WINDOWS_SIGNING_PASSWORD` | PFX password. |
 
-Set the repository **Actions variable** `WINDOWS_SIGNING_MODE` to `certificate`.
-The Release workflow uses the secrets only in the package-building job. Missing
-credentials fail the signed build; it does not silently fall back to unsigned.
-PR package checks always use unsigned mode and do not receive signing secrets.
-Only the public certificate is included in signed release assets; the build
-removes its temporary private signing files even after failure.
+The reusable workflow accepts only `none` or `certificate`. Pull request package
+checks use `none` and receive no signing secrets. Release builds remove the
+default signing staging files in an `always()` cleanup step.
 
-With GitHub CLI, send credentials through stdin rather than command arguments:
+The package script signs the application and CLI before packaging, the NSIS
+hook signs the generated uninstaller, and the script signs Setup last.
+The [GoReleaser hook](../scripts/sign-release-binary.sh) signs Windows CLIs
+before archiving. Each signing operation verifies the result with
+`osslsigncode` and fails on error. Signed assets include the public certificate;
+the private PFX and password are excluded. Signature verification in the
+builder does not establish acceptance by another Windows host's policy.
 
-```sh
-base64 -w 0 .cache/windows-release-signing/signing.pfx | gh secret set WINDOWS_SIGNING_PFX_BASE64 --repo DevWolk/garminctl
-gh secret set WINDOWS_SIGNING_PASSWORD --repo DevWolk/garminctl < .cache/windows-release-signing/password
-gh variable set WINDOWS_SIGNING_MODE --repo DevWolk/garminctl --body certificate
-```
+## Publish a tag
 
-The current personal signatures have no timestamp. The personal certificate
-expires on 2031-10-24; renew it and verify later builds before then. An optional
-`WINDOWS_TIMESTAMP_URL` can configure a supported RFC 3161 timestamp service;
-timestamping has not been validated with the current builder. No timestamp
-service is necessary for the successful personal-build test above.
-
-## Current CI and release flow
-
-| Event | Current behavior |
-| --- | --- |
-| Pull request or push to `main` | Linux/Windows tests, quality gate, installers and portable archives, then Windows/Ubuntu/Fedora installed-app checks. Downloadable `garminctl-packages` artifact; no release publication. |
-| Push to another branch without a PR | These branch/PR workflows do not run. |
-| Weekly security schedule | Vulnerability checks; CodeQL is conditional on repository visibility. |
-| Push of a tag matching `v*` | The Release workflow runs the sequence below. |
-| Manual Release workflow run | The same package pipeline as a snapshot, with configured signing and downloadable artifacts; no tag/release is published. |
-
-The tag workflow in [release.yml](../.github/workflows/release.yml) performs:
-
-1. Check out the tagged commit and set up Go.
-2. Build the Docker toolchain with `make image-build`.
-3. Run `make check` (lint, race tests, reachable-vulnerability analysis).
-4. Run `make package VERSION=<tag>` to build Windows Setup and Linux DEB/RPM,
-   signing all shipped Windows executables when configured.
-5. Run GoReleaser with `--skip=publish` to build portable archives, signing
-   their Windows CLIs before packaging.
-6. Assemble the final public assets and `checksums.txt`, then upload the
-   `garminctl-packages` Actions artifact (retained for seven days).
-7. Install, launch a real native window, call HTTP MCP against test fixtures,
-   and uninstall on Windows and in clean Ubuntu 24.04/Fedora 44 userspaces
-   under Xvfb. Windows also checks a normal window/server shutdown and, for
-   signed releases, the signer of Setup, installed binaries and portable CLIs.
-8. After every package job succeeds, verify checksums and publish those exact
-   assets as a GitHub Release. No rebuild occurs between testing and publishing.
-
-Only the publication job has `contents: write`; it uses GitHub's provided
-token. Unsigned releases require no signing credentials. Signed releases use
-the configured PFX secrets. Neither route deploys the app onto this computer.
-CI fixture tests do not verify physical USB compatibility or SAC acceptance
-on a user's Windows installation; those need separate hardware/host checks.
-
-The release workflow first requires the tagged commit to be reachable from
-`main`. Merge the PR, update the user instructions, and only then create the
-version tag. The Release job repeats `make check` and installed-package tests
-before publication. The signed snapshot pipeline and its Windows/Ubuntu/Fedora
-installation checks passed in [run 40103875337](https://github.com/DevWolk/garminctl/actions/runs/40103875337).
-
-For the next release, after committing, pushing, and checking the chosen
-release commit (replace the example version with the selected version):
+Merge and validate the release commit on `main`, then create and push an
+annotated `v*` tag. Replace the example version:
 
 ```sh
+release_version=v1.2.3
 git switch main
 git pull --ff-only
-git tag -a v0.5.1 -m "Release v0.5.1"
-git push origin v0.5.1
+git tag -a "$release_version" -m "Release $release_version"
+git push origin "$release_version"
 ```
 
-`v0.5.0` is already published; `v0.5.1` above is only an example next version.
-Creating a local tag alone does not start Actions. Ordinary branch pushes do
-not publish a release. The application currently has no desktop self-updater;
-install a newer package to update it.
+The workflow requires a version matching `v?major.minor.patch` with an optional
+prerelease suffix. The tag trigger requires the `v` prefix. It then:
+
+1. Requires the tagged commit to be an ancestor of `origin/main`.
+2. Builds the toolchain, runs `make check`, builds installers and runs
+   GoReleaser with `--skip=publish`.
+3. Assembles `dist/assets/`, calculates `checksums.txt` after signing, and
+   uploads the `garminctl-packages` artifact with seven-day retention.
+4. Installs and tests the packages on Windows, Ubuntu 24.04 and Fedora 44.
+   Tests launch the native window and call HTTP MCP against repository fixtures,
+   then uninstall. Signed Windows builds also check shipped signatures.
+5. After those jobs pass, verifies the checksums and publishes those assets
+   with `gh release create`. Only this job has `contents: write`.
+
+A manual Release run uses the package pipeline in snapshot mode and skips
+publication. Fixture checks cover installed-app behavior; physical USB
+compatibility requires a separate hardware check.

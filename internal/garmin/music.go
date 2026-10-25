@@ -46,10 +46,8 @@ type MusicLibrary struct {
 	Providers []AudioProvider `json:"providers"` // streaming apps whose downloads are hidden from USB
 }
 
-// AudioProvider is a Connect IQ audio content provider app (YouTube Music,
-// Spotify, Deezer, …). Its downloads are DRM-protected and kept in the app's
-// own cache inside the hidden app area, so they never appear under Music/;
-// the device XML reports only the cache size.
+// AudioProvider describes a streaming app from the device XML, including
+// its reported cache size. Music does not enumerate provider downloads.
 type AudioProvider struct {
 	Name       string `json:"name"`
 	Version    int    `json:"version"`

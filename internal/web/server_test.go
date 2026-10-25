@@ -92,6 +92,32 @@ func TestServer_StatusBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestServer_StoreDeviceSelection(t *testing.T) {
+	t.Parallel()
+
+	root := testdump.Root(t)
+	s := newServer(func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
+	t.Cleanup(s.svc.Drop)
+
+	if svc, part := s.storeSvc(t.Context()); svc != nil || part != "" {
+		t.Fatalf("disconnected store must not assume a device: service=%v part=%q", svc, part)
+	}
+
+	svc, err := s.svc.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dx, err := svc.DeviceXML(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if selected, part := s.storeSvc(t.Context()); selected != svc || part != dx.PartNumber {
+		t.Fatalf("connected store selected service=%v part=%q, want service=%v part=%q", selected, part, svc, dx.PartNumber)
+	}
+}
+
 func TestServer_FilesConnectOnDemand(t *testing.T) {
 	t.Parallel()
 

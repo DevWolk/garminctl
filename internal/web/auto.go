@@ -11,9 +11,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/notify"
 )
 
-// Auto-sync: the background behaviour Garmin Express had. While the server
-// runs it watches USB; when the watch appears it syncs with Garmin Connect
-// (if signed in), checks for software updates and shows a notification.
+// Auto-sync watches for USB connections, syncs when signed in to Connect,
+// checks software updates and sends desktop notifications.
 
 const (
 	watchTick    = 5 * time.Second
@@ -136,7 +135,7 @@ func (s *Server) tryOpen(ctx context.Context) (*garmin.Service, bool) {
 	return svc, true
 }
 
-// autoActions runs what Express did on plug-in: sync and an update check.
+// autoActions starts sync and an update check after connection.
 func (s *Server) autoActions(ctx context.Context, svc *garmin.Service, name string) {
 	var parts []string
 

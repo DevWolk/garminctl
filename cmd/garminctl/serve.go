@@ -11,7 +11,7 @@ import (
 func (c *cli) serve(ctx context.Context, args []string) error {
 	fs := c.flagSet("serve")
 	addr := fs.String("addr", "127.0.0.1:8787", "listen address")
-	autoSync := fs.Bool("autosync", true, "watch USB; when the watch appears, sync with Garmin Connect, check updates and notify")
+	autoSync := fs.Bool("autosync", true, "sync, check updates and notify when a watch connects")
 
 	if err := parseFlags(fs, args); err != nil {
 		return err

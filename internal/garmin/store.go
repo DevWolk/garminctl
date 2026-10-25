@@ -30,6 +30,10 @@ var (
 )
 
 func storeDeviceType(ctx context.Context, part string) string {
+	if part == "" {
+		return ""
+	}
+
 	deviceTypeMu.Lock()
 	id, ok := deviceTypeCache[part]
 	deviceTypeMu.Unlock()

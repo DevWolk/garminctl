@@ -14,10 +14,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/hostexec"
 )
 
-// autostart installs or removes a Windows Startup shortcut that runs the
-// Windows build of garminctl ("serve") hidden at sign-in, which is how
-// Garmin Express kept syncing in the background. The binary is copied to
-// %LOCALAPPDATA%\garminctl so the shortcut does not depend on this checkout.
+// autostart manages a Startup shortcut for the hidden Windows server.
+// Its binary copy in %LOCALAPPDATA%\garminctl does not depend on this checkout.
 func (c *cli) autostart(ctx context.Context, args []string) error {
 	ps := wpd.PowerShellPath()
 	if ps == "" {

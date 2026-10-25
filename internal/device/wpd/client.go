@@ -315,9 +315,8 @@ func (b *Bridge) devices(ctx context.Context) ([]device.Info, error) {
 	return trimInfo(resp.Devices), nil
 }
 
-// trimInfo trims the names Windows reports, in place. A USB drive reports
-// its vendor padded with spaces ("TUF     "). IDs are kept as they are,
-// because -device matches them exactly.
+// trimInfo removes padding from device names and manufacturers. IDs retain
+// their original bytes for exact -device matching.
 func trimInfo(list []device.Info) []device.Info {
 	for i := range list {
 		d := &list[i]

@@ -13,11 +13,9 @@ import (
 	"github.com/DevWolk/garminctl/internal/paths"
 )
 
-// PathAppsIn is the registry the host hands back to the watch: the same
-// protobuf as OUT.BIN; the watch applies it when the USB session ends and
-// then deletes it. Garmin Express and openExpress use it to toggle built-in
-// activities and glances. Field 4 of an entry is its hidden flag; see
-// docs/formats.md.
+// PathAppsIn is the pending app registry, encoded like OUT.BIN. The watch
+// applies and deletes it when the USB session ends. Field 4 controls entry
+// visibility; see docs/formats.md.
 const PathAppsIn = "GARMIN/Apps/IN.BIN"
 
 func pbAppendVarint(b []byte, v uint64) []byte {
@@ -169,7 +167,7 @@ func backupRegistry(out []byte) string {
 // SetAppHidden hides an activity, glance or app from the watch's lists or
 // shows it again, by writing IN.BIN with that one flag changed. A pending
 // IN.BIN is used as the base, so several changes can be queued before the
-// unplug that applies them. A copy of OUT.BIN is kept next to the caches.
+// unplug that applies them. An OUT.BIN backup is attempted in the cache directory.
 // ref matches the app's name, file id or store id.
 func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (backup string, err error) {
 	out, err := s.read(ctx, PathAppsConfig, false)

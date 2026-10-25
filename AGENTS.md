@@ -66,8 +66,8 @@ See CLAUDE.md for the working rules. Module map:
   `http.go` exposes the same tools over local Streamable HTTP with bounded
   session/tool-call metadata for the web UI's AI & MCP tab.
 
-Quality gate: `make check` (golangci-lint with `.golangci.yml`, govet
-included, race tests, govulncheck) must pass; the tools are pinned in
+Quality gate: `make check` (module metadata, golangci-lint with govet,
+race tests, govulncheck) must pass; the tools are pinned in
 `tools.mod`. Make targets in `.make/` use `docker/docker-compose.yml` and a
 host-UID toolchain container. `make package` builds native installers in `dist/`.
 `make install` rebuilds the CLI and desktop binaries and rolls the CLI out on
@@ -75,8 +75,6 @@ this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
 the Windows autostart copy, keeping stopped servers stopped); `make update`
 pulls the current branch first. The web and HTTP MCP servers share `garmin.Lazy` (one lazily opened
 watch); `internal/paths` names the cache directory; tests over a dump use
-`internal/testdump`. `tools/expresswatch` is the daily Garmin Express
-release check (state in `docs/express-release.json`, workflow
-`express-watch.yml`); `docs/express-parity.md` is where the Copilot task
-records whether garminctl had to follow a release. gocyclo is capped at 15 and nothing is
+`internal/testdump`. `tools/expresswatch` monitors upstream release notes
+(state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.

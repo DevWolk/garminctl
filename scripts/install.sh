@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
-# Roll the freshly built binaries out on this machine. Run by `make install`
-# after `make all`, so bin/garminctl and bin/garminctl.exe are current.
-#
-#   1. The dev server in WSL (./bin/garminctl serve) is restarted if it runs.
-#   2. When the Windows autostart is on, its copy of garminctl.exe is
-#      refreshed; the Windows server is stopped first and started again
-#      afterwards if it was running (Windows will not overwrite a running exe).
-#   3. If no server was running, keep it stopped; desktop starts its own server.
-#
-# The MCP registration points at bin/garminctl, so Claude Code picks the new
-# build up at its next connection (/mcp).
+# Refresh development binaries and enabled Windows autostart copies.
+# Restart only servers that were running before `make install`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -57,8 +48,7 @@ start_windows() {
 	echo "Windows server started from %LOCALAPPDATA%\\garminctl"
 }
 
-# $1 is "wsl" or "windows": the Windows server listens on Windows's own
-# 127.0.0.1, which WSL cannot reach, so it is probed with Windows's curl.
+# $1 selects a host-local probe, independent of WSL networking mode.
 wait_ready() {
 	local probe
 	case "$1" in

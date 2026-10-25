@@ -1,8 +1,5 @@
-// Package ciqstore reads Connect IQ app settings definitions from the
-// public app-settings page on apps.garmin.com, the same page Garmin Express
-// renders in its embedded browser. The page is server-rendered HTML with one
-// form control per setting, so it carries labels, dropdown options and
-// their values.
+// Package ciqstore reads Connect IQ store metadata and settings forms.
+// Form controls supply setting labels, options and stored values.
 package ciqstore
 
 import (
@@ -140,9 +137,7 @@ func (s *Schema) index() *Schema {
 	return s
 }
 
-// reID is what an app id (a UUID) and a watch part number (006-B4426-00)
-// may contain. Both go into a URL path and a cache file name, and the part
-// number comes from the device's own XML.
+// reID restricts app ids and device part numbers used in URLs and cache names.
 var reID = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 func checkIDs(appID, partNumber string) error {

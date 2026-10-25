@@ -20,10 +20,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/paths"
 )
 
-// Cloud wires a Garmin Connect session to the watch: it uploads what the
-// watch recorded, pulls what Connect queued for the watch, and edits the
-// device settings Connect keeps in the cloud. The protocol is the one Garmin
-// Express uses (see docs/formats.md, "Garmin Connect sync").
+// Cloud uploads watch files, delivers queued Garmin Connect files and edits
+// cloud device settings. See docs/formats.md for the endpoints.
 type Cloud struct {
 	svc      *Service
 	gc       *gc.Client
@@ -317,9 +315,8 @@ type CloudApplyResult struct {
 	Note    string       `json:"note"`
 }
 
-// SetSettings changes keys of Connect's record (a sparse PUT, as Garmin
-// Express does), then pulls the settings-change file Connect generates into
-// GARMIN/NewFiles so the watch applies it on unplug.
+// SetSettings sends a sparse PUT to Connect, then pulls the generated
+// settings-change file into GARMIN/NewFiles for application on disconnect.
 func (c *Cloud) SetSettings(ctx context.Context, changes map[string]any) (*CloudApplyResult, error) {
 	if len(changes) == 0 {
 		return nil, errors.New("nothing to change")
@@ -574,8 +571,7 @@ type uploadTarget struct {
 	What    string
 }
 
-// uploadTargets maps the device XML data type to Garmin's upload endpoint,
-// as the Garmin Express upload configuration lists them.
+// uploadTargets maps supported device XML data types to Garmin upload endpoints.
 var uploadTargets = map[string]uploadTarget{
 	"FIT_TYPE_4":  {URL: "/upload-service/upload/activity", What: "activities"},
 	"FIT_TYPE_9":  {URL: "/upload-service/upload/weight", What: "weight"},

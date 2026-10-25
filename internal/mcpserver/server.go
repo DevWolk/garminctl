@@ -1,4 +1,4 @@
-// Package mcpserver exposes the watch to AI assistants over MCP.
+// Package mcpserver exposes watch and Garmin Connect tools over MCP.
 package mcpserver
 
 import (
@@ -29,28 +29,22 @@ type server struct {
 	svc *garmin.Lazy
 }
 
-const instructions = `garminctl gives direct access to a Garmin watch connected over USB (no Garmin Express, no cloud).
+const instructions = `Manage a Garmin watch over USB and access Garmin Connect after sign-in.
 
-Settings live in FIT messages. Address a field as message + field, by profile name when documented
-(deviceSettings.backlightMode, userProfile.weight) or by number for undocumented ones ("2"."220").
-Use watch_settings_schema to list documented fields, their types and enum options before changing a value.
-watch_set_settings writes a settings-change file into GARMIN/NewFiles; the watch applies it when the USB
-session ends (user unplugs or ejects the watch). Connect IQ app and watch-face settings (for example the
-Easy+ watch face) are edited with watch_app_settings / watch_set_app_settings and take effect immediately.
-watch_check_updates asks Garmin's update service (what Garmin Express uses) for firmware and data updates
-and compares installed Connect IQ apps with the store; watch_install_update downloads one update, verifies
-it and writes it to the watch (installed on unplug; firmware restarts the watch). Connect IQ apps and updates reach
-the watch through Garmin Connect's queue (cloud_sync writes queued .PRG files into the hidden app folder over
-raw PTP; the watch registers them on unplug) or as a sideloaded .PRG from the web UI; the store website itself
-no longer queues installs, the Connect IQ phone app does.
-Garmin Connect (the cloud) is reachable once the user has signed in through the web UI or "garminctl cloud login"
-(never ask for the password here): cloud_status, cloud_sync (upload recorded activities/health files, pull what
-Connect queued for the watch: settings changes, Connect IQ app installs/updates, workouts, courses), cloud_settings
-and cloud_set_settings (the device settings Connect keeps and pushes back on every sync; changing them here is how
-to stop Connect reverting a watch setting).
-Id flow: watch_apps gives app names/file ids for the watch_app_* and watch_remove_app tools; watch_check_updates
-gives partNumber for watch_install_update; activities_list gives file for activity_detail; workouts_list gives id
-for workout_send; music_list gives track paths for music_playlist; store_search gives id for store_app.`
+Use watch_settings_schema before changing watch settings. Address fields by message and field name
+(deviceSettings.backlightMode) or number. watch_set_settings queues changes for the next USB disconnect;
+tell the user to unplug the watch. App settings use watch_app_settings and watch_set_app_settings,
+which save directly to the watch.
+Use cloud_set_settings for fields marked managedByConnect so future Connect syncs use the same values.
+Sign in through the web UI or "garminctl cloud login"; never ask for a password in this conversation.
+cloud_sync uploads recorded files and downloads queued settings, apps, workouts and courses.
+watch_install_update verifies downloads and writes them to the watch for installation on unplug.
+Primary firmware updates restart the watch; ask the user before installing them. Confirm app removal first.
+App installations and updates can arrive through the Connect queue or a .PRG file uploaded in the web UI.
+
+Use IDs returned by the tools: watch_apps for app tools; watch_check_updates software partNumber for
+watch_install_update; activities_list.file for activity_detail; workouts_list.id for workout_send;
+music_list track paths for music_playlist; store_search.id for store_app.`
 
 // withWatch adapts a tool body that needs the connected watch.
 func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmin.Service, in In) (Out, error)) mcp.ToolHandlerFor[In, Out] {
@@ -68,8 +62,8 @@ func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmi
 	}
 }
 
-// readOnly marks a tool that changes nothing; network says whether it
-// reaches beyond the watch (Garmin's services).
+// readOnly marks tools that leave watch and account data unchanged.
+// network marks access to Garmin's services.
 func readOnly(title string, network bool) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, OpenWorldHint: new(network)}
 }
@@ -89,7 +83,6 @@ func Serve(ctx context.Context, open garmin.Opener, version string) error {
 	return srv.Run(ctx, &mcp.StdioTransport{})
 }
 
-// newServer builds the MCP server with every tool registered.
 func newServer(s *server, version string, cloudClient *gc.Client) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "garminctl", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
@@ -124,7 +117,7 @@ type schemaIn struct {
 }
 
 type setIn struct {
-	Changes []garmin.Change `json:"changes" jsonschema:"field changes; each has mesg (name or number), field (name or number), value (enum name, number or scaled value such as 79.5 for weight), optional index for repeated messages and arrayIndex for array fields"`
+	Changes []garmin.Change `json:"changes" jsonschema:"field changes: mesg and field (name or number), value (enum name, number or scaled value), optional index for repeated messages and arrayIndex for array fields"`
 }
 
 type deletedResult struct {
@@ -156,7 +149,7 @@ type appsResult struct {
 func addWatchTools(srv *mcp.Server, s *server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_info",
-		Description: "Summary of the connected watch: model, unit id, firmware, installed app count, pending NewFiles, storage.",
+		Description: "Read the connected watch's model, unit ID, software, app count, pending files and storage.",
 		Annotations: readOnly("Watch summary", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.Summary, error) {
 		return svc.Summary(ctx)
@@ -164,7 +157,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_list_files",
-		Description: "List a directory on the watch (names, sizes, modification times). Paths from here feed watch_decode_fit and watch_delete_file.",
+		Description: "List watch files with names, sizes and modification times. Use their paths with watch_decode_fit or watch_delete_file.",
 		Annotations: readOnly("List watch files", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in listIn) (filesResult, error) {
 		entries, err := svc.Device().List(ctx, in.Path)
@@ -173,7 +166,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_decode_fit",
-		Description: "Decode any FIT file on the watch (settings, sport profiles, goals, activities) into named messages and fields. Undocumented fields are reported by number. At most 400 messages are returned.",
+		Description: "Decode a watch FIT file into named messages and fields. Undocumented fields use numbers. Returns up to 400 messages.",
 		Annotations: readOnly("Decode FIT file", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in pathIn) (messagesResult, error) {
 		msgs, err := svc.DecodeFIT(ctx, in.Path)
@@ -191,7 +184,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_delete_file",
-		Description: "Delete one file on the watch permanently; there is no undo. Mainly for removing pending files from GARMIN/NewFiles. For Connect IQ apps use watch_remove_app instead.",
+		Description: "Permanently delete one watch file, including a pending file in GARMIN/NewFiles. There is no undo. Use watch_remove_app for apps.",
 		Annotations: writes("Delete watch file", true, false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in pathIn) (deletedResult, error) {
 		if err := svc.Device().Delete(ctx, in.Path); err != nil {
@@ -205,7 +198,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_settings",
-		Description: "Read the watch's own device settings (GARMIN/Settings/Settings.fit): device settings, user profile, HR zones, alarms, sensors and more, one row per field with value, type, enum options and notes. Not for Connect IQ apps (watch_app_settings) and not Garmin Connect's copy (cloud_settings).",
+		Description: "Read watch settings with values, types, options and notes. Use watch_app_settings for Connect IQ apps and cloud_settings for Garmin Connect's copy.",
 		Annotations: readOnly("Read watch settings", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in settingsIn) (settingsResult, error) {
 		view, err := svc.Settings(ctx)
@@ -218,7 +211,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_settings_schema",
-		Description: "List the documented fields of a FIT settings message with types, units and enum options. Use before watch_set_settings.",
+		Description: "List documented settings fields, types, units and options. Use before watch_set_settings.",
 		Annotations: readOnly("Settings field schema", false),
 	}, withWatch(s, func(_ context.Context, svc *garmin.Service, in schemaIn) (fieldsResult, error) {
 		fields, err := svc.Schema(in.Message)
@@ -227,14 +220,13 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_set_settings",
-		Description: "Change watch settings. Writes a Garmin settings-change file into GARMIN/NewFiles; the watch applies it when the USB session ends, so tell the user to unplug or eject the watch afterwards. Returns the resolved changes with previous values.",
+		Description: "Queue watch settings changes and return their previous values. Tell the user to unplug the watch to apply them.",
 		Annotations: writes("Change watch settings", false, false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in setIn) (*garmin.ApplyResult, error) {
 		return svc.ApplyChanges(ctx, in.Changes)
 	}))
 }
 
-// filterRows keeps the settings rows the caller asked for.
 func filterRows(rows []garmin.SettingsRow, in settingsIn) []garmin.SettingsRow {
 	out := make([]garmin.SettingsRow, 0, len(rows))
 
@@ -254,21 +246,21 @@ func filterRows(rows []garmin.SettingsRow, in settingsIn) []garmin.SettingsRow {
 }
 
 type appIn struct {
-	App string `json:"app" jsonschema:"app name (Easy+), file name (G5RG4154) or store id, as listed by watch_apps"`
+	App string `json:"app" jsonschema:"app name, file name or store ID from watch_apps"`
 }
 
 type appSchemaIn struct {
-	App string `json:"app" jsonschema:"app name (Easy+), file name (G5RG4154) or store id, as listed by watch_apps"`
+	App string `json:"app" jsonschema:"app name, file name or store ID from watch_apps"`
 	Key string `json:"key,omitempty" jsonschema:"restrict to one setting key; omit for all"`
 }
 
 type appSetIn struct {
-	App    string         `json:"app" jsonschema:"app name (Easy+), file name (G5RG4154) or store id, as listed by watch_apps"`
+	App    string         `json:"app" jsonschema:"app name, file name or store ID from watch_apps"`
 	Values map[string]any `json:"values" jsonschema:"keys to change with their new values; for dropdowns pass the option label (e.g. \"Body Battery %\") or its value, for toggles on/off, colors as RRGGBB hex strings where the schema says so"`
 }
 
 type installIn struct {
-	PartNumber string `json:"partNumber" jsonschema:"part number of an update returned by watch_check_updates, e.g. 006-B4426-00"`
+	PartNumber string `json:"partNumber" jsonschema:"part number returned by watch_check_updates"`
 }
 
 type hideIn struct {
@@ -301,7 +293,7 @@ type removedResult struct {
 func addAppTools(srv *mcp.Server, s *server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_apps",
-		Description: "List installed apps, watch faces, glances and activities with their hidden flag. Connect IQ apps have a fileName (e.g. G5RG4154 for Easy+) used by the app settings tools.",
+		Description: "List installed apps, watch faces, glances and activities, including visibility. Use a Connect IQ app's fileName with the app settings tools.",
 		Annotations: readOnly("List watch apps", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (appsResult, error) {
 		apps, err := svc.Apps(ctx)
@@ -310,7 +302,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_app_settings",
-		Description: "Read a Connect IQ app's or watch face's settings: for each key the human label, type (select/toggle/text/number), current value and, for dropdowns, the label of the current choice. Use watch_app_settings_schema to see the available dropdown options. Not for the watch's own settings (watch_settings).",
+		Description: "Read Connect IQ app or watch face settings, including labels and types when available. Use watch_app_settings_schema for options.",
 		Annotations: readOnly("Read app settings", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in appIn) (*garmin.AppSettings, error) {
 		return svc.AppSettings(ctx, in.App)
@@ -318,7 +310,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_app_settings_schema",
-		Description: "Settings definition of a Connect IQ app as Garmin's store publishes it: labels, dropdown options with their values, number ranges, read-only markers. Large for apps with many dropdowns; pass key to narrow to one setting.",
+		Description: "Read an app's setting labels, options, ranges and read-only markers from the store. Pass key to return one setting.",
 		Annotations: readOnly("App settings schema", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in appSchemaIn) (*ciqstore.Schema, error) {
 		sc, err := svc.AppSchema(ctx, in.App)
@@ -340,7 +332,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_set_app_settings",
-		Description: "Change Connect IQ app or watch-face settings and write the .SET file back to the watch. Values are validated against the store's settings definition (dropdown labels are accepted). Takes effect immediately.",
+		Description: "Save Connect IQ app or watch face settings directly to the watch. Validates against the store schema when available; option labels are accepted.",
 		Annotations: writes("Change app settings", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in appSetIn) (*garmin.AppSettings, error) {
 		return svc.SetAppSettings(ctx, in.App, in.Values)
@@ -348,7 +340,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_check_updates",
-		Description: "Check Garmin's update service for firmware and data updates for this watch (the same service Garmin Express uses) and compare installed Connect IQ apps with the store. Returns both lists; nothing is installed. partNumber from the software list feeds watch_install_update.",
+		Description: "Check for watch software and Connect IQ app updates. Installs nothing. Use a software result's partNumber with watch_install_update.",
 		Annotations: readOnly("Check for updates", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (updatesResult, error) {
 		sw, swErr := svc.CheckSoftwareUpdates(ctx)
@@ -368,7 +360,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_set_app_hidden",
-		Description: "Hide a built-in or Connect IQ activity, glance or app from the watch's lists, or show it again, by queuing an app-list change (IN.BIN) that the watch applies when unplugged. Several changes can be queued; a copy of the registry is kept and returned as backup.",
+		Description: "Queue visibility changes for a built-in or Connect IQ activity, glance or app. Applies on unplug. Includes a registry backup path when available.",
 		Annotations: writes("Hide or show app", false, false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in hideIn) (hiddenResult, error) {
 		backup, err := svc.SetAppHidden(ctx, in.App, in.Hidden)
@@ -381,7 +373,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_remove_app",
-		Description: "Remove a Connect IQ app, watch face, widget or data field from the watch: deletes its binary, settings and data files, which cannot be restored from the watch; the watch drops it from its list when unplugged. Built-in apps and the Connect IQ Store app are refused. Confirm with the user first.",
+		Description: "Permanently delete an app, its settings and data. Unplug to finish removal. Built-in apps and the Connect IQ Store app are protected. Confirm with the user first.",
 		Annotations: writes("Remove app", true, false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in rmIn) (removedResult, error) {
 		removed, err := svc.RemoveApp(ctx, in.App)
@@ -394,7 +386,7 @@ func addAppTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "watch_install_update",
-		Description: "Download one firmware or data update from Garmin, verify its checksum and write it to the watch. The watch installs it after the USB session ends; firmware updates restart the watch. Ask the user before calling this for primary firmware.",
+		Description: "Download and verify one software update, then write it to the watch. Unplug to install. Primary firmware restarts the watch; ask the user before installing it.",
 		Annotations: writes("Install update", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in installIn) (*garmin.InstallResult, error) {
 		return svc.InstallSoftwareUpdate(ctx, in.PartNumber)
@@ -417,7 +409,7 @@ type cloudSetIn struct {
 func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_status",
-		Description: "Garmin Connect session state: signed in or not, account name, whether this watch is registered on the account. Works without the watch.",
+		Description: "Read Garmin Connect sign-in and account status, plus watch registration when connected. Works without a watch.",
 		Annotations: readOnly("Garmin Connect status", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, *garmin.CloudStatus, error) {
 		svc, _ := s.svc.Get(ctx) // the account status is useful without the watch
@@ -426,7 +418,7 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_sync",
-		Description: "Sync the watch with Garmin Connect over USB like Garmin Express: upload recorded files not yet sent (duplicates the phone already synced are recognised), then download queued items (settings-change files, Connect IQ app installs/updates, workouts, courses) onto the watch. Can take minutes on the first run.",
+		Description: "Upload recorded files to Garmin Connect, then download queued apps, settings, workouts and courses to the watch. Recognizes duplicate uploads.",
 		Annotations: writes("Sync with Garmin Connect", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in syncIn) (*garmin.SyncResult, error) {
 		up := in.Upload == nil || *in.Upload
@@ -437,7 +429,7 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_settings",
-		Description: "The device settings record Garmin Connect keeps for this watch (time/date format, units, wrist, language, alarms, auto-sync, Connect IQ auto-update). These override the watch's own copy (watch_settings) on every sync.",
+		Description: "Read watch settings saved in Garmin Connect. Use cloud_set_settings to keep Connect's values consistent with local changes.",
 		Annotations: readOnly("Garmin Connect settings", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (cloudSettingsResult, error) {
 		items, err := garmin.NewCloud(svc, cloudClient).Settings(ctx)
@@ -446,7 +438,7 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_set_settings",
-		Description: "Change settings in Garmin Connect's record for this watch and fetch the settings file Connect generates into GARMIN/NewFiles (applied when the watch is unplugged). Use this for settings marked managedByConnect so Connect stops reverting them.",
+		Description: "Save Garmin Connect settings and fetch any settings file it queues. Unplug to apply downloaded changes. Use for fields marked managedByConnect.",
 		Annotations: writes("Change Connect settings", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in cloudSetIn) (*garmin.CloudApplyResult, error) {
 		return garmin.NewCloud(svc, cloudClient).SetSettings(ctx, in.Changes)
@@ -467,7 +459,7 @@ type storeAppIn struct {
 func addStoreTools(srv *mcp.Server, s *server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "store_search",
-		Description: "Search or browse the Connect IQ store for apps compatible with this watch (public store data, no login). Each result says whether it is installed and whether the store has a newer version; its id feeds store_app.",
+		Description: "Find compatible Connect IQ apps with install and update status. No sign-in needed. Use a result's id with store_app.",
 		Annotations: readOnly("Search Connect IQ store", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in storeSearchIn) (*garmin.StoreView, error) {
 		dx, err := svc.DeviceXML(ctx)
@@ -482,7 +474,7 @@ func addStoreTools(srv *mcp.Server, s *server) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "store_app",
-		Description: "Details of one Connect IQ store app: description, what's new, version, size for this watch, permissions, price, recent reviews, and whether it is installed. Installing goes through Garmin Connect: open storeUrl, press Download while signed in there, then cloud_sync (or let the phone deliver it).",
+		Description: "Read app details, version, size, permissions, price, reviews and install status. Use the Connect IQ phone app to install; cloud_sync downloads queued files.",
 		Annotations: readOnly("Store app details", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in storeAppIn) (*garmin.StoreDetail, error) {
 		dx, err := svc.DeviceXML(ctx)
@@ -504,7 +496,7 @@ type actIn struct {
 }
 
 type daysIn struct {
-	Days int `json:"days,omitempty" jsonschema:"days to return, today included (default 14)"`
+	Days int `json:"days,omitempty" jsonschema:"days including today; default 14 for health_daily, 30 for health_history"`
 }
 
 type weightIn struct {
@@ -527,7 +519,7 @@ type weightResult struct {
 func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "activities_list",
-		Description: "Activities recorded on the watch, decoded from its own FIT files (sport, start, duration, distance, calories, heart rate). The first call decodes files in the background; call again while pending > 0. The file field feeds activity_detail.",
+		Description: "List recorded activities with time, sport, distance, calories and heart rate. Call again while pending > 0. Use file with activity_detail.",
 		Annotations: readOnly("List activities", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in actsIn) (*garmin.ActivityList, error) {
 		list, err := svc.Activities(ctx, false)
@@ -571,7 +563,7 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_daily",
-		Description: "Daily health from Garmin Connect for the last N days (one request per day, so keep N small): steps and goal, resting/min/max heart rate, average stress, body battery high/low, sleep seconds, calories, floors, intensity minutes. For months or a year use health_history. Needs the Garmin Connect sign-in.",
+		Description: "Read daily health from Garmin Connect, including steps, heart rate, stress, sleep and calories. Makes one request per day; use health_history for longer ranges. Sign-in required.",
 		Annotations: readOnly("Daily health", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in daysIn) (daysResult, error) {
 		days, err := garmin.NewCloud(svc, cloudClient).Daily(ctx, in.Days)
@@ -580,7 +572,7 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_history",
-		Description: "One row per day for up to a year from Garmin Connect (steps, goal, distance, resting heart rate, average stress, body battery low/high, sleep seconds); a few requests for the whole range, cached on disk. Calories are not available in this form; health_daily has them.",
+		Description: "Read up to a year of daily steps, distance, resting heart rate, stress, body battery and sleep from Garmin Connect. Excludes calories and intensity minutes. Sign-in required.",
 		Annotations: readOnly("Health history", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in daysIn) (daysResult, error) {
 		days, err := garmin.NewCloud(svc, cloudClient).History(ctx, in.Days)
@@ -589,7 +581,7 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_extras",
-		Description: "Fitness metrics from Garmin Connect: VO2 max, fitness age, HRV status, personal records, earned badges and weight history.",
+		Description: "Read VO2 max, fitness age, HRV, records, badges and weight history from Garmin Connect. Sign-in required.",
 		Annotations: readOnly("Fitness metrics", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.HealthExtras, error) {
 		return garmin.NewCloud(svc, cloudClient).Extras(ctx)
@@ -609,7 +601,7 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "health_day",
-		Description: "Intraday health of one day from Garmin Connect: heart rate, stress and body battery series ([unix ms, value]) and the night's sleep stages and score.",
+		Description: "Read one day's heart rate, stress and body battery series ([Unix ms, value]), sleep stages and sleep score from Garmin Connect. Sign-in required.",
 		Annotations: readOnly("Intraday health", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in dayIn) (*garmin.DayDetail, error) {
 		return garmin.NewCloud(svc, cloudClient).Day(ctx, in.Date)
@@ -643,9 +635,7 @@ type leafStepIn struct {
 	Target   string `json:"target,omitempty" jsonschema:"'hr 140-160', 'hr zone 3', 'pace 4:30-4:45' (min/km), 'speed 10-12' (km/h), 'cadence 170-180' or 'power 200-250'"`
 }
 
-// spec converts to the garmin type. The json tags match garmin.WorkoutSpec
-// by construction, so a JSON round trip is the conversion and a new field
-// is added in two places, not three.
+// spec converts matching JSON fields without duplicating the field mapping.
 func (w workoutIn) spec() (garmin.WorkoutSpec, error) {
 	var out garmin.WorkoutSpec
 
@@ -687,7 +677,7 @@ type workoutResult struct {
 func addWorkoutTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "workouts_list",
-		Description: "Structured workouts stored in Garmin Connect (id, name, sport, estimated duration). The id feeds workout_send.",
+		Description: "List Garmin Connect workouts with id, name, sport and estimated duration. Use id with workout_send.",
 		Annotations: readOnly("List workouts", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (workoutsResult, error) {
 		list, err := garmin.NewCloud(svc, cloudClient).Workouts(ctx, 0) // default page
@@ -696,7 +686,7 @@ func addWorkoutTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "workout_create",
-		Description: "Create a structured workout from a spec and put it on the watch. By default it is saved in Garmin Connect and queued for the watch; with local=true the FIT file is written directly. The watch shows it under Training > Workouts after the USB session ends.",
+		Description: "Create a workout in Garmin Connect and attempt USB delivery. With local=true, save only to the watch. Unplug after delivery to load the workout.",
 		Annotations: writes("Create workout", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in wkIn) (workoutResult, error) {
 		spec, err := in.Spec.spec()
@@ -734,7 +724,7 @@ func addWorkoutTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "workout_send",
-		Description: "Queue an existing Garmin Connect workout for the watch and pull it over USB.",
+		Description: "Queue a Garmin Connect workout and attempt USB delivery. Unplug after delivery to load it; sync later if no file is returned.",
 		Annotations: writes("Send workout to watch", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in wkSendIn) (pulledResult, error) {
 		pulled, err := garmin.NewCloud(svc, cloudClient).SendWorkout(ctx, in.ID, "")
@@ -750,7 +740,7 @@ type plIn struct {
 func addMusicTools(srv *mcp.Server, s *server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "music_list",
-		Description: "Audio files and playlists on the watch (Music, Podcasts, Audiobooks), plus streaming provider apps such as YouTube Music whose DRM downloads sit in a hidden cache and are reported by size only. Track paths feed music_playlist.",
+		Description: "List audio files, playlists and streaming app cache sizes. Streaming downloads are excluded. Use track paths with music_playlist.",
 		Annotations: readOnly("List music", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.MusicLibrary, error) {
 		return svc.Music(ctx)

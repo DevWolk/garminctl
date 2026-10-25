@@ -15,7 +15,7 @@ import (
 
 const historyLimit = 100
 
-// Client describes an MCP session, not a promise that its network peer is alive.
+// Client records session metadata; an open session may be idle.
 type Client struct {
 	Name          string    `json:"name"`
 	Version       string    `json:"version"`
@@ -50,7 +50,7 @@ type HTTPServer struct {
 	activity []*Activity
 }
 
-// NewHTTPServer registers the existing tools and observes their session activity.
+// NewHTTPServer registers tools and tracks sessions and calls for the web UI.
 func NewHTTPServer(watch *garmin.Lazy, cloudClient *gc.Client, version string) *HTTPServer {
 	h := &HTTPServer{server: newServer(&server{svc: watch}, version, cloudClient), clients: make(map[*mcp.ServerSession]Client)}
 	h.server.AddReceivingMiddleware(h.observe)
@@ -146,8 +146,8 @@ func (h *HTTPServer) beginCall(session *mcp.ServerSession, name string) *Activit
 	return call
 }
 
-// Snapshot copies session metadata and recent tool calls. Active means the SDK
-// session is open; LastSeen tells the UI how recently the client actually spoke.
+// Snapshot copies session metadata and recent calls. SessionActive means the
+// SDK session is open; LastSeen records its latest request.
 func (h *HTTPServer) Snapshot() Snapshot {
 	active := make(map[*mcp.ServerSession]bool)
 	for session := range h.server.Sessions() {

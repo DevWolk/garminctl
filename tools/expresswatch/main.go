@@ -1,9 +1,5 @@
-// Command expresswatch checks whether Garmin released a new Garmin Express
-// for Windows, the application garminctl replaces. It is the daily watcher
-// behind .github/workflows/express-watch.yml: when the installer on
-// Garmin's download server changes or the release-notes thread names a new
-// version, it rewrites the state file and tells the workflow to open a pull
-// request with the notes.
+// Command expresswatch monitors Garmin Express for Windows releases.
+// It updates release metadata for .github/workflows/express-watch.yml.
 package main
 
 import (
@@ -330,7 +326,7 @@ func summary(old, found release) string {
 	}
 
 	fmt.Fprintf(&b, "Installer: %s, %d bytes, modified %s\n\n", installerURL, found.Installer.Bytes, found.Installer.Modified)
-	b.WriteString("What to check: anything about syncing, device settings, Connect IQ apps, software updates or the vívoactive 5 may need a matching change in garminctl; new-device support for other watches does not.\n")
+	b.WriteString("Review changes affecting garminctl's sync, device settings, Connect IQ apps, software updates or music.\n")
 
 	return b.String()
 }

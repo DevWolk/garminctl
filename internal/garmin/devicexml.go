@@ -16,8 +16,7 @@ type DeviceXML struct {
 }
 
 // XMLApp is a Connect IQ app as the device XML's Apps extension lists it.
-// Audio content providers (YouTube Music, Spotify, …) carry the size of their
-// protected download cache; the cache itself sits in the hidden app area.
+// Audio content providers may include their media cache size.
 type XMLApp struct {
 	Name            string `json:"name"`
 	StoreID         string `json:"storeId"`
@@ -100,7 +99,7 @@ func ParseDeviceXML(b []byte) (*DeviceXML, error) {
 	return d, nil
 }
 
-// SoftwareVersionString formats 1705 as "17.05".
+// SoftwareVersionString formats the version in hundredths (1234 becomes "12.34").
 func (d *DeviceXML) SoftwareVersionString() string {
 	return fmt.Sprintf("%d.%02d", d.SoftwareVersion/100, d.SoftwareVersion%100)
 }

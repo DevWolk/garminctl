@@ -68,8 +68,7 @@ type Knowledge struct {
 	managed        map[string]bool
 }
 
-// ManagedByConnect reports whether Garmin Connect re-sends this field on
-// every sync (so local changes get overwritten).
+// ManagedByConnect reports whether the field is in the Connect-managed set.
 func (k *Knowledge) ManagedByConnect(mesg uint16, field uint8) bool {
 	if k.managed == nil {
 		k.managed = map[string]bool{}

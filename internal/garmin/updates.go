@@ -21,8 +21,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/fit"
 )
 
-// DefaultUpdatesURL is Garmin's device software update service (the one
-// Garmin Express calls). It answers to the device XML alone.
+// DefaultUpdatesURL is Garmin's device software update service.
+// Requests contain the device XML and require no account session.
 const DefaultUpdatesURL = "https://omt.garmin.com/api/device-software/v1/updates"
 
 // HTTPClient is used for update checks and downloads.
@@ -372,8 +372,8 @@ func (s *Service) CheckAppUpdates(ctx context.Context) ([]AppUpdate, error) {
 	return out, nil
 }
 
-// InstallPRG copies a Connect IQ binary into the folder Garmin Express uses
-// for new apps. The watch registers it after the USB session ends.
+// InstallPRG writes a Connect IQ binary to the app folder.
+// The watch registers it after the USB session ends.
 func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
 	if len(data) < 16 || data[0] != 0 || data[1] != 0 || data[2] != 0 {
 		return "", errors.New("this does not look like a Connect IQ .PRG file")
@@ -394,8 +394,8 @@ func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
 	return p, nil
 }
 
-// AppFolder is where Connect IQ binaries live. The vívoactive 5 hides it from
-// the ordinary MTP listing; see WriteAppFile.
+// AppFolder stores Connect IQ binaries and may be hidden from ordinary MTP
+// listings; see WriteAppFile.
 const AppFolder = "GARMIN/APPS/MEDIA"
 
 // WriteAppFile puts a Connect IQ binary (or STM store message) into the app
