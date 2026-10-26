@@ -254,6 +254,10 @@ func storeGet(ctx context.Context, p string, q url.Values, out any) error {
 
 // DeviceTypeID resolves the store's numeric device id for a part number.
 func DeviceTypeID(ctx context.Context, partNumber string) (string, error) {
+	if err := checkPartNumber(partNumber); err != nil {
+		return "", err
+	}
+
 	var list []struct {
 		ID         string `json:"id"`
 		PartNumber string `json:"partNumber"`
@@ -284,6 +288,12 @@ type StoreQuery struct {
 
 // Browse lists or searches the store.
 func Browse(ctx context.Context, q StoreQuery) (*StorePage, error) {
+	if q.PartNumber != "" {
+		if err := checkPartNumber(q.PartNumber); err != nil {
+			return nil, err
+		}
+	}
+
 	if q.PageSize <= 0 {
 		q.PageSize = 24
 	}
@@ -346,6 +356,16 @@ func Browse(ctx context.Context, q StoreQuery) (*StorePage, error) {
 
 // Detail fetches one app with its description.
 func Detail(ctx context.Context, appID, partNumber, deviceTypeID string) (*StoreApp, error) {
+	if err := checkAppID(appID); err != nil {
+		return nil, err
+	}
+
+	if partNumber != "" {
+		if err := checkPartNumber(partNumber); err != nil {
+			return nil, err
+		}
+	}
+
 	var r rawApp
 	if err := storeGet(ctx, "/apps/"+url.PathEscape(appID), url.Values{"countryCode": {"US"}}, &r); err != nil {
 		return nil, err
@@ -358,6 +378,10 @@ func Detail(ctx context.Context, appID, partNumber, deviceTypeID string) (*Store
 
 // Reviews fetches the newest reviews of an app.
 func Reviews(ctx context.Context, appID string, n int) ([]StoreReview, error) {
+	if err := checkAppID(appID); err != nil {
+		return nil, err
+	}
+
 	if n <= 0 {
 		n = 10
 	}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -141,10 +142,22 @@ func (s *Schema) index() *Schema {
 var reID = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 func checkIDs(appID, partNumber string) error {
+	if err := checkAppID(appID); err != nil {
+		return err
+	}
+
+	return checkPartNumber(partNumber)
+}
+
+func checkAppID(appID string) error {
 	if !reID.MatchString(appID) {
 		return fmt.Errorf("app id %q: only letters, digits and dashes are allowed", appID)
 	}
 
+	return nil
+}
+
+func checkPartNumber(partNumber string) error {
 	if !reID.MatchString(partNumber) {
 		return fmt.Errorf("part number %q: only letters, digits and dashes are allowed", partNumber)
 	}
@@ -381,9 +394,13 @@ func text(n *html.Node) string {
 // LatestVersion asks the public store API for the latest internal version
 // number of an app (the number used in settings page URLs).
 func LatestVersion(ctx context.Context, appID string) (int, error) {
-	url := "https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/" + appID
+	if err := checkAppID(appID); err != nil {
+		return 0, err
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := storeAPI + "/apps/" + url.PathEscape(appID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -395,7 +412,7 @@ func LatestVersion(ctx context.Context, appID string) (int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("GET %s: %s", url, resp.Status)
+		return 0, fmt.Errorf("GET %s: %s", endpoint, resp.Status)
 	}
 
 	var info struct {
@@ -423,9 +440,13 @@ type AppInfoResult struct {
 
 // AppInfo fetches the public store record of an app.
 func AppInfo(ctx context.Context, appID string) (*AppInfoResult, error) {
-	url := "https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/apps/" + appID
+	if err := checkAppID(appID); err != nil {
+		return nil, err
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := storeAPI + "/apps/" + url.PathEscape(appID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
