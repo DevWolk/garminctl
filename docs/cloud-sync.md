@@ -13,7 +13,12 @@ Login prompts for credentials and a verification code when required.
 credentials. Complete verification in the login prompt; `cloud logout` removes
 the saved tokens.
 
-The app stores tokens, with Unix mode `0600`, and does not save the password.
+The app stores tokens in an owner-only directory (`0700` on Unix), with
+owner-only files (`0600` on Unix and a protected current-user DACL on Windows).
+It does not save the password. Saving replaces a complete temporary file;
+a failed write or replacement keeps the previous tokens. Config-path,
+protection and unreadable-session errors are reported instead of silently
+using another directory. `cloud logout` can remove a malformed token file.
 See [data locations](desktop.md#data-updates-and-uninstall) for token paths and
 the separate Windows/WSL stores.
 

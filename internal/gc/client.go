@@ -78,6 +78,7 @@ type Client struct {
 
 	mu       sync.Mutex
 	store    string
+	storeErr error
 	sess     Session
 	consumer *consumer
 	pending  *pendingLogin
@@ -91,11 +92,12 @@ type pendingLogin struct {
 }
 
 // DefaultStorePath returns garminctl/garmin-connect.json under the platform
-// config directory, or the working directory if no config directory is available.
+// config directory. An unavailable config directory returns an empty path;
+// New reports that failure through StoreError and authentication operations.
 func DefaultStorePath() string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		dir = "."
+		return ""
 	}
 
 	return filepath.Join(dir, "garminctl", "garmin-connect.json")
@@ -104,17 +106,22 @@ func DefaultStorePath() string {
 // New creates a client and loads a saved session from store, if any.
 func New(store string) *Client {
 	c := &Client{Domain: DefaultDomain, HTTP: &http.Client{Timeout: 5 * time.Minute}, store: store}
-	if b, err := os.ReadFile(store); err == nil { //nolint:gosec // store is garminctl's own session file
-		var s Session
-		if json.Unmarshal(b, &s) == nil && s.OAuth1 != nil {
-			c.sess = s
-			if s.OAuth1.Domain != "" {
-				c.Domain = s.OAuth1.Domain
-			}
-		}
+
+	c.sess, c.storeErr = loadSession(store)
+	if c.sess.OAuth1 != nil && c.sess.OAuth1.Domain != "" {
+		c.Domain = c.sess.OAuth1.Domain
 	}
 
 	return c
+}
+
+// StoreError reports a saved-session read or protection failure. A missing
+// session file is normal. Existing clients keep their loaded account snapshot.
+func (c *Client) StoreError() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.storeErr
 }
 
 // LoggedIn reports whether a usable session is stored.
@@ -138,29 +145,40 @@ func (c *Client) Logout() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.sess = Session{}
+	if err := prepareStoreDir(c.store); err != nil {
+		return err
+	}
 
-	c.pending = nil
 	if err := os.Remove(c.store); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 
+	c.sess = Session{}
+	c.pending = nil
+	c.storeErr = nil
+
 	return nil
 }
 
-func (c *Client) save() error {
-	if c.store == "" {
-		return nil
+func (c *Client) saveSession(s Session) error {
+	if c.storeErr != nil {
+		return c.storeErr
 	}
 
-	if err := os.MkdirAll(filepath.Dir(c.store), 0o700); err != nil {
+	s.SavedAt = time.Now()
+
+	b, err := json.MarshalIndent(s, "", " ")
+	if err != nil {
 		return err
 	}
 
-	c.sess.SavedAt = time.Now()
-	b, _ := json.MarshalIndent(c.sess, "", " ")
+	if err := writeStore(c.store, b); err != nil {
+		return err
+	}
 
-	return os.WriteFile(c.store, b, 0o600)
+	c.sess = s
+
+	return nil
 }
 
 func (c *Client) sso(path string) string { return "https://sso." + c.Domain + path }
@@ -195,6 +213,10 @@ type ssoResponse struct {
 // Login signs in with email and password. If Garmin asks for a second
 // factor the result says so and ResumeMFA completes the sign-in.
 func (c *Client) Login(ctx context.Context, email, password string) (*LoginResult, error) {
+	if err := c.StoreError(); err != nil {
+		return nil, err
+	}
+
 	jar, _ := cookiejar.New(nil)
 	hc := &http.Client{Jar: jar, Timeout: c.HTTP.Timeout}
 	params := url.Values{
@@ -250,6 +272,10 @@ func (c *Client) Login(ctx context.Context, email, password string) (*LoginResul
 
 // ResumeMFA finishes a sign-in that asked for a verification code.
 func (c *Client) ResumeMFA(ctx context.Context, code string) error {
+	if err := c.StoreError(); err != nil {
+		return err
+	}
+
 	c.mu.Lock()
 	p := c.pending
 	c.mu.Unlock()
@@ -338,9 +364,7 @@ func (c *Client) complete(ctx context.Context, hc *http.Client, email, ticket st
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.sess = Session{Email: email, OAuth1: o1, OAuth2: o2}
-
-	return c.save()
+	return c.saveSession(Session{Email: email, OAuth1: o1, OAuth2: o2})
 }
 
 func (c *Client) loadConsumer(ctx context.Context) (*consumer, error) {
@@ -459,6 +483,10 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 
 // bearer returns a valid access token, refreshing it when needed.
 func (c *Client) bearer(ctx context.Context) (string, error) {
+	if err := c.StoreError(); err != nil {
+		return "", err
+	}
+
 	c.mu.Lock()
 	o1, o2 := c.sess.OAuth1, c.sess.OAuth2
 	c.mu.Unlock()
@@ -482,8 +510,9 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	}
 
 	c.mu.Lock()
-	c.sess.OAuth2 = n2
-	err = c.save()
+	next := c.sess
+	next.OAuth2 = n2
+	err = c.saveSession(next)
 	c.mu.Unlock()
 
 	if err != nil {
@@ -575,6 +604,10 @@ func (c *Client) Do(ctx context.Context, method, p, contentType string, body io.
 
 // DoOAuth1 signs a request to an absolute Garmin URL with the session's OAuth1 token.
 func (c *Client) DoOAuth1(ctx context.Context, method, absURL, contentType string, body []byte) (int, []byte, error) {
+	if err := c.StoreError(); err != nil {
+		return 0, nil, err
+	}
+
 	c.mu.Lock()
 	o1 := c.sess.OAuth1
 	c.mu.Unlock()

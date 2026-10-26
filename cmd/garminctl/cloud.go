@@ -205,7 +205,12 @@ func (c *cli) cloudStatus(ctx context.Context, cloud *garmin.Cloud) error {
 	}
 
 	if !st.LoggedIn {
+		if st.Error != "" {
+			return fmt.Errorf("garmin connect: %s", st.Error)
+		}
+
 		c.out.Println("not signed in (garminctl cloud login)")
+
 		return nil
 	}
 

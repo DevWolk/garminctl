@@ -61,6 +61,11 @@ type CloudStatus struct {
 // Status reports the session and whether this watch is on the account.
 func (c *Cloud) Status(ctx context.Context) *CloudStatus {
 	st := &CloudStatus{LoggedIn: c.gc.LoggedIn(), Email: c.gc.Email()}
+	if err := c.gc.StoreError(); err != nil {
+		st.Error = err.Error()
+		return st
+	}
+
 	if !st.LoggedIn {
 		return st
 	}
