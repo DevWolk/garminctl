@@ -56,7 +56,7 @@ Commands:
   software                        installed software components (device.fit)
   cloud login [-email X]          sign in and enter a verification code when prompted
                                   or use GARMIN_EMAIL and GARMIN_PASSWORD for credentials
-  cloud mfa CODE                  submit a code (requires an in-process sign-in attempt)
+  cloud mfa CODE                  finish a pending sign-in from cloud login
   cloud status | logout           show account status or sign out
   cloud sync [-no-upload] [-no-download]
                                   upload recorded files and download queued items

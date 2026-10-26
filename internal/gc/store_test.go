@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+const oldTestEmail = "old@example.invalid"
+
 func testSession(email string) Session {
 	return Session{Email: email, OAuth1: &OAuth1Token{Token: "test-token", Domain: "garmin.cn"}}
 }
@@ -145,7 +147,7 @@ func TestSessionReplacementFailureKeepsAccount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	c := New(path)
 
-	if err := c.saveSession(testSession("old@example.invalid")); err != nil {
+	if err := c.saveSession(testSession(oldTestEmail)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -162,7 +164,7 @@ func TestSessionReplacementFailureKeepsAccount(t *testing.T) {
 		t.Fatal("replacement unexpectedly succeeded")
 	}
 
-	if c.Email() != "old@example.invalid" {
+	if c.Email() != oldTestEmail {
 		t.Fatal("failed save published new credentials in memory")
 	}
 

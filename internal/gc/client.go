@@ -12,7 +12,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -77,18 +76,13 @@ type Client struct {
 	HTTP   *http.Client
 
 	mu       sync.Mutex
+	authMu   sync.Mutex
+	now      func() time.Time
 	store    string
 	storeErr error
 	sess     Session
 	consumer *consumer
 	pending  *pendingLogin
-}
-
-type pendingLogin struct {
-	http      *http.Client
-	params    url.Values
-	mfaMethod string
-	email     string
 }
 
 // DefaultStorePath returns garminctl/garmin-connect.json under the platform
@@ -105,7 +99,7 @@ func DefaultStorePath() string {
 
 // New creates a client and loads a saved session from store, if any.
 func New(store string) *Client {
-	c := &Client{Domain: DefaultDomain, HTTP: &http.Client{Timeout: 5 * time.Minute}, store: store}
+	c := &Client{Domain: DefaultDomain, HTTP: &http.Client{Timeout: 5 * time.Minute}, store: store, now: time.Now}
 
 	c.sess, c.storeErr = loadSession(store)
 	if c.sess.OAuth1 != nil && c.sess.OAuth1.Domain != "" {
@@ -142,10 +136,25 @@ func (c *Client) Email() string {
 
 // Logout forgets the session.
 func (c *Client) Logout() error {
+	return c.logout(nil)
+}
+
+func (c *Client) logout(expected *OAuth1Token) error {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if expected != nil && c.sess.OAuth1 != expected {
+		return nil
+	}
+
 	if err := prepareStoreDir(c.store); err != nil {
+		return err
+	}
+
+	if err := c.clearPending(); err != nil {
 		return err
 	}
 
@@ -182,7 +191,18 @@ func (c *Client) saveSession(s Session) error {
 }
 
 func (c *Client) sso(path string) string { return "https://sso." + c.Domain + path }
-func (c *Client) api(path string) string { return "https://connectapi." + c.Domain + path }
+func (c *Client) api(path string) string { return "https://connectapi." + c.accountDomain() + path }
+
+func (c *Client) accountDomain() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.sess.OAuth1 != nil && c.sess.OAuth1.Domain != "" {
+		return c.sess.OAuth1.Domain
+	}
+
+	return c.Domain
+}
 
 func ssoHeaders(req *http.Request, site string) {
 	req.Header.Set("User-Agent", ssoUserAgent)
@@ -213,12 +233,15 @@ type ssoResponse struct {
 // Login signs in with email and password. If Garmin asks for a second
 // factor the result says so and ResumeMFA completes the sign-in.
 func (c *Client) Login(ctx context.Context, email, password string) (*LoginResult, error) {
-	if err := c.StoreError(); err != nil {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
+	if err := c.prepareLogin(ctx); err != nil {
 		return nil, err
 	}
 
-	jar, _ := cookiejar.New(nil)
-	hc := &http.Client{Jar: jar, Timeout: c.HTTP.Timeout}
+	jar := newRecordingJar(c.Domain, c.now)
+	hc := c.ssoClient(jar)
 	params := url.Values{
 		"clientId": {clientID},
 		"locale":   {"en-US"},
@@ -244,16 +267,16 @@ func (c *Client) Login(ctx context.Context, email, password string) (*LoginResul
 
 	switch r.ResponseStatus.Type {
 	case "SUCCESSFUL":
-		return &LoginResult{}, c.complete(ctx, hc, email, r.ServiceTicketID)
+		return &LoginResult{}, c.complete(ctx, hc, email, r.ServiceTicketID, c.Domain)
 	case "MFA_REQUIRED":
 		method := r.CustomerMfaInfo.MfaLastMethodUsed
 		if method == "" {
 			method = "email"
 		}
 
-		c.mu.Lock()
-		c.pending = &pendingLogin{http: hc, params: params, mfaMethod: method, email: email}
-		c.mu.Unlock()
+		if err := c.startPending(hc, jar, params, email, method); err != nil {
+			return nil, err
+		}
 
 		return &LoginResult{NeedsMFA: true, MFAMethod: method}, nil
 	}
@@ -272,23 +295,32 @@ func (c *Client) Login(ctx context.Context, email, password string) (*LoginResul
 
 // ResumeMFA finishes a sign-in that asked for a verification code.
 func (c *Client) ResumeMFA(ctx context.Context, code string) error {
+	c.authMu.Lock()
+	defer c.authMu.Unlock()
+
 	if err := c.StoreError(); err != nil {
 		return err
 	}
 
-	c.mu.Lock()
-	p := c.pending
-	c.mu.Unlock()
-
-	if p == nil {
-		return errors.New("no sign-in is waiting for a code; start again with Login")
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	body, _ := json.Marshal(map[string]any{"mfaMethod": p.mfaMethod, "mfaVerificationCode": strings.TrimSpace(code), "rememberMyBrowser": false, "reconsentList": []any{}, "mfaSetup": false})
+	if strings.TrimSpace(code) == "" {
+		return errors.New("verification code is required; use cloud mfa CODE")
+	}
+
+	p, err := c.loadPending()
+	if err != nil {
+		return err
+	}
+
+	body, _ := json.Marshal(map[string]any{"mfaMethod": p.state.Method, "mfaVerificationCode": strings.TrimSpace(code), "rememberMyBrowser": false, "reconsentList": []any{}, "mfaSetup": false})
+	sso := "https://sso." + p.state.Domain
 
 	var r ssoResponse
-	if err := c.ssoJSON(ctx, p.http, c.sso("/mobile/api/mfa/verifyCode")+"?"+p.params.Encode(), c.sso("/mobile/sso/en/sign-in"), body, &r); err != nil {
-		return err
+	if err := c.ssoJSON(ctx, p.http, sso+"/mobile/api/mfa/verifyCode?"+p.state.Params.Encode(), sso+"/mobile/sso/en/sign-in", body, &r); err != nil {
+		return errors.Join(err, c.savePending(p))
 	}
 
 	if r.ResponseStatus.Type != "SUCCESSFUL" || r.ServiceTicketID == "" {
@@ -297,14 +329,14 @@ func (c *Client) ResumeMFA(ctx context.Context, code string) error {
 			msg = r.ResponseStatus.Type
 		}
 
-		return fmt.Errorf("verification failed: %s", msg)
+		return errors.Join(fmt.Errorf("verification failed: %s", msg), c.savePending(p))
 	}
 
-	c.mu.Lock()
-	c.pending = nil
-	c.mu.Unlock()
+	if err := c.complete(ctx, p.http, p.state.Email, r.ServiceTicketID, p.state.Domain); err != nil {
+		return errors.Join(fmt.Errorf("verification accepted but sign-in could not finish; start cloud login again: %w", err), c.clearPending())
+	}
 
-	return c.complete(ctx, p.http, p.email, r.ServiceTicketID)
+	return c.clearPending()
 }
 
 func (c *Client) ssoJSON(ctx context.Context, hc *http.Client, u, referer string, body []byte, out any) error {
@@ -340,10 +372,15 @@ func (c *Client) ssoJSON(ctx context.Context, hc *http.Client, u, referer string
 	return nil
 }
 
-func (c *Client) complete(ctx context.Context, hc *http.Client, email, ticket string) error {
-	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.sso("/portal/sso/embed"), nil); err == nil {
+func (c *Client) complete(ctx context.Context, hc *http.Client, email, ticket, domain string) error {
+	if ticket == "" {
+		return errors.New("sign-in returned no service ticket; start cloud login again")
+	}
+
+	sso := "https://sso." + domain
+	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, sso+"/portal/sso/embed", nil); err == nil {
 		ssoHeaders(req, "same-origin")
-		req.Header.Set("Referer", c.sso("/mobile/sso/en/sign-in"))
+		req.Header.Set("Referer", sso+"/mobile/sso/en/sign-in")
 
 		if resp, err := hc.Do(req); err == nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -351,7 +388,7 @@ func (c *Client) complete(ctx context.Context, hc *http.Client, email, ticket st
 		}
 	}
 
-	o1, err := c.preauthorized(ctx, ticket)
+	o1, err := c.preauthorized(ctx, ticket, domain)
 	if err != nil {
 		return err
 	}
@@ -399,15 +436,20 @@ func (c *Client) loadConsumer(ctx context.Context) (*consumer, error) {
 	return &k2, nil
 }
 
-func (c *Client) preauthorized(ctx context.Context, ticket string) (*OAuth1Token, error) {
+func (c *Client) preauthorized(ctx context.Context, ticket, domain string) (*OAuth1Token, error) {
+	base, err := connectBase(domain)
+	if err != nil {
+		return nil, err
+	}
+
 	k, err := c.loadConsumer(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	q := url.Values{"ticket": {ticket}, "login-url": {"https://mobile.integration." + c.Domain + "/gcm/android"}, "accepts-mfa-tokens": {"true"}}
+	q := url.Values{"ticket": {ticket}, "login-url": {"https://mobile.integration." + domain + "/gcm/android"}, "accepts-mfa-tokens": {"true"}}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.api("/oauth-service/oauth/preauthorized")+"?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/oauth-service/oauth/preauthorized?"+q.Encode(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +473,7 @@ func (c *Client) preauthorized(ctx context.Context, ticket string) (*OAuth1Token
 		return nil, errors.New("oauth1: unexpected answer")
 	}
 
-	return &OAuth1Token{Token: vals.Get("oauth_token"), Secret: vals.Get("oauth_token_secret"), MFAToken: vals.Get("mfa_token"), MFAExpiration: vals.Get("mfa_expiration_timestamp"), Domain: c.Domain}, nil
+	return &OAuth1Token{Token: vals.Get("oauth_token"), Secret: vals.Get("oauth_token_secret"), MFAToken: vals.Get("mfa_token"), MFAExpiration: vals.Get("mfa_expiration_timestamp"), Domain: domain}, nil
 }
 
 func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OAuth2Token, error) {
@@ -449,7 +491,17 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 		form.Set("mfa_token", o1.MFAToken)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.api("/oauth-service/oauth/exchange/user/2.0"), strings.NewReader(form.Encode()))
+	domain := o1.Domain
+	if domain == "" {
+		domain = c.Domain
+	}
+
+	base, err := connectBase(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/oauth-service/oauth/exchange/user/2.0", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -502,14 +554,18 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 	n2, err := c.exchange(ctx, o1, false)
 	if err != nil {
 		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
-			_ = c.Logout()
-			return "", fmt.Errorf("%w: the saved session was rejected, sign in again", ErrNotLoggedIn)
+			return "", errors.Join(fmt.Errorf("%w: the saved session was rejected, sign in again", ErrNotLoggedIn), c.logout(o1))
 		}
 
 		return "", err
 	}
 
 	c.mu.Lock()
+	if c.sess.OAuth1 != o1 {
+		c.mu.Unlock()
+		return "", fmt.Errorf("%w: the account changed during token refresh; retry the request", ErrNotLoggedIn)
+	}
+
 	next := c.sess
 	next.OAuth2 = n2
 	err = c.saveSession(next)
@@ -539,7 +595,9 @@ func (c *Client) URL(p string) string {
 // garmin.cn for a Chinese account), the only place the session token belongs.
 func (c *Client) garminHost(u *url.URL) bool {
 	h := strings.ToLower(u.Hostname())
-	return h == c.Domain || strings.HasSuffix(h, "."+c.Domain)
+	domain := c.accountDomain()
+
+	return h == domain || strings.HasSuffix(h, "."+domain)
 }
 
 // HTTPError is a non-2xx answer.

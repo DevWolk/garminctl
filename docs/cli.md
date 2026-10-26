@@ -166,7 +166,7 @@ automatic sync. `-root` also disables watching. The desktop executable has
 
 ```text
 cloud login [-email ADDRESS]    Sign in; credentials can also come from environment variables.
-cloud mfa CODE                  Cannot resume verification from another CLI invocation.
+cloud mfa CODE                  Finish a pending verification from cloud login.
 cloud status | cloud logout     Inspect or remove the saved session.
 cloud sync [-no-upload] [-no-download]
 cloud messages                  Inspect queued files.
@@ -177,8 +177,9 @@ cloud get1|post1 URL [BODY]      Make a raw OAuth1 request to an absolute URL.
 ```
 
 Sync defaults to both directions. Account commands (`login`, `mfa`, `logout`)
-need no watch. Complete MFA in the `cloud login` prompt; pending verification is
-not saved between CLI invocations. See [Garmin Connect](cloud-sync.md) for sync behavior.
+need no watch. Complete MFA in the interactive `cloud login` prompt or use
+`cloud mfa CODE` in a later invocation. See [Garmin Connect](cloud-sync.md) for
+verification lifetime, account storage and sync behavior.
 
 Sources: [command help and global flags](../cmd/garminctl/main.go),
 [command implementations](../cmd/garminctl), [workout schema](../internal/garmin/workouts.go).

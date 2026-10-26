@@ -16,7 +16,7 @@ func TestStoreRepairsWindowsPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	c := New(path)
 
-	if err := c.saveSession(testSession("old@example.invalid")); err != nil {
+	if err := c.saveSession(testSession(oldTestEmail)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,7 +46,7 @@ func TestStoreLockedWindowsTargetPreservesSession(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
 	c := New(path)
 
-	if err := c.saveSession(testSession("old@example.invalid")); err != nil {
+	if err := c.saveSession(testSession(oldTestEmail)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,11 +72,11 @@ func TestStoreLockedWindowsTargetPreservesSession(t *testing.T) {
 		t.Fatalf("locked replacement = %v", err)
 	}
 
-	if c.Email() != "old@example.invalid" {
+	if c.Email() != oldTestEmail {
 		t.Fatal("failed replacement published new credentials")
 	}
 
-	assertSessionFile(t, path, "old@example.invalid")
+	assertSessionFile(t, path, oldTestEmail)
 	assertNoStoreTemps(t, path)
 }
 

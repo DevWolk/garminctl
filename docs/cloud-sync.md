@@ -8,10 +8,23 @@ garminctl cloud status
 garminctl cloud sync
 ```
 
-Login prompts for credentials and a verification code when required.
+Login prompts for credentials and, on a terminal, a verification code when required.
 `cloud login -email ADDRESS`, `GARMIN_EMAIL`, and `GARMIN_PASSWORD` also supply
-credentials. Complete verification in the login prompt; `cloud logout` removes
-the saved tokens.
+credentials. With noninteractive input or an empty verification prompt, finish
+later using `garminctl cloud mfa CODE`.
+
+Pending verification is stored beside the token file as `garmin-connect.json.mfa`
+with the same file protection. Its ten-minute lifetime is a local policy;
+Garmin may expire a challenge sooner. A wrong code retains the pending challenge
+and updated cookies for another attempt. Starting a new login replaces it;
+successful completion and `cloud logout` remove it. An expired challenge is
+removed when resumed. If Garmin accepts a code but OAuth or token saving fails,
+start `cloud login` again; the previous token file is preserved.
+
+Use one authentication writer per store. Running servers keep their loaded
+account snapshot: use the server's account controls or restart it after a
+standalone CLI login/logout. The CLI submits a code against the currently saved
+challenge; it cannot identify a code from an older login locally.
 
 The app stores tokens in an owner-only directory (`0700` on Unix), with
 owner-only files (`0600` on Unix and a protected current-user DACL on Windows).

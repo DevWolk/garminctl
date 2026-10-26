@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,15 +76,70 @@ func (c *cli) cloudLogin(ctx context.Context, client *gc.Client, args []string) 
 	}
 
 	if res.NeedsMFA {
-		code := c.prompt(fmt.Sprintf("Garmin sent a verification code by %s. Enter it: ", res.MFAMethod))
-		if err := client.ResumeMFA(ctx, code); err != nil {
-			return err
-		}
+		return c.cloudVerification(ctx, client, res.MFAMethod)
 	}
 
 	c.out.Println("signed in as", client.Email())
 
 	return nil
+}
+
+func (c *cli) cloudVerification(ctx context.Context, client *gc.Client, method string) error {
+	code := ""
+
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		c.errOut.Printf("Garmin sent a verification code by %s. Enter it: ", method)
+
+		var err error
+
+		code, err = readVerificationCode(ctx, os.Stdin)
+		if err != nil {
+			return err
+		}
+	}
+
+	if code == "" {
+		c.out.Printf("MFA code required (sent by %s); run: garminctl cloud mfa CODE\n", method)
+		return nil
+	}
+
+	if err := client.ResumeMFA(ctx, code); err != nil {
+		return err
+	}
+
+	c.out.Println("signed in as", client.Email())
+
+	return nil
+}
+
+func readVerificationCode(ctx context.Context, input io.ReadCloser) (string, error) {
+	type answer struct {
+		line string
+		err  error
+	}
+
+	answers := make(chan answer, 1)
+
+	go func() {
+		line, err := bufio.NewReader(input).ReadString('\n')
+		answers <- answer{line: strings.TrimSpace(line), err: err}
+	}()
+
+	select {
+	case result := <-answers:
+		if result.err != nil && !errors.Is(result.err, io.EOF) {
+			return "", result.err
+		}
+
+		return result.line, nil
+	case <-ctx.Done():
+		// Cancellation ends this CLI invocation, which owns its input handle.
+		_ = input.Close()
+
+		<-answers
+
+		return "", ctx.Err()
+	}
 }
 
 // prompt reads one trimmed line from stdin.
