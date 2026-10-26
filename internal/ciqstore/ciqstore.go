@@ -394,25 +394,14 @@ func text(n *html.Node) string {
 // LatestVersion asks the public store API for the latest internal version
 // number of an app (the number used in settings page URLs).
 func LatestVersion(ctx context.Context, appID string) (int, error) {
-	if err := checkAppID(appID); err != nil {
-		return 0, err
-	}
-
-	endpoint := storeAPI + "/apps/" + url.PathEscape(appID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := HTTPClient.Do(req)
+	resp, err := appRecordResponse(ctx, appID)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("GET %s: %s", endpoint, resp.Status)
+		return 0, fmt.Errorf("GET %s/apps/%s: %s", storeAPI, url.PathEscape(appID), resp.Status)
 	}
 
 	var info struct {
@@ -440,18 +429,7 @@ type AppInfoResult struct {
 
 // AppInfo fetches the public store record of an app.
 func AppInfo(ctx context.Context, appID string) (*AppInfoResult, error) {
-	if err := checkAppID(appID); err != nil {
-		return nil, err
-	}
-
-	endpoint := storeAPI + "/apps/" + url.PathEscape(appID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := HTTPClient.Do(req)
+	resp, err := appRecordResponse(ctx, appID)
 	if err != nil {
 		return nil, err
 	}
@@ -482,4 +460,21 @@ func AppInfo(ctx context.Context, appID string) (*AppInfoResult, error) {
 	}
 
 	return r, nil
+}
+
+// appRecordResponse shares request creation only. Callers close the body and
+// retain their own status errors, response limits and decoding contracts.
+func appRecordResponse(ctx context.Context, appID string) (*http.Response, error) {
+	if err := checkAppID(appID); err != nil {
+		return nil, err
+	}
+
+	endpoint := storeAPI + "/apps/" + url.PathEscape(appID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return HTTPClient.Do(req)
 }
