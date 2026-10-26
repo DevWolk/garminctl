@@ -122,8 +122,16 @@ func assertTestDACL(t *testing.T, path, want string) {
 		t.Fatal(err)
 	}
 
+	expected, err := windows.SecurityDescriptorFromString(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Windows may retain the auto-inherited control flag; it does not add an
 	// inherited ACE or remove the protected-DACL flag checked by this string.
+	// Canonicalize both descriptors because Windows represents some SIDs with
+	// aliases, including LA for the built-in administrator on CI runners.
+	want = strings.Replace(expected.String(), "D:PAI", "D:P", 1)
 	if got := strings.Replace(sd.String(), "D:PAI", "D:P", 1); got != want {
 		t.Fatalf("DACL = %s, want %s", got, want)
 	}
