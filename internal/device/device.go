@@ -40,6 +40,18 @@ type StorageReporter interface {
 	Storage(ctx context.Context) (Storage, error)
 }
 
+// Aborter interrupts in-flight I/O without acquiring its transaction lock.
+// The connection owner still calls Close after the operation unwinds.
+type Aborter interface {
+	Abort()
+}
+
+// ReconnectPolicy allows a connection owner to forbid transparent reopen inside
+// dependent operation groups. Transports without automatic retry need no policy.
+type ReconnectPolicy interface {
+	SetAutoReconnect(enabled bool)
+}
+
 // HiddenFS provides access to folders hidden from ordinary MTP listings.
 // Paths use the same slash-separated format as Device.
 type HiddenFS interface {

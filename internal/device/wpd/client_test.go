@@ -83,6 +83,19 @@ func TestIndependentPathReadRetriesOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestManagedPathReadDoesNotReconnectInsideGroup(t *testing.T) {
+	t.Parallel()
+
+	b, input := scriptedBridge("{\"id\":1,\"ok\":false,\"error\":\"0x802A0002\"}\n")
+	opens := 0
+	d := &Device{bridge: b, open: func(context.Context, string) (*Device, error) { opens++; return nil, errors.New("unexpected reopen") }}
+	d.SetAutoReconnect(false)
+
+	if _, err := d.Read(t.Context(), "GARMIN/test"); !errors.Is(err, device.ErrDisconnected) || opens != 0 || input.writes != 1 {
+		t.Fatalf("managed read: err=%v opens=%d writes=%d", err, opens, input.writes)
+	}
+}
+
 func TestClosedDeviceDoesNotReopenFromRetainedReference(t *testing.T) {
 	t.Parallel()
 

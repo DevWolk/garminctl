@@ -20,12 +20,20 @@ type Device struct {
 	info     device.Info
 	storage  uint32
 	closed   bool
+	abort    context.CancelFunc
 }
 
+var _ device.Aborter = (*Device)(nil)
+
 func newDevice(ctx context.Context, w wire, info device.Info) (*Device, error) {
-	d := &Device{protocol: protocol{wire: w}, info: info}
+	lifetime, abort := context.WithCancel(context.Background())
+
+	d := &Device{protocol: protocol{wire: w, lifetime: lifetime}, info: info, abort: abort}
 	if _, _, err := d.protocol.exchange(ctx, 0x1002, []uint32{1}, nil); err != nil {
+		abort()
+
 		_ = w.Close()
+
 		return nil, fmt.Errorf("open MTP session (close the file manager's watch connection first): %w", err)
 	}
 
@@ -392,6 +400,10 @@ func (d *Device) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if d.abort != nil {
+		defer d.abort()
+	}
+
 	if d.closed {
 		return nil
 	}
@@ -408,4 +420,13 @@ func (d *Device) Close() error {
 	d.protocol.broken = true
 
 	return d.protocol.wire.Close()
+}
+
+// Abort cancels active libusb transfers without taking the operation mutex or
+// closing endpoint/config handles concurrently with their transfer cleanup.
+// The owner calls Close once the operation has unwound.
+func (d *Device) Abort() {
+	if d.abort != nil {
+		d.abort()
+	}
 }

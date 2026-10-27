@@ -35,6 +35,11 @@ func TestBridgeProcessHelper(t *testing.T) {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
+		if mode == "block-requests" {
+			time.Sleep(24 * time.Hour)
+			os.Exit(0)
+		}
+
 		var req struct {
 			ID int    `json:"id"`
 			Op string `json:"op"`
@@ -309,6 +314,36 @@ func TestBridgeDiagnosticsAreBounded(t *testing.T) {
 	if len(d.tail) > bridgeDiagnosticLimit || d.summary() != "bridge stderr: COMException, 0x802A0002" {
 		t.Fatalf("unsafe diagnostics: %q", d.summary())
 	}
+}
+
+func TestDeviceAbortInterruptsUncancelledReadWithoutReopening(t *testing.T) {
+	t.Parallel()
+	b := testProcessBridge(t, "block-requests")
+	input := &admittedInput{WriteCloser: b.stdin, entered: make(chan struct{})}
+	b.stdin = input
+	opens := 0
+	d := &Device{bridge: b, open: func(context.Context, string) (*Device, error) { opens++; return nil, errors.New("unexpected reopen") }}
+	done := make(chan error, 1)
+
+	go func() { _, err := d.Read(t.Context(), "GARMIN/test"); done <- err }()
+
+	<-input.entered
+	d.Abort()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, device.ErrDisconnected) || opens != 0 {
+			t.Fatalf("aborted read reopened: err=%v opens=%d", err, opens)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Abort did not interrupt read")
+	}
+
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertBridgeStopped(t, b)
 }
 
 func TestDeviceCloseCancelsReopenAndClosesUnpublishedBridge(t *testing.T) {

@@ -32,6 +32,8 @@ type protocol struct {
 	transaction uint32
 	pending     []byte
 	broken      bool
+	// This is the transport-owned cancellation lifetime, not a retained request.
+	lifetime context.Context //nolint:containedctx // Abort must interrupt a transaction without acquiring its lock.
 }
 
 type responseError uint16
@@ -61,6 +63,11 @@ func (p *protocol) exchange(ctx context.Context, op uint16, params []uint32, dat
 		return nil, nil, fmt.Errorf("%w: MTP session interrupted; reconnect the watch", device.ErrDisconnected)
 	}
 
+	if p.lifetime != nil && p.lifetime.Err() != nil {
+		p.broken = true
+		return nil, nil, fmt.Errorf("%w: MTP session aborted: %w", device.ErrDisconnected, p.lifetime.Err())
+	}
+
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -71,6 +78,11 @@ func (p *protocol) exchange(ctx context.Context, op uint16, params []uint32, dat
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+
+	if p.lifetime != nil {
+		stop := context.AfterFunc(p.lifetime, cancel)
+		defer stop()
+	}
 
 	command := make([]byte, 0, 20)
 	for _, v := range params {

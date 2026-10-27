@@ -163,7 +163,7 @@ func Start(ctx context.Context) (*Bridge, error) {
 
 	resp, err := b.readResponse(readyCtx)
 	if err != nil {
-		return nil, fmt.Errorf("bridge did not start: %w", b.fail(err))
+		return nil, fmt.Errorf("bridge did not start: %w", b.fail(errors.Join(readyCtx.Err(), err)))
 	}
 
 	if !resp.Ready || !resp.OK || resp.ID != 0 {
@@ -262,11 +262,11 @@ func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
 
 	resp, err := b.readResponse(ctx)
 	if err != nil {
-		return nil, b.fail(err)
+		return nil, b.fail(errors.Join(ctx.Err(), err))
 	}
 
 	if resp.ID != b.nextID || resp.Ready {
-		return nil, b.fail(errors.New("bridge response ID does not match request"))
+		return nil, b.fail(errors.Join(ctx.Err(), errors.New("bridge response ID does not match request")))
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -361,12 +361,15 @@ type Device struct {
 	closed       bool
 	reopening    chan struct{}
 	cancelReopen context.CancelFunc
+	noReconnect  bool
 }
 
 var (
 	_ device.Device          = (*Device)(nil)
 	_ device.HiddenFS        = (*Device)(nil)
 	_ device.StorageReporter = (*Device)(nil)
+	_ device.Aborter         = (*Device)(nil)
+	_ device.ReconnectPolicy = (*Device)(nil)
 )
 
 // Open connects to the device with the given ID. An empty ID selects the
@@ -487,6 +490,7 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 	}
 
 	b := d.bridge
+	noReconnect := d.noReconnect
 	d.mu.Unlock()
 
 	resp, err := b.call(ctx, cloneReq(req))
@@ -494,7 +498,7 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 		return resp, err
 	}
 
-	if !retryablePathRead(req) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if noReconnect || !retryablePathRead(req) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
 
@@ -504,6 +508,28 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 	}
 
 	return b.call(ctx, cloneReq(req))
+}
+
+// SetAutoReconnect configures future calls. Managed operation groups disable it
+// before publishing a newly opened device so a read cannot cross into a new epoch.
+func (d *Device) SetAutoReconnect(enabled bool) {
+	d.mu.Lock()
+	d.noReconnect = !enabled
+	d.mu.Unlock()
+}
+
+// Abort interrupts a pipe exchange or reconnect startup without waiting for it.
+func (d *Device) Abort() {
+	d.mu.Lock()
+
+	d.closed = true
+	if d.cancelReopen != nil {
+		d.cancelReopen()
+	}
+
+	b := d.bridge
+	d.mu.Unlock()
+	b.abort()
 }
 
 func retryablePathRead(req map[string]any) bool {
