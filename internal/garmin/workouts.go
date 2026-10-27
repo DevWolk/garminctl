@@ -542,13 +542,19 @@ func (w *WorkoutSpec) FIT(unitID uint64, now time.Time) ([]byte, error) {
 	}
 
 	b := fit.NewBuilder(21217, true)
-	_ = b.Write(0, fitFileIDDefs, map[uint8]any{0: 5, 1: 1, 2: 65534, 4: fit.Timestamp(now), 3: unitID})
+	if err := b.Write(0, fitFileIDDefs, map[uint8]any{0: 5, 1: 1, 2: 65534, 4: fit.Timestamp(now), 3: fitSerial(unitID)}); err != nil {
+		return nil, err
+	}
 
 	steps := flattenSteps(w.Steps)
-	_ = b.Write(26, fitWorkoutDefs, map[uint8]any{254: 0, 4: fitSport[w.Sport], 11: 0, 6: len(steps), 8: fitName(w.Name)})
+	if err := b.Write(26, fitWorkoutDefs, map[uint8]any{254: 0, 4: fitSport[w.Sport], 11: 0, 6: len(steps), 8: fitName(w.Name)}); err != nil {
+		return nil, err
+	}
 
 	for i, f := range steps {
-		_ = b.Write(27, fitStepDefs, fitStepValues(i, f))
+		if err := b.Write(27, fitStepDefs, fitStepValues(i, f)); err != nil {
+			return nil, err
+		}
 	}
 
 	return b.Bytes(), nil

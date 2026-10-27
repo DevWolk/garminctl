@@ -240,21 +240,28 @@ func toInt64(v any) (int64, error) {
 
 // BuildChangeFile produces a settings-change FIT file the watch applies
 // from GARMIN/NewFiles. unitID and swVersion come from the device.
-func BuildChangeFile(changes []ResolvedChange, unitID uint64, swVersion uint16, now time.Time) []byte {
+func BuildChangeFile(changes []ResolvedChange, unitID uint64, swVersion uint16, now time.Time) ([]byte, error) {
 	b := fit.NewBuilder(21217, true)
+
 	ts := fit.Timestamp(now)
-	_ = b.Write(0, []fit.FieldDef{
+	if err := b.Write(0, []fit.FieldDef{
 		{Num: 0, Size: 1, BaseType: fit.BaseEnum},
 		{Num: 1, Size: 2, BaseType: fit.BaseUint16},
 		{Num: 2, Size: 2, BaseType: fit.BaseUint16},
 		{Num: 4, Size: 4, BaseType: fit.BaseUint32},
 		{Num: 3, Size: 4, BaseType: fit.BaseUint32z},
 		{Num: 5, Size: 2, BaseType: fit.BaseUint16},
-	}, map[uint8]any{0: FileTypeSettingsChange, 1: 1, 2: 65534, 4: ts, 3: unitID, 5: 1})
-	_ = b.Write(49, []fit.FieldDef{
+	}, map[uint8]any{0: FileTypeSettingsChange, 1: 1, 2: 65534, 4: ts, 3: fitSerial(unitID), 5: 1}); err != nil {
+		return nil, err
+	}
+
+	if err := b.Write(49, []fit.FieldDef{
 		{Num: 1, Size: 1, BaseType: fit.BaseUint8},
 		{Num: 0, Size: 2, BaseType: fit.BaseUint16},
-	}, map[uint8]any{1: 0, 0: swVersion})
+	}, map[uint8]any{1: 0, 0: swVersion}); err != nil {
+		return nil, err
+	}
+
 	simple := []fit.FieldDef{
 		{Num: 253, Size: 4, BaseType: fit.BaseUint32},
 		{Num: 4, Size: 4, BaseType: fit.BaseUint32},
@@ -285,13 +292,17 @@ func BuildChangeFile(changes []ResolvedChange, unitID uint64, swVersion uint16, 
 			}
 
 			vals[3] = ai
-			_ = b.Write(MesgSettingsChange, indexed, vals)
+			if err := b.Write(MesgSettingsChange, indexed, vals); err != nil {
+				return nil, err
+			}
 		} else {
-			_ = b.Write(MesgSettingsChange, simple, vals)
+			if err := b.Write(MesgSettingsChange, simple, vals); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	return b.Bytes()
+	return b.Bytes(), nil
 }
 
 // ApplyResult reports what was written to the watch.
@@ -333,7 +344,10 @@ func (s *Service) ApplyChanges(ctx context.Context, changes []Change) (*ApplyRes
 		resolved = append(resolved, rc)
 	}
 
-	data := BuildChangeFile(resolved, dx.UnitID, uint16(dx.SoftwareVersion), time.Now())
+	data, err := BuildChangeFile(resolved, dx.UnitID, uint16(dx.SoftwareVersion), time.Now())
+	if err != nil {
+		return nil, err
+	}
 
 	name := fmt.Sprintf("%s/%s.FIT", PathNewFiles, newUUID())
 	if err := s.dev.Write(ctx, name, data); err != nil {

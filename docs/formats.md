@@ -93,6 +93,9 @@ pending file.
 Resolution applies profile scaling and accepts numeric identifiers for
 undocumented messages and fields. String values cannot use this change format;
 integers must fit the signed-32-bit through unsigned-32-bit range.
+Both settings and workout builders propagate FIT construction errors before
+staging a file. Their `file_id` serial field deliberately stores the low 32 bits
+of the device's uint64 UnitID, preserving the existing protocol representation.
 
 ## Connect IQ settings
 
