@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -196,7 +197,7 @@ func (b *Bridge) readResponse(ctx context.Context) (*response, error) {
 
 		var resp response
 		if err := json.Unmarshal(r.line, &resp); err != nil {
-			return nil, fmt.Errorf("bridge sent invalid JSON: %q", strings.TrimSpace(string(r.line)))
+			return nil, errors.New("bridge sent invalid JSON")
 		}
 
 		return &resp, nil
@@ -230,11 +231,23 @@ func asciiJSON(v any) ([]byte, error) {
 
 // call sends one request and waits for its response.
 func (b *Bridge) call(ctx context.Context, req map[string]any) (*response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := validateRequestPath(req); err != nil {
+		return nil, err
+	}
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if b.closed {
-		return nil, errors.New("bridge closed")
+		return nil, fmt.Errorf("%w: bridge closed", device.ErrDisconnected)
 	}
 
 	b.nextID++
@@ -247,24 +260,50 @@ func (b *Bridge) call(ctx context.Context, req map[string]any) (*response, error
 
 	if _, err := b.stdin.Write(append(data, '\n')); err != nil {
 		b.closed = true
-		return nil, fmt.Errorf("bridge write: %w", err)
+		return nil, fmt.Errorf("%w: bridge write: %w", device.ErrDisconnected, err)
 	}
 
 	resp, err := b.readResponse(ctx)
 	if err != nil {
 		b.closed = true
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", device.ErrDisconnected, err)
 	}
 
 	if !resp.OK {
-		if strings.Contains(resp.Error, "not found") {
-			return nil, fmt.Errorf("%w: %s", device.ErrNotFound, resp.Error)
-		}
-
-		return nil, errors.New(resp.Error)
+		return nil, remoteError(resp.Error)
 	}
 
 	return resp, nil
+}
+
+func remoteError(message string) error {
+	err := errors.New(message)
+	if strings.Contains(message, "0x800700AA") || strings.Contains(message, "0x80070964") {
+		return fmt.Errorf("%w: %w", device.ErrBusy, err)
+	}
+
+	if staleHRESULT(message) {
+		return fmt.Errorf("%w: %w", device.ErrDisconnected, err)
+	}
+
+	if strings.Contains(message, "not found") {
+		return fmt.Errorf("%w: %w", device.ErrNotFound, err)
+	}
+
+	if isStale(err) {
+		return fmt.Errorf("%w: %w", device.ErrDisconnected, err)
+	}
+
+	return err
+}
+
+func validateRequestPath(req map[string]any) error {
+	path, _ := req["path"].(string)
+	if slices.Contains(strings.Split(strings.ReplaceAll(path, "\\", "/"), "/"), "..") {
+		return fmt.Errorf("%w: invalid watch path", device.ErrInvalidArgument)
+	}
+
+	return nil
 }
 
 // Close stops the bridge process.
@@ -332,6 +371,8 @@ type Device struct {
 	bridge     *Bridge
 	info       device.Info
 	reconnects int
+	open       func(context.Context, string) (*Device, error)
+	closed     bool
 }
 
 var (
@@ -362,7 +403,7 @@ func Open(ctx context.Context, id string) (*Device, error) {
 		return nil, errors.Join(fmt.Errorf("open %s: %w", info.Name, err), b.Close())
 	}
 
-	return &Device{bridge: b, info: info}, nil
+	return &Device{bridge: b, info: info, open: Open}, nil
 }
 
 // pick chooses the device to open from what Windows lists. An explicit id
@@ -424,22 +465,39 @@ func (d *Device) Reconnects() int {
 // isStale reports errors that mean the device object is gone: the watch was
 // unplugged (Windows shuts the object down) or the bridge process died.
 func isStale(err error) bool {
-	if err == nil || errors.Is(err, device.ErrNotFound) {
+	if err == nil || errors.Is(err, device.ErrNotFound) || errors.Is(err, device.ErrBusy) {
 		return false
+	}
+
+	if errors.Is(err, device.ErrDisconnected) {
+		return true
 	}
 
 	m := err.Error()
 
-	return strings.Contains(m, "0x802A0002") || strings.Contains(m, "Shutdown was already called") ||
-		strings.Contains(m, "0x8007048F") || strings.Contains(m, "is not connected") ||
-		strings.Contains(m, "0x800706BA") || strings.Contains(m, "0x8007001F") ||
-		strings.Contains(m, "bridge closed") || strings.Contains(m, "bridge write") || strings.Contains(m, "bridge exited")
+	return staleHRESULT(m) || strings.Contains(m, "Shutdown was already called") || strings.Contains(m, "is not connected")
 }
 
-// call runs one bridge op; when the device object turned out to be stale it
-// reopens the same watch once and retries.
+func staleHRESULT(message string) bool {
+	message = strings.ToUpper(message)
+	for _, code := range []string{"0X802A0002", "0X8007048F", "0X800706BA", "0X8007001F"} {
+		if strings.Contains(message, code) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// call permits one reopen/retry for independent reads addressed by path.
+// Mutations and raw handle/opcode diagnostics never replay an unknown outcome.
 func (d *Device) call(ctx context.Context, req map[string]any) (*response, error) {
 	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		return nil, fmt.Errorf("%w: WPD device closed", device.ErrDisconnected)
+	}
+
 	b := d.bridge
 	d.mu.Unlock()
 
@@ -448,14 +506,28 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 		return resp, err
 	}
 
+	if !retryablePathRead(req) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, err
+	}
+
 	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		return nil, fmt.Errorf("%w: WPD device closed", device.ErrDisconnected)
+	}
+
 	if d.bridge == b { // nobody else reopened it yet
 		_ = b.Close()
 
-		fresh, oerr := Open(ctx, d.info.ID)
+		open := d.open
+		if open == nil {
+			open = Open
+		}
+
+		fresh, oerr := open(ctx, d.info.ID)
 		if oerr != nil {
 			d.mu.Unlock()
-			return nil, fmt.Errorf("the watch connection was lost and could not be reopened: %w", oerr)
+			return nil, fmt.Errorf("%w: the watch connection was lost and could not be reopened: %w", device.ErrDisconnected, errors.Join(err, oerr))
 		}
 
 		d.bridge = fresh.bridge
@@ -466,6 +538,16 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 	d.mu.Unlock()
 
 	return b.call(ctx, cloneReq(req))
+}
+
+func retryablePathRead(req map[string]any) bool {
+	op, _ := req["op"].(string)
+	switch op {
+	case "list", "stat", "read", "objectid":
+		return true
+	default:
+		return false
+	}
 }
 
 // pathReq is a bridge request that names a path on the watch.
@@ -580,7 +662,7 @@ func (d *Device) MtpRead(ctx context.Context, opcode uint32, params []uint32) (d
 
 	b, err := base64.StdEncoding.DecodeString(resp.B64)
 
-	return b, resp.Code, resp.Params, err
+	return b, resp.Code, resp.Params, errors.Join(err, ptpStatusError(resp.Code))
 }
 
 // MtpWrite runs a raw MTP operation that sends a data phase to the device.
@@ -590,7 +672,7 @@ func (d *Device) MtpWrite(ctx context.Context, opcode uint32, params []uint32, d
 		return 0, nil, err
 	}
 
-	return resp.Code, resp.Params, nil
+	return resp.Code, resp.Params, ptpStatusError(resp.Code)
 }
 
 // MtpNoData runs a raw MTP operation without a data phase.
@@ -600,13 +682,15 @@ func (d *Device) MtpNoData(ctx context.Context, opcode uint32, params []uint32) 
 		return 0, nil, err
 	}
 
-	return resp.Code, resp.Params, nil
+	return resp.Code, resp.Params, ptpStatusError(resp.Code)
 }
 
 // Close implements device.Device.
 func (d *Device) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	d.closed = true
 
 	return d.bridge.Close()
 }

@@ -50,6 +50,25 @@ func usbInfo(d *gousb.DeviceDesc) device.Info {
 	return device.Info{ID: fmt.Sprintf("usb:%03d:%03d", d.Bus, d.Address), Name: fmt.Sprintf("Garmin USB %04x", uint16(d.Product)), Manufacturer: "Garmin"}
 }
 
+func classifyUSBOpenError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// gousb v1.1.3 formats claim/configuration errors with %v, erasing their
+	// error type. Recognize its exact suffix only at this library boundary.
+	if errors.Is(err, gousb.ErrorBusy) || strings.HasSuffix(err.Error(), ": "+gousb.ErrorBusy.Error()) ||
+		strings.HasSuffix(err.Error(), "is already claimed") {
+		return fmt.Errorf("%w: %w", device.ErrBusy, err)
+	}
+
+	if errors.Is(err, gousb.ErrorNoDevice) || strings.HasSuffix(err.Error(), ": "+gousb.ErrorNoDevice.Error()) {
+		return fmt.Errorf("%w: %w", device.ErrDisconnected, err)
+	}
+
+	return err
+}
+
 // Devices enumerates only Garmin USB devices without opening or claiming them.
 func Devices(ctx context.Context) ([]device.Info, error) {
 	if err := ctx.Err(); err != nil {
@@ -102,7 +121,7 @@ func Open(ctx context.Context, id string) (*Device, error) {
 
 		_ = u.Close()
 
-		return nil, fmt.Errorf("open Garmin USB (install the udev rule, then reconnect the watch): %w", errors.Join(err, errors.New("device not available")))
+		return nil, fmt.Errorf("open Garmin USB (install the udev rule, then reconnect the watch): %w", errors.Join(classifyUSBOpenError(err), errors.New("device not available")))
 	}
 
 	if name, err := u.device.Product(); err == nil {
@@ -138,12 +157,12 @@ func (u *usbWire) claimSetting(config int, setting gousb.InterfaceSetting) error
 
 	u.config, err = u.device.Config(config)
 	if err != nil {
-		return err
+		return classifyUSBOpenError(err)
 	}
 
 	u.iface, err = u.config.Interface(setting.Number, setting.Alternate)
 	if err != nil {
-		return fmt.Errorf("claim Garmin MTP interface (close other watch/file-manager connections): %w", err)
+		return fmt.Errorf("claim Garmin MTP interface (close other watch/file-manager connections): %w", classifyUSBOpenError(err))
 	}
 
 	for _, endpoint := range setting.Endpoints {

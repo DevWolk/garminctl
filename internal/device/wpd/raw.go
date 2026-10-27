@@ -31,6 +31,27 @@ const (
 	ptpFormatUndef  = 0x3000
 )
 
+func ptpStatusError(code uint32) error {
+	var kind error
+
+	switch code {
+	case 0x2003, 0x2004:
+		kind = device.ErrDisconnected
+	case 0x2009:
+		kind = device.ErrNotFound
+	case 0x2019, 0x201e:
+		kind = device.ErrBusy
+	case 0x201d:
+		kind = device.ErrInvalidArgument
+	}
+
+	if kind == nil {
+		return nil
+	}
+
+	return fmt.Errorf("%w: PTP response 0x%04X", kind, code)
+}
+
 // RawObject is one object as GetObjectInfo describes it.
 type RawObject struct {
 	Handle uint32
@@ -90,6 +111,11 @@ func (d *Device) AllChildren(ctx context.Context, storage, parent uint32) ([]Raw
 	}{{opGetObjectHandles, []uint32{storage, 0, parent}}, {opGarminObjectIDs, []uint32{storage, parent}}} {
 		data, code, _, err := d.MtpRead(ctx, op.code, op.prms)
 		if err != nil {
+			if errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrBusy) ||
+				errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+
 			if op.code == opGarminObjectIDs {
 				continue // a device without the vendor operation
 			}

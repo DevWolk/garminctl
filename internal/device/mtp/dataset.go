@@ -3,6 +3,7 @@ package mtp
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 	"unicode/utf16"
 
@@ -113,7 +114,7 @@ func segments(path string) ([]string, error) {
 	parts := strings.Split(path, "/")
 	for _, part := range parts {
 		if !validName(part) {
-			return nil, errors.New("invalid watch path")
+			return nil, fmt.Errorf("%w: invalid watch path", device.ErrInvalidArgument)
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +14,76 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
+
+type closeTrackedDevice struct {
+	device.Device
+	closes *int
+}
+
+func (d closeTrackedDevice) Close() error {
+	*d.closes++
+	return d.Device.Close()
+}
+
+func TestWithServiceDropsOnlyDisconnectedSessions(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		err    error
+		status int
+		drop   bool
+	}{
+		{name: "disconnected", err: device.ErrDisconnected, status: http.StatusServiceUnavailable, drop: true},
+		{name: "busy", err: device.ErrBusy, status: http.StatusConflict},
+		{name: "missing", err: device.ErrNotFound, status: http.StatusNotFound},
+		{name: "validation", err: device.ErrInvalidArgument, status: http.StatusBadRequest},
+		{name: "cancelled before I/O", err: context.Canceled, status: http.StatusRequestTimeout},
+		{name: "in-flight deadline", err: errors.Join(device.ErrDisconnected, context.DeadlineExceeded), status: http.StatusGatewayTimeout, drop: true},
+		{name: "domain error mentioning bridge", err: errors.New("invalid bridge label"), status: http.StatusInternalServerError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			opens, closes := 0, 0
+			lazy := garmin.NewLazy(func(context.Context) (device.Device, error) {
+				opens++
+
+				d, err := device.NewDirFS(root)
+
+				return closeTrackedDevice{Device: d, closes: &closes}, err
+			})
+			t.Cleanup(lazy.Drop)
+
+			s := &Server{svc: lazy}
+			w := httptest.NewRecorder()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/files", nil)
+			s.withService(w, r, func(*garmin.Service) (any, error) { return nil, tt.err })
+
+			if w.Code != tt.status || (closes == 1) != tt.drop {
+				t.Fatalf("response status=%d, closes=%d, body=%s", w.Code, closes, w.Body)
+			}
+
+			if _, err := lazy.Get(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+
+			wantOpens := 1
+			if tt.drop {
+				wantOpens = 2
+			}
+
+			if opens != wantOpens {
+				t.Fatalf("connection opens=%d, want=%d", opens, wantOpens)
+			}
+		})
+	}
+}
 
 const (
 	originHeader    = "Origin"

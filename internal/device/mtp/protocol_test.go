@@ -8,7 +8,95 @@ import (
 	"io"
 	"strconv"
 	"testing"
+
+	"github.com/DevWolk/garminctl/internal/device"
 )
+
+func TestProtocolPreCancelledRequestKeepsSession(t *testing.T) {
+	t.Parallel()
+
+	w := &testWire{packets: [][]byte{packet(containerResponse, responseOK, 0, nil)}}
+	p := protocol{wire: w}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, _, err := p.exchange(ctx, 0x1009, nil, nil); !errors.Is(err, context.Canceled) || errors.Is(err, device.ErrDisconnected) || p.broken || len(w.writes) != 0 {
+		t.Fatalf("pre-cancelled request = %v, broken=%t, writes=%d", err, p.broken, len(w.writes))
+	}
+
+	if _, _, err := p.exchange(t.Context(), 0x1009, nil, nil); err != nil {
+		t.Fatalf("pre-I/O cancellation damaged the session: %v", err)
+	}
+}
+
+type cancelWriteWire struct {
+	testWire
+	cancel context.CancelFunc
+}
+
+func (w *cancelWriteWire) WriteContext(ctx context.Context, data []byte) (int, error) {
+	w.cancel()
+	return w.testWire.WriteContext(ctx, data)
+}
+
+func TestProtocolAdmittedCancellationBreaksSessionEvenWithZeroBytes(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	w := &cancelWriteWire{cancel: cancel}
+
+	p := protocol{wire: w}
+	if _, _, err := p.exchange(ctx, 0x100d, nil, []byte("test")); !errors.Is(err, context.Canceled) || !errors.Is(err, device.ErrDisconnected) || !p.broken {
+		t.Fatalf("admitted cancellation = %v, broken=%t", err, p.broken)
+	}
+
+	if len(w.writes) != 0 {
+		t.Fatal("test must exercise zero reported bytes after transport admission")
+	}
+}
+
+func TestProtocolResponseClassification(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		code   uint16
+		want   error
+		broken bool
+	}{
+		{name: "busy", code: 0x2019, want: device.ErrBusy},
+		{name: "already open", code: 0x201e, want: device.ErrBusy},
+		{name: "missing object", code: 0x2009, want: device.ErrNotFound},
+		{name: "invalid parameter", code: 0x201d, want: device.ErrInvalidArgument},
+		{name: "lost session", code: 0x2003, want: device.ErrDisconnected, broken: true},
+		{name: "invalid transaction", code: 0x2004, want: device.ErrDisconnected, broken: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			w := &testWire{packets: [][]byte{packet(containerResponse, tt.code, 0, nil), packet(containerResponse, responseOK, 1, nil)}}
+			p := protocol{wire: w}
+
+			_, _, err := p.exchange(t.Context(), 0x1009, nil, nil)
+			if !errors.Is(err, tt.want) || p.broken != tt.broken {
+				t.Fatalf("response = %v, broken=%t", err, p.broken)
+			}
+
+			writes := len(w.writes)
+
+			_, _, err = p.exchange(t.Context(), 0x1009, nil, nil)
+			if tt.broken {
+				if !errors.Is(err, device.ErrDisconnected) || len(w.writes) != writes {
+					t.Fatal("broken session continued I/O")
+				}
+			} else if err != nil {
+				t.Fatalf("recoverable response damaged the session: %v", err)
+			}
+		})
+	}
+}
 
 type testWire struct {
 	packets [][]byte

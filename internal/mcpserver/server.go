@@ -4,6 +4,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -57,6 +58,9 @@ func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmi
 		}
 
 		out, err := body(ctx, svc, in) // the SDK turns a non-nil err into an error result and drops out
+		if errors.Is(err, device.ErrDisconnected) {
+			s.svc.Drop()
+		}
 
 		return nil, out, err
 	}

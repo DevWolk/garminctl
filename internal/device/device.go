@@ -10,6 +10,16 @@ import (
 // ErrNotFound is returned when a path does not exist on the device.
 var ErrNotFound = errors.New("not found")
 
+// ErrDisconnected means that the transport session can no longer be used.
+// It may wrap cancellation after a transaction was admitted to the transport.
+var ErrDisconnected = errors.New("watch disconnected")
+
+// ErrBusy means that the device or its interface is in use by another operation.
+var ErrBusy = errors.New("watch is busy")
+
+// ErrInvalidArgument identifies rejected device paths or operation parameters.
+var ErrInvalidArgument = errors.New("invalid device argument")
+
 // Entry describes a file or directory on the device.
 type Entry struct {
 	Name     string `json:"name"`

@@ -75,21 +75,12 @@ func (d *Device) children(ctx context.Context, parent uint32, hidden bool) ([]ob
 	}
 
 	if hidden {
-		extra, _, vendorErr := d.protocol.exchange(ctx, 0x9002, []uint32{d.storage, parent}, nil)
-
-		var code responseError
-		if vendorErr != nil && !errors.As(vendorErr, &code) {
-			return nil, vendorErr
+		extra, err := d.hiddenHandles(ctx, parent)
+		if err != nil {
+			return nil, err
 		}
 
-		if vendorErr == nil {
-			ids, err := uint32Array(extra)
-			if err != nil {
-				return nil, err
-			}
-
-			handles = append(handles, ids...)
-		}
+		handles = append(handles, extra...)
 	}
 
 	slices.Sort(handles)
@@ -110,6 +101,23 @@ func (d *Device) children(ctx context.Context, parent uint32, hidden bool) ([]ob
 	}
 
 	return out, nil
+}
+
+func (d *Device) hiddenHandles(ctx context.Context, parent uint32) ([]uint32, error) {
+	extra, _, err := d.protocol.exchange(ctx, 0x9002, []uint32{d.storage, parent}, nil)
+	if err != nil {
+		if errors.Is(err, device.ErrDisconnected) || errors.Is(err, device.ErrBusy) {
+			return nil, err
+		}
+
+		if _, ok := errors.AsType[responseError](err); ok {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return uint32Array(extra)
 }
 
 func (d *Device) resolve(ctx context.Context, path string) (object, error) {

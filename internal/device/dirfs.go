@@ -3,6 +3,7 @@ package device
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,7 +60,7 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 
 	for i, part := range parts {
 		if part == "." || part == ".." {
-			return "", errors.New("invalid path")
+			return "", fmt.Errorf("%w: invalid path", ErrInvalidArgument)
 		}
 
 		// Every element goes through the directory listing, even one that

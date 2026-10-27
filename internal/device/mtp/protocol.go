@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/DevWolk/garminctl/internal/device"
 )
 
 const (
@@ -36,16 +38,35 @@ type responseError uint16
 
 func (e responseError) Error() string { return fmt.Sprintf("MTP response 0x%04X", uint16(e)) }
 
+func (e responseError) Unwrap() error {
+	switch e {
+	case 0x2003, 0x2004: // SessionNotOpen, InvalidTransactionID.
+		return device.ErrDisconnected
+	case 0x2009: // InvalidObjectHandle.
+		return device.ErrNotFound
+	case 0x2019, 0x201e: // DeviceBusy, SessionAlreadyOpen.
+		return device.ErrBusy
+	case 0x201d: // InvalidParameter.
+		return device.ErrInvalidArgument
+	default:
+		return nil
+	}
+}
+
 // exchange must be serialized with the complete operation, especially the
 // SendObjectInfo/SendObject pair. A failed USB transfer invalidates the session;
 // resuming halfway through a container would risk sending data to the wrong op.
 func (p *protocol) exchange(ctx context.Context, op uint16, params []uint32, data []byte) ([]byte, []uint32, error) {
 	if p.broken {
-		return nil, nil, errors.New("MTP session interrupted; reconnect the watch")
+		return nil, nil, fmt.Errorf("%w: MTP session interrupted; reconnect the watch", device.ErrDisconnected)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
 
 	if len(params) > 5 || len(data) > maxContainer-12 {
-		return nil, nil, errors.New("MTP request is too large")
+		return nil, nil, fmt.Errorf("%w: MTP request is too large", device.ErrInvalidArgument)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -63,13 +84,18 @@ func (p *protocol) exchange(ctx context.Context, op uint16, params []uint32, dat
 
 	if err != nil {
 		p.broken = true
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: MTP transfer: %w", device.ErrDisconnected, err)
 	}
 
 	result, reply, err := p.receive(ctx, op)
 
 	var code responseError
 	if err != nil && !errors.As(err, &code) {
+		p.broken = true
+		err = fmt.Errorf("%w: MTP response: %w", device.ErrDisconnected, err)
+	}
+
+	if errors.Is(err, device.ErrDisconnected) {
 		p.broken = true
 	}
 

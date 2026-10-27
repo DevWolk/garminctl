@@ -386,12 +386,26 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, device.ErrNotFound) {
-		status = http.StatusNotFound
-	}
+	writeError(w, deviceErrorStatus(err, http.StatusInternalServerError), err.Error())
+}
 
-	writeError(w, status, err.Error())
+func deviceErrorStatus(err error, fallback int) int {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout
+	case errors.Is(err, context.Canceled):
+		return http.StatusRequestTimeout
+	case errors.Is(err, device.ErrDisconnected):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, device.ErrBusy):
+		return http.StatusConflict
+	case errors.Is(err, device.ErrNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, device.ErrInvalidArgument):
+		return http.StatusBadRequest
+	default:
+		return fallback
+	}
 }
 
 // withService runs fn with a connected service; a bridge failure drops the
@@ -399,13 +413,13 @@ func writeErr(w http.ResponseWriter, err error) {
 func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(svc *garmin.Service) (any, error)) {
 	svc, err := s.svc.Get(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, statusResponse{Error: err.Error()})
+		writeJSON(w, deviceErrorStatus(err, http.StatusServiceUnavailable), statusResponse{Error: err.Error()})
 		return
 	}
 
 	v, err := fn(svc)
 	if err != nil {
-		if strings.Contains(err.Error(), "bridge") {
+		if errors.Is(err, device.ErrDisconnected) {
 			s.svc.Drop()
 		}
 

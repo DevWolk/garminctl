@@ -2,10 +2,13 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DevWolk/garminctl/internal/device"
 
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/notify"
@@ -107,13 +110,18 @@ func (s *Server) watch(ctx context.Context) {
 	}
 }
 
-// probe checks that an open device still answers; a failure drops it.
+// probe checks that an open device still answers. Only a broken transport
+// drops the session; other errors retain the previous connection state.
 // It returns the new connected state.
 func (s *Server) probe(ctx context.Context, svc *garmin.Service, connected bool) bool {
 	cctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
 	if _, err := svc.Device().Stat(cctx, "GARMIN"); err != nil {
+		if !errors.Is(err, device.ErrDisconnected) {
+			return connected
+		}
+
 		s.svc.Drop()
 
 		if connected {
