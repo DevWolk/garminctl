@@ -60,6 +60,37 @@ type HiddenFS interface {
 	DeleteHidden(ctx context.Context, dir, name string) error
 }
 
+// MTPObject is the subset of GetObjectInfo used by handle diagnostics.
+type MTPObject struct {
+	Handle uint32
+	Parent uint32
+	Format uint16
+	Size   uint32
+	Name   string
+}
+
+// IsDir reports whether the object is a folder (PTP association).
+func (o MTPObject) IsDir() bool { return o.Format == 0x3001 }
+
+// RawMTPReader is an optional diagnostic capability. A data-in opcode is not
+// necessarily read-only; callers must not add automatic retries for unknown ops.
+type RawMTPReader interface {
+	MtpRead(ctx context.Context, opcode uint32, params []uint32) ([]byte, uint32, []uint32, error)
+}
+
+// MTPDiagnostics provides optional handle-based diagnostics. It is distinct
+// from HiddenFS: ordinary app-file operations should use HiddenFS. The current
+// WPD implementation supports it; a native MTP transport need not implement it.
+// Callers use it only inside the connection owner's active lease.
+type MTPDiagnostics interface {
+	Handles(ctx context.Context, path string) (uint32, uint32, error)
+	AllChildren(ctx context.Context, storage, parent uint32) ([]MTPObject, error)
+	FindChild(ctx context.Context, storage, parent uint32, name string) (MTPObject, bool, error)
+	SendFile(ctx context.Context, storage, parent uint32, name string, data []byte) (uint32, error)
+	ReadHandle(ctx context.Context, handle uint32) ([]byte, error)
+	DeleteHandle(ctx context.Context, handle uint32) error
+}
+
 // Info identifies a device.
 type Info struct {
 	ID           string `json:"id"`

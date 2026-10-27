@@ -13,7 +13,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/device/wpd"
 	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
 )
@@ -189,7 +188,7 @@ func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) er
 		return usageErrorf("usage: hidden [-write-test] PATH")
 	}
 
-	dev, ok := svc.Device().(*wpd.Device)
+	dev, ok := svc.Device().(device.MTPDiagnostics)
 	if !ok {
 		return errors.New("hidden requires the Windows MTP bridge")
 	}
@@ -219,7 +218,7 @@ func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) er
 
 // walkHidden resolves a watch path to its storage and object handle, passing
 // through hidden folders.
-func walkHidden(ctx context.Context, dev *wpd.Device, p string) (storage, handle uint32, err error) {
+func walkHidden(ctx context.Context, dev device.MTPDiagnostics, p string) (storage, handle uint32, err error) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 
 	storage, handle, err = dev.Handles(ctx, "GARMIN")
@@ -250,7 +249,7 @@ func walkHidden(ctx context.Context, dev *wpd.Device, p string) (storage, handle
 	return storage, handle, nil
 }
 
-func (c *cli) hiddenWriteTest(ctx context.Context, dev *wpd.Device, storage, handle uint32) error {
+func (c *cli) hiddenWriteTest(ctx context.Context, dev device.MTPDiagnostics, storage, handle uint32) error {
 	const name = "GCTLTEST.TMP"
 
 	if old, found, err := dev.FindChild(ctx, storage, handle, name); err == nil && found {
@@ -288,7 +287,7 @@ func (c *cli) hiddenWriteTest(ctx context.Context, dev *wpd.Device, storage, han
 
 // mtp reads a raw PTP operation; opcodes and parameters use hexadecimal.
 func (c *cli) mtp(ctx context.Context, svc *garmin.Service, args []string) error {
-	dev, ok := svc.Device().(*wpd.Device)
+	dev, ok := svc.Device().(device.RawMTPReader)
 	if !ok || len(args) < 1 {
 		return usageErrorf("usage: mtp OPCODE [PARAM...]  (requires the Windows MTP bridge)")
 	}

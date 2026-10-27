@@ -26,9 +26,8 @@ const (
 	opSendObject       = 0x100D
 	opGarminObjectIDs  = 0x9002 // Garmin: object handles including hidden ones
 
-	ptpOK           = 0x2001
-	ptpFormatFolder = 0x3001
-	ptpFormatUndef  = 0x3000
+	ptpOK          = 0x2001
+	ptpFormatUndef = 0x3000
 )
 
 func ptpStatusError(code uint32) error {
@@ -52,17 +51,13 @@ func ptpStatusError(code uint32) error {
 	return fmt.Errorf("%w: PTP response 0x%04X", kind, code)
 }
 
-// RawObject is one object as GetObjectInfo describes it.
-type RawObject struct {
-	Handle uint32
-	Parent uint32
-	Format uint16
-	Size   uint32
-	Name   string
-}
+// RawObject retains the WPD API name for the shared diagnostic object model.
+type RawObject = device.MTPObject
 
-// IsDir reports whether the object is a folder (association).
-func (o RawObject) IsDir() bool { return o.Format == ptpFormatFolder }
+var (
+	_ device.MTPDiagnostics = (*Device)(nil)
+	_ device.RawMTPReader   = (*Device)(nil)
+)
 
 // Handles returns the PTP storage id and the object handle behind a visible path.
 func (d *Device) Handles(ctx context.Context, path string) (storage, handle uint32, err error) {
