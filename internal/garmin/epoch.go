@@ -44,3 +44,16 @@ func (l *Lazy) BindEpoch(ctx context.Context, epoch ConnectionEpoch) (bound cont
 
 	return bound, release, nil
 }
+
+// epochCause also covers an operation unwinding before the epoch cancellation
+// worker is scheduled. Reporting a retired job never depends on that timing.
+func (l *Lazy) epochCause(epoch ConnectionEpoch) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.closed || l.svc == nil || l.epoch != epoch {
+		return errors.Join(ErrSessionChanged, device.ErrDisconnected)
+	}
+
+	return nil
+}

@@ -254,9 +254,13 @@ func (s *Service) decodeActivities(ctx context.Context, cp string, entries []dev
 		}
 
 		data, err := s.dev.Read(ctx, "GARMIN/Activity/"+entry.Name)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+			if errors.Is(err, device.ErrDisconnected) {
+				return err
 			}
 
 			continue
@@ -335,6 +339,31 @@ func (s *Service) decodeOrJoin(ctx context.Context, cp string, todo []device.Ent
 // decoded in the background (reading 200 files over USB takes a while);
 // call again until Pending is 0.
 func (s *Service) Activities(ctx context.Context, wait bool) (*ActivityList, error) {
+	scan, err := s.scanActivities(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(scan.todo) > 0 {
+		if err := s.decodeOrJoin(ctx, scan.cachePath, scan.todo, wait); err != nil {
+			return nil, err
+		}
+
+		if wait {
+			return s.Activities(ctx, false)
+		}
+	}
+
+	return scan.list, nil
+}
+
+type activityScan struct {
+	list      *ActivityList
+	cachePath string
+	todo      []device.Entry
+}
+
+func (s *Service) scanActivities(ctx context.Context) (*activityScan, error) {
 	dx, err := s.DeviceXML(ctx)
 	if err != nil {
 		return nil, err
@@ -368,21 +397,10 @@ func (s *Service) Activities(ctx context.Context, wait bool) (*ActivityList, err
 		}
 	}
 
-	if len(todo) > 0 {
-		if err := s.decodeOrJoin(ctx, cp, todo, wait); err != nil {
-			return nil, err
-		}
-
-		if wait {
-			return s.Activities(ctx, false)
-		}
-
-		out.Pending = len(todo)
-	}
-
 	sort.Slice(out.Activities, func(i, j int) bool { return out.Activities[i].Start.After(out.Activities[j].Start) })
+	out.Pending = len(todo)
 
-	return out, nil
+	return &activityScan{list: out, cachePath: cp, todo: todo}, nil
 }
 
 // TrackPoint is one downsampled record of an activity.

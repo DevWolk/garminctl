@@ -17,15 +17,28 @@ import (
 
 type activityBarrierDevice struct {
 	device.Device
-	mu      sync.Mutex
-	reads   map[string]int
-	blocked string
-	entered chan struct{}
-	gate    <-chan struct{}
+	mu           sync.Mutex
+	reads        map[string]int
+	blocked      string
+	entered      chan struct{}
+	gate         <-chan struct{}
+	trace        chan string
+	ignoreCancel bool
+	closeOnce    sync.Once
+	closeErr     error
+}
+
+func (d *activityBarrierDevice) Close() error {
+	d.closeOnce.Do(func() { d.closeErr = d.Device.Close() })
+	return d.closeErr
 }
 
 func (d *activityBarrierDevice) Read(ctx context.Context, path string) ([]byte, error) {
 	if strings.HasPrefix(path, "GARMIN/Activity/") {
+		if d.trace != nil {
+			d.trace <- path
+		}
+
 		d.mu.Lock()
 		d.reads[path]++
 		first := d.reads[path] == 1 && path == d.blocked
@@ -33,6 +46,11 @@ func (d *activityBarrierDevice) Read(ctx context.Context, path string) ([]byte, 
 
 		if first {
 			close(d.entered)
+
+			if d.ignoreCancel {
+				<-d.gate
+				return d.Device.Read(ctx, path)
+			}
 
 			select {
 			case <-d.gate:
@@ -54,12 +72,6 @@ func activityTestDevice(t *testing.T, count int) (*activityBarrierDevice, []devi
 		t.Fatal(err)
 	}
 
-	t.Cleanup(func() {
-		if err := dev.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-
 	data, err := os.ReadFile("../fit/testdata/WalkingWalk.fit")
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +87,15 @@ func activityTestDevice(t *testing.T, count int) (*activityBarrierDevice, []devi
 		entries[i] = device.Entry{Name: name, Size: int64(len(data))}
 	}
 
-	return &activityBarrierDevice{Device: dev, reads: make(map[string]int), entered: make(chan struct{})}, entries
+	tracked := &activityBarrierDevice{Device: dev, reads: make(map[string]int), entered: make(chan struct{})}
+
+	t.Cleanup(func() {
+		if err := tracked.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	return tracked, entries
 }
 
 func waitActivityBarrier(t *testing.T, entered <-chan struct{}) {

@@ -861,7 +861,7 @@ func (c *Cloud) Sync(ctx context.Context, upload, download bool, progress Progre
 	}
 
 	result, err := c.sync(bound, upload, download, progress)
-	cause := context.Cause(bound)
+	cause := errors.Join(context.Cause(bound), c.watch.epochCause(c.epoch))
 
 	release()
 
