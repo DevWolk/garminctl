@@ -299,11 +299,13 @@ func (c *cli) cloudSync(ctx context.Context, cloud *garmin.Cloud, args []string)
 		return err
 	}
 
-	res, err := cloud.Sync(ctx, !*noUp, !*noDown, func(line string) {
+	progress := func(line string) {
 		if !c.asJSON {
 			c.out.Println(" ", line)
 		}
-	})
+	}
+
+	res, err := c.runSync(ctx, cloud, !*noUp, !*noDown, progress)
 	if err != nil {
 		return err
 	}
@@ -388,4 +390,21 @@ func (c *cli) cloudSettingsSet(ctx context.Context, cloud *garmin.Cloud, kvs []s
 	c.out.Println(res.Note)
 
 	return nil
+}
+
+func (c *cli) runSync(ctx context.Context, cloud *garmin.Cloud, up, down bool, progress garmin.Progress) (*garmin.SyncResult, error) {
+	if c.runtime == nil {
+		return cloud.Sync(ctx, up, down, progress)
+	}
+
+	managed := garmin.NewJobCloud(c.runtime.Watch, c.epoch, gc.New(gc.DefaultStorePath()))
+
+	job, _, err := c.runtime.Sync.Start(ctx, garmin.SyncOptions{Upload: up, Download: down, Epoch: c.epoch}, func(ctx context.Context, _ garmin.Progress) (*garmin.SyncResult, error) {
+		return managed.Sync(ctx, up, down, progress)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return job.Wait(ctx)
 }

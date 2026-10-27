@@ -26,7 +26,16 @@ func (c *cli) activities(ctx context.Context, svc *garmin.Service, args []string
 		return err
 	}
 
-	list, err := svc.Activities(ctx, *wait)
+	var (
+		list *garmin.ActivityList
+		err  error
+	)
+	if c.runtime != nil {
+		list, err = c.runtime.Activities.Activities(ctx, *wait)
+	} else {
+		list, err = svc.Activities(ctx, *wait)
+	}
+
 	if err != nil {
 		return err
 	}

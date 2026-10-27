@@ -20,7 +20,7 @@ func (c *cli) music(ctx context.Context, svc *garmin.Service, args []string) err
 		return c.musicAdd(ctx, svc, args[1:])
 	case "rm":
 		for _, p := range args[1:] {
-			if err := svc.RemoveTrack(ctx, p); err != nil {
+			if err := c.withDeviceGroup(ctx, svc, func(ctx context.Context, svc *garmin.Service) error { return svc.RemoveTrack(ctx, p) }); err != nil {
 				return err
 			}
 
@@ -87,12 +87,16 @@ func (c *cli) musicAdd(ctx context.Context, svc *garmin.Service, args []string) 
 			return err
 		}
 
-		t, err := svc.AddTrack(ctx, *folder, filepath.Base(f), data)
-		if err != nil {
+		if err := c.withDeviceGroup(ctx, svc, func(ctx context.Context, svc *garmin.Service) error {
+			track, err := svc.AddTrack(ctx, *folder, filepath.Base(f), data)
+			if err == nil {
+				c.out.Println("added", track.Path)
+			}
+
+			return err
+		}); err != nil {
 			return err
 		}
-
-		c.out.Println("added", t.Path)
 	}
 
 	return nil

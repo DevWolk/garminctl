@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/device/wpd"
 	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -419,7 +420,15 @@ type backupRun struct {
 }
 
 func (b *backupRun) walk(ctx context.Context, dir string) error {
-	entries, err := b.svc.Device().List(ctx, dir)
+	var entries []device.Entry
+
+	err := b.withDeviceGroup(ctx, b.svc, func(ctx context.Context, svc *garmin.Service) error {
+		var err error
+
+		entries, err = svc.Device().List(ctx, dir)
+
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -451,9 +460,22 @@ func (b *backupRun) walk(ctx context.Context, dir string) error {
 }
 
 func (b *backupRun) copyFile(ctx context.Context, p string) error {
-	data, err := b.svc.Device().Read(ctx, p)
+	var data []byte
+
+	err := b.withDeviceGroup(ctx, b.svc, func(ctx context.Context, svc *garmin.Service) error {
+		var err error
+
+		data, err = svc.Device().Read(ctx, p)
+
+		return err
+	})
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, device.ErrDisconnected) {
+			return err
+		}
+
 		b.errOut.Printf("skip %s: %v\n", p, err)
+
 		return nil
 	}
 

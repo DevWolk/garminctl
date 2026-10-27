@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
@@ -96,12 +97,16 @@ Exit status: 0 ok, 1 failure, 2 usage error, 130 interrupted.
 // version is set at build time: -ldflags "-X main.version=v1.2.3".
 var version = "dev"
 
+const cloudCommand = "cloud"
+
 type cli struct {
-	root   string
-	devID  string
-	asJSON bool
-	out    *printer // program output
-	errOut *printer // prompts and diagnostics
+	runtime *garmin.Runtime
+	epoch   garmin.ConnectionEpoch
+	root    string
+	devID   string
+	asJSON  bool
+	out     *printer // program output
+	errOut  *printer // prompts and diagnostics
 }
 
 // printer retains the first output error for run to report.
@@ -216,7 +221,7 @@ func (c *cli) run(args []string) error {
 
 	cmd, rest := rest[0], rest[1:]
 
-	if cmd == "cloud" && len(rest) > 0 && (rest[0] == "login" || rest[0] == "mfa" || rest[0] == "logout") {
+	if cmd == cloudCommand && len(rest) > 0 && (rest[0] == "login" || rest[0] == "mfa" || rest[0] == "logout") {
 		return c.cloudAccount(ctx, rest) // account commands need no watch
 	}
 
@@ -230,12 +235,40 @@ func (c *cli) run(args []string) error {
 		return usageErrorf("unknown command %q", cmd)
 	}
 
-	svc, err := c.open(ctx)
+	return c.runDevice(ctx, cmd, fn, rest)
+}
+
+func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args []string) (err error) {
+	runtime := garmin.NewRuntime(ctx, func(ctx context.Context) (device.Device, error) { return openDevice(ctx, c.root, c.devID) })
+	c.runtime = runtime
+
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+
+		err = errors.Join(err, runtime.Close(closeCtx))
+	}()
+
+	lease, err := runtime.Watch.Acquire(runtime.Context())
 	if err != nil {
 		return err
 	}
 
-	return errors.Join(fn(ctx, svc, rest), svc.Close())
+	c.epoch = lease.Epoch()
+	if deviceJob(cmd, args) {
+		if err := lease.Release(); err != nil {
+			return err
+		}
+
+		return c.runDeviceJob(runtime.Context(), cmd, fn, args)
+	}
+
+	err = fn(lease.Context(), lease.Service(), args)
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, runtime.Watch.DropAt(lease.Epoch()))
+	}
+
+	return errors.Join(err, lease.Release())
 }
 
 // plainCommands are the commands that do not need the watch.
@@ -286,15 +319,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 		"music":        c.music,
 		"backup":       c.backup,
 	}
-}
-
-func (c *cli) open(ctx context.Context) (*garmin.Service, error) {
-	dev, err := openDevice(ctx, c.root, c.devID)
-	if err != nil {
-		return nil, err
-	}
-
-	return garmin.New(dev), nil
 }
 
 func openDevice(ctx context.Context, root, devID string) (device.Device, error) {
@@ -412,4 +436,54 @@ func parseScalar(v string) any {
 	}
 
 	return v
+}
+
+func deviceJob(cmd string, args []string) bool {
+	if cmd == "activities" || cmd == "backup" {
+		return true
+	}
+
+	if len(args) == 0 {
+		return false
+	}
+
+	return (cmd == cloudCommand && args[0] == "sync") || (cmd == "music" && (args[0] == "add" || args[0] == "rm"))
+}
+
+func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn deviceCommand, args []string) error {
+	if cmd == "activities" || cmd == cloudCommand {
+		return fn(ctx, nil, args)
+	}
+
+	release, err := c.runtime.Watch.Gate().EnterJob(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	bound, releaseEpoch, err := c.runtime.Watch.BindEpoch(ctx, c.epoch)
+	if err != nil {
+		return err
+	}
+	defer releaseEpoch()
+
+	return fn(bound, nil, args)
+}
+
+func (c *cli) withDeviceGroup(ctx context.Context, legacy *garmin.Service, body func(context.Context, *garmin.Service) error) error {
+	if c.runtime == nil {
+		return body(ctx, legacy)
+	}
+
+	lease, err := c.runtime.Watch.AcquireAt(ctx, c.epoch)
+	if err != nil {
+		return err
+	}
+
+	err = body(lease.Context(), lease.Service())
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, c.runtime.Watch.DropAt(lease.Epoch()))
+	}
+
+	return errors.Join(err, lease.Release())
 }
