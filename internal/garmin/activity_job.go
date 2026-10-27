@@ -128,7 +128,7 @@ func (c *ActivityCoordinator) run(key activityJobKey, scan *activityScan, job *a
 	defer cancel()
 
 	job.err = c.decode(ctx, key, scan.todo)
-	if job.err != nil {
+	if job.err != nil && !errors.Is(job.err, context.Canceled) {
 		slog.WarnContext(ctx, "activity decode failed", "error", job.err)
 	}
 

@@ -68,6 +68,28 @@ func (l *Lease) Release() error {
 // Acquire waits cancellably for one operation group, opening lazily if needed.
 func (l *Lazy) Acquire(ctx context.Context) (*Lease, error) { return l.AcquireAt(ctx, 0) }
 
+// AcquireCurrent scopes optional watch access without opening a new connection.
+// A nil lease means no watch was open; a retired epoch is never replaced here.
+func (l *Lazy) AcquireCurrent(ctx context.Context) (*Lease, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	l.mu.Lock()
+	closed, present, epoch := l.closed, l.svc != nil, l.epoch
+	l.mu.Unlock()
+
+	if closed {
+		return nil, lifecycle.ErrStopped
+	}
+
+	if !present {
+		return nil, nil
+	}
+
+	return l.AcquireAt(ctx, epoch)
+}
+
 // AcquireAt rejects a missing/changed expected connection without reopening.
 // An expected epoch of zero permits an independent operation to open lazily.
 func (l *Lazy) AcquireAt(ctx context.Context, expected ConnectionEpoch) (*Lease, error) {

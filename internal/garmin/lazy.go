@@ -59,6 +59,18 @@ func NewLazyWithGate(open Opener, gate *lifecycle.Gate) *Lazy {
 // Gate is the same admission owner used by this Manager's queued operations.
 func (l *Lazy) Gate() *lifecycle.Gate { return l.gate }
 
+// CurrentEpoch is a pure connection snapshot; zero means no open connection.
+func (l *Lazy) CurrentEpoch() ConnectionEpoch {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.closed || l.svc == nil {
+		return 0
+	}
+
+	return l.epoch
+}
+
 // Current is a legacy snapshot. A returned Service is not an operation lease.
 // New I/O callers must Acquire and release a Lease instead.
 func (l *Lazy) Current() *Service {
