@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -633,27 +631,6 @@ type UploadResult struct {
 	Skipped   int            `json:"skipped"`
 }
 
-type ledger map[string]string // watch path -> "size|modified"
-
-func (c *Cloud) ledgerPath(unit uint64) string {
-	return filepath.Join(c.cacheDir, fmt.Sprintf("uploaded-%d.json", unit))
-}
-
-func (c *Cloud) loadLedger(unit uint64) ledger {
-	l := ledger{}
-	if b, err := os.ReadFile(c.ledgerPath(unit)); err == nil {
-		_ = json.Unmarshal(b, &l)
-	}
-
-	return l
-}
-
-func (c *Cloud) saveLedger(unit uint64, l ledger) {
-	_ = os.MkdirAll(c.cacheDir, 0o700)
-	b, _ := json.MarshalIndent(l, "", " ")
-	_ = os.WriteFile(c.ledgerPath(unit), b, 0o600)
-}
-
 // Progress receives one line per file during Upload.
 type Progress func(msg string)
 
@@ -680,7 +657,12 @@ func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, e
 		progress = func(string) {}
 	}
 
-	run := &uploadRun{c: c, led: c.loadLedger(dx.UnitID), res: &UploadResult{}, consentDenied: map[string]bool{}, progress: progress}
+	led, err := c.loadLedger(dx.UnitID)
+	if err != nil {
+		return nil, fmt.Errorf("load upload ledger: %w", err)
+	}
+
+	run := &uploadRun{c: c, led: led, res: &UploadResult{}, consentDenied: map[string]bool{}, progress: progress}
 
 	for _, dt := range dx.DataTypes {
 		t, ok := uploadTargets[dt.Name]
@@ -698,7 +680,9 @@ func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, e
 			}
 		}
 
-		c.saveLedger(dx.UnitID, run.led)
+		if err := c.saveLedger(dx.UnitID, run.led); err != nil {
+			return run.res, fmt.Errorf("save upload ledger: %w", err)
+		}
 	}
 
 	return run.res, nil

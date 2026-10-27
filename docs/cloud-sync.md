@@ -41,6 +41,11 @@ the separate Windows/WSL stores.
 downloads and acknowledges Connect's queued files. Uploaded recordings remain
 on the watch. Garmin's duplicate responses are recorded to avoid repeat uploads.
 
+A damaged or unreadable local upload ledger stops uploads and reports an error.
+If Garmin accepts files but saving that ledger fails, the sync result retains
+the accepted files and reports the save error. Fix the local storage problem
+before retrying; garminctl does not automatically replay that upload.
+
 Queued files can include settings, Connect IQ apps and updates, workouts,
 courses, and personal records. Availability depends on the device and Connect's
 queue. `cloud messages` lists that queue. Use `cloud sync -no-upload` or
