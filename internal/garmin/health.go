@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/paths"
 )
@@ -151,11 +153,17 @@ type ActivityList struct {
 	Total      int               `json:"total"`
 }
 
-// activityJobs tracks the one background decode per watch.
+// activityJobs shares decode ownership for Services using the same cache file.
+// Runtime-owned job cancellation and per-file leases are integrated separately.
 var activityJobs = struct {
 	sync.Mutex
-	running map[uint64]bool
-}{running: map[uint64]bool{}}
+	running map[string]*activityDecodeJob
+}{running: map[string]*activityDecodeJob{}}
+
+type activityDecodeJob struct {
+	done chan struct{}
+	err  error // published before closing done
+}
 
 // activityCacheMu serialises access to the on-disk activity caches, which
 // every Service for the same watch shares.
@@ -178,76 +186,149 @@ func loadActivityCache(cp string) activityCache {
 	return cache
 }
 
-// saveActivityCache writes the cache atomically. The caller holds activityCacheMu.
-func saveActivityCache(cp string, cache activityCache) {
+// saveActivityCache replaces a complete cache. The caller holds activityCacheMu.
+func saveActivityCache(cp string, cache activityCache) (err error) {
 	b, err := json.MarshalIndent(cache, "", " ")
 	if err != nil {
-		return
+		return err
 	}
 
-	_ = os.MkdirAll(filepath.Dir(cp), 0o700)
-
-	tmp := cp + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err == nil {
-		_ = os.Rename(tmp, cp)
+	if err := os.MkdirAll(filepath.Dir(cp), 0o700); err != nil {
+		return err
 	}
+
+	f, err := os.CreateTemp(filepath.Dir(cp), ".activities-*.tmp")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = f.Close() // close the descriptor on failure; successful close is checked below
+		if cleanupErr := os.Remove(f.Name()); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
+
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), cp)
 }
 
-// decodeActivities reads and summarises the named files. The cache is read
-// once and rewritten after every file, so a concurrent Activities call sees
-// the progress; only one decode runs per watch (startActivityJob).
-func (s *Service) decodeActivities(ctx context.Context, cp string, names []string) {
+// mergeActivityCache reads current entries and replaces the cache under one lock.
+// The caller has already finished device I/O and never holds this lock over USB.
+func mergeActivityCache(cp string, a ActivitySummary) error {
 	activityCacheMu.Lock()
-	cache := loadActivityCache(cp)
-	activityCacheMu.Unlock()
+	defer activityCacheMu.Unlock()
 
-	for _, n := range names {
-		if ctx.Err() != nil {
-			return
+	cache := loadActivityCache(cp)
+	cache.Entries[a.File] = a
+
+	return saveActivityCache(cp, cache)
+}
+
+func cachedActivity(cp string, entry device.Entry) bool {
+	activityCacheMu.Lock()
+	defer activityCacheMu.Unlock()
+
+	a, ok := loadActivityCache(cp).Entries[entry.Name]
+
+	return ok && a.Size == entry.Size
+}
+
+// decodeActivities rechecks entries after obtaining decode ownership and merges
+// each result into the latest cache, including independent concurrent entries.
+func (s *Service) decodeActivities(ctx context.Context, cp string, entries []device.Entry) error {
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
-		data, err := s.dev.Read(ctx, "GARMIN/Activity/"+n)
-		if err != nil {
+		if cachedActivity(cp, entry) {
 			continue
 		}
 
-		a, err := s.summarize(data, n)
+		data, err := s.dev.Read(ctx, "GARMIN/Activity/"+entry.Name)
 		if err != nil {
-			a = ActivitySummary{File: n, Sport: "unreadable", Size: int64(len(data))}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			continue
 		}
 
-		cache.Entries[a.File] = a
+		a, err := s.summarize(data, entry.Name)
+		if err != nil {
+			a = ActivitySummary{File: entry.Name, Sport: "unreadable", Size: int64(len(data))}
+		}
 
-		activityCacheMu.Lock()
-		saveActivityCache(cp, cache)
-		activityCacheMu.Unlock()
+		if err := mergeActivityCache(cp, a); err != nil {
+			return fmt.Errorf("save activity cache: %w", err)
+		}
 	}
+
+	return nil
 }
 
-// startActivityJob decodes todo in the background unless a job for this
-// watch is already running. The job outlives the request that started it.
-func (s *Service) startActivityJob(ctx context.Context, unit uint64, cp string, todo []string) {
+// reserveActivityJob publishes ownership before either background or wait=true
+// decoding begins. A waiter joins its handle rather than starting another read.
+func reserveActivityJob(cp string) (*activityDecodeJob, bool) {
 	activityJobs.Lock()
 	defer activityJobs.Unlock()
 
-	if activityJobs.running[unit] {
-		return
+	if job := activityJobs.running[cp]; job != nil {
+		return job, false
 	}
 
-	activityJobs.running[unit] = true
+	job := &activityDecodeJob{done: make(chan struct{})}
+	activityJobs.running[cp] = job
 
-	bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
+	return job, true
+}
 
-	go func() {
-		defer cancel()
-		defer func() {
-			activityJobs.Lock()
-			activityJobs.running[unit] = false
-			activityJobs.Unlock()
-		}()
+func (s *Service) runActivityJob(ctx context.Context, cp string, todo []device.Entry, job *activityDecodeJob) {
+	job.err = s.decodeActivities(ctx, cp, todo)
 
-		s.decodeActivities(bctx, cp, todo)
-	}()
+	activityJobs.Lock()
+	delete(activityJobs.running, cp)
+	close(job.done)
+	activityJobs.Unlock()
+}
+
+func (s *Service) decodeOrJoin(ctx context.Context, cp string, todo []device.Entry, wait bool) error {
+	job, started := reserveActivityJob(cp)
+	if started {
+		if wait {
+			s.runActivityJob(ctx, cp, todo, job)
+		} else {
+			bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
+			go func() {
+				defer cancel()
+
+				s.runActivityJob(bctx, cp, todo, job)
+
+				if job.err != nil {
+					slog.WarnContext(bctx, "activity decode failed", "error", job.err)
+				}
+			}()
+		}
+	}
+
+	if !wait {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-job.done:
+		return job.err
+	}
 }
 
 // Activities lists the activities on the watch. Files not decoded before are
@@ -270,7 +351,7 @@ func (s *Service) Activities(ctx context.Context, wait bool) (*ActivityList, err
 	cache := loadActivityCache(cp)
 	activityCacheMu.Unlock()
 
-	var todo []string
+	var todo []device.Entry
 
 	out := &ActivityList{}
 
@@ -283,18 +364,19 @@ func (s *Service) Activities(ctx context.Context, wait bool) (*ActivityList, err
 		if c, ok := cache.Entries[e.Name]; ok && c.Size == e.Size {
 			out.Activities = append(out.Activities, c)
 		} else {
-			todo = append(todo, e.Name)
+			todo = append(todo, e)
 		}
 	}
 
-	if len(todo) > 0 && wait {
-		s.decodeActivities(ctx, cp, todo)
-
-		return s.Activities(ctx, false)
-	}
-
 	if len(todo) > 0 {
-		s.startActivityJob(ctx, dx.UnitID, cp, todo)
+		if err := s.decodeOrJoin(ctx, cp, todo, wait); err != nil {
+			return nil, err
+		}
+
+		if wait {
+			return s.Activities(ctx, false)
+		}
+
 		out.Pending = len(todo)
 	}
 
