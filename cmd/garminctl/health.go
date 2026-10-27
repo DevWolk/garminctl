@@ -226,7 +226,12 @@ func (c *cli) healthDay(ctx context.Context, cloud *garmin.Cloud, date string) e
 	return nil
 }
 
-func (c *cli) healthDaily(ctx context.Context, cloud *garmin.Cloud, args []string) error {
+type dailyHealthReader interface {
+	Daily(context.Context, int) ([]garmin.DailyHealth, error)
+	History(context.Context, int) ([]garmin.DailyHealth, error)
+}
+
+func (c *cli) healthDaily(ctx context.Context, cloud dailyHealthReader, args []string) error {
 	fs := c.flagSet("health")
 	days := fs.Int("days", defaultHealthDays, "days to show")
 
@@ -234,7 +239,16 @@ func (c *cli) healthDaily(ctx context.Context, cloud *garmin.Cloud, args []strin
 		return err
 	}
 
-	rows, err := cloud.Daily(ctx, *days)
+	var (
+		rows []garmin.DailyHealth
+		err  error
+	)
+	if *days > defaultHealthDays {
+		rows, err = cloud.History(ctx, *days)
+	} else {
+		rows, err = cloud.Daily(ctx, *days)
+	}
+
 	if err != nil {
 		return err
 	}
