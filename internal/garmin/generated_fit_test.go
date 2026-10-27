@@ -2,12 +2,16 @@ package garmin
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 func TestGeneratedFITPreservesExistingBytes(t *testing.T) {
@@ -34,6 +38,61 @@ func TestGeneratedFITPreservesExistingBytes(t *testing.T) {
 	}
 
 	assertGeneratedFIT(t, workout, "5a39997cfb75ce656e78a2ea207c35ab8bb74407a572ca84c7fe2edc68a86d9f")
+}
+
+func TestBuildChangeFilePropagatesEncodingFailure(t *testing.T) {
+	t.Parallel()
+
+	arrayIndex := math.MaxUint8 + 1
+	for _, change := range []ResolvedChange{
+		{Index: math.MaxUint16 + 1, MesgNum: 2, FieldNum: 58, Raw: 1500},
+		{ArrayIndex: &arrayIndex, MesgNum: 2, FieldNum: 58, Raw: 1500},
+	} {
+		data, err := BuildChangeFile([]ResolvedChange{change}, 1, 1, time.Unix(1700000000, 0))
+		if err == nil || data != nil {
+			t.Fatalf("invalid field produced a partial FIT: %x, %v", data, err)
+		}
+	}
+}
+
+type fitWriteDevice struct {
+	device.Device
+	writes int
+}
+
+func (d *fitWriteDevice) Write(ctx context.Context, path string, data []byte) error {
+	d.writes++
+	return d.Device.Write(ctx, path, data)
+}
+
+func TestApplyChangesDoesNotWriteAfterEncodingFailure(t *testing.T) {
+	t.Parallel()
+
+	fs, err := device.NewDirFS(testdump.Root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = fs.Close() })
+
+	d := &fitWriteDevice{Device: fs}
+	change := Change{Mesg: "2", Field: "58", Index: math.MaxUint16 + 1, Value: 1500}
+
+	result, err := New(d).ApplyChanges(t.Context(), []Change{change})
+	if err == nil || result != nil || d.writes != 0 {
+		t.Fatalf("invalid settings staged: result=%+v error=%v writes=%d", result, err, d.writes)
+	}
+}
+
+func TestWorkoutFITRejectsUnencodableStepCount(t *testing.T) {
+	t.Parallel()
+
+	w := &WorkoutSpec{Name: "too many steps", Sport: sportRunning, Steps: make([]StepSpec, math.MaxUint16+1)}
+
+	data, err := w.FIT(1, time.Unix(1700000000, 0))
+	if err == nil || data != nil {
+		t.Fatalf("invalid workout produced a partial FIT: bytes=%d error=%v", len(data), err)
+	}
 }
 
 func assertGeneratedFIT(t *testing.T, data []byte, hash string) {

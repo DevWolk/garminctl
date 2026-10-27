@@ -382,7 +382,8 @@ func decodeScalar(bt BaseType, raw []byte, bigEndian bool) any {
 
 // SetValue encodes v into the field in place. The field keeps its size; a
 // scalar v fills element 0 and leaves other elements untouched, a slice fills
-// elements from the start. nil writes the invalid value.
+// elements from the start. nil writes the invalid value. A rejected value leaves
+// all existing bytes unchanged, including when the last slice element fails.
 func (f *Field) SetValue(v any, bigEndian bool) error {
 	bt := f.Def.BaseType
 	if bt == BaseString {
@@ -408,15 +409,18 @@ func (f *Field) SetValue(v any, bigEndian bool) error {
 
 	switch vv := v.(type) {
 	case []any:
-		if len(vv)*size > len(f.Raw) {
+		if len(vv) > len(f.Raw)/size {
 			return fmt.Errorf("field %d: %d elements do not fit in %d bytes", f.Def.Num, len(vv), len(f.Raw))
 		}
 
+		encoded := make([]byte, len(vv)*size)
 		for i, e := range vv {
-			if err := encodeScalar(bt, f.Raw[i*size:(i+1)*size], e, bigEndian); err != nil {
+			if err := encodeScalar(bt, encoded[i*size:(i+1)*size], e, bigEndian); err != nil {
 				return fmt.Errorf("field %d[%d]: %w", f.Def.Num, i, err)
 			}
 		}
+
+		copy(f.Raw, encoded)
 
 		return nil
 	default:
@@ -433,7 +437,7 @@ func (f *Field) SetElement(idx int, v any, bigEndian bool) error {
 	bt := f.Def.BaseType
 
 	size := bt.Size()
-	if bt == BaseString || (idx+1)*size > len(f.Raw) {
+	if bt == BaseString || idx < 0 || idx >= len(f.Raw)/size {
 		return fmt.Errorf("field %d: element %d out of range", f.Def.Num, idx)
 	}
 
@@ -450,7 +454,7 @@ func encodeScalar(bt BaseType, dst []byte, v any, bigEndian bool) error {
 	case BaseFloat32, BaseFloat64:
 		return encodeFloat(bt, dst, v, bigEndian)
 	default:
-		bits, err := toBits(v)
+		bits, err := integerBits(bt, v)
 		if err != nil {
 			return err
 		}
@@ -459,21 +463,6 @@ func encodeScalar(bt BaseType, dst []byte, v any, bigEndian bool) error {
 
 		return nil
 	}
-}
-
-// toBits is the two's-complement bit pattern of any integer kind, which is
-// what a FIT field stores; a uint64 above MaxInt64 stays intact.
-func toBits(v any) (uint64, error) {
-	if u, ok := unsignedInt(v); ok {
-		return u, nil
-	}
-
-	iv, err := toInt(v)
-	if err != nil {
-		return 0, err
-	}
-
-	return uint64(iv), nil //nolint:gosec // the bit pattern is the point
 }
 
 func encodeFloat(bt BaseType, dst []byte, v any, bigEndian bool) error {
@@ -559,6 +548,11 @@ func unsignedInt(v any) (uint64, bool) {
 func floatToInt(x float64) (int64, error) {
 	if x != math.Trunc(x) {
 		return 0, fmt.Errorf("integer expected, got %v", x)
+	}
+
+	// float64(MaxInt64) rounds up to 2^63, so the upper bound is exclusive.
+	if x < -0x1p63 || x >= 0x1p63 {
+		return 0, fmt.Errorf("integer %v is outside int64 range", x)
 	}
 
 	return int64(x), nil
