@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -219,7 +220,9 @@ func Fetch(ctx context.Context, appID string, version int, partNumber string) (*
 // CacheDir returns where schemas are cached.
 func CacheDir() string { return filepath.Join(paths.Cache(), "appsettings") }
 
-// Load returns the schema from the cache, fetching it when missing.
+// Load returns the schema from the cache, fetching it when missing. Cache
+// persistence is best effort: failure logs a warning without discarding fetched
+// settings. A successful return does not guarantee a durable cache entry.
 func Load(ctx context.Context, appID string, version int, partNumber string) (*Schema, error) {
 	if err := checkIDs(appID, partNumber); err != nil {
 		return nil, err
@@ -238,12 +241,45 @@ func Load(ctx context.Context, appID string, version int, partNumber string) (*S
 		return nil, err
 	}
 
-	if b, err := json.MarshalIndent(s, "", " "); err == nil {
-		_ = os.MkdirAll(CacheDir(), 0o750)
-		_ = os.WriteFile(path, b, 0o600)
+	if err := saveSchema(path, s); err != nil {
+		slog.WarnContext(ctx, "settings schema cache write failed", "appID", appID, "version", version, "partNumber", partNumber, "error", err)
 	}
 
 	return s, nil
+}
+
+// saveSchema replaces a whole cache entry without truncating a previous entry.
+func saveSchema(path string, schema *Schema) (err error) {
+	data, err := json.MarshalIndent(schema, "", " ")
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+
+	f, err := os.CreateTemp(filepath.Dir(path), ".schema-*.tmp")
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = f.Close() // release descriptor on failure; the successful close is checked below
+		if cleanupErr := os.Remove(f.Name()); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
+
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(f.Name(), path)
 }
 
 // Parse extracts the settings from the page HTML.

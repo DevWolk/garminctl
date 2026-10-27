@@ -103,6 +103,10 @@ with `software` and/or `apps` messages. Per-app errors also remain on their app
 rows. A failed check returns exit status 1 in text and JSON modes; an interrupted
 check returns 130. Successful JSON output omits `errors`.
 
+App settings schemas are cached locally. If the cache cannot be written, garminctl
+logs a warning and continues using the fetched schema; a later run may fetch it
+again.
+
 ## Health, workouts, music, and store
 
 ```text
