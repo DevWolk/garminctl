@@ -570,7 +570,7 @@ type DailyHealth struct {
 }
 
 func (c *Cloud) displayName(ctx context.Context) (string, error) {
-	st := c.Status(ctx)
+	st := c.identityStatus(ctx)
 	if !st.LoggedIn {
 		return "", errors.New("not signed in to Garmin Connect")
 	}

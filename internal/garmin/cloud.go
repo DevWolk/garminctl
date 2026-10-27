@@ -62,6 +62,17 @@ type CloudStatus struct {
 
 // Status reports the session and whether this watch is on the account.
 func (c *Cloud) Status(ctx context.Context) *CloudStatus {
+	st := c.identityStatus(ctx)
+	if st.Profile != nil && (c.svc != nil || c.watch != nil) {
+		c.registration(ctx, st)
+	}
+
+	return st
+}
+
+// identityStatus keeps account/profile lookup independent of watch registration.
+// The profile cache remains scoped to this Cloud, including Forget behavior.
+func (c *Cloud) identityStatus(ctx context.Context) *CloudStatus {
 	st := &CloudStatus{LoggedIn: c.gc.LoggedIn(), Email: c.gc.Email()}
 	if err := c.gc.StoreError(); err != nil {
 		st.Error = err.Error()
@@ -83,10 +94,6 @@ func (c *Cloud) Status(ctx context.Context) *CloudStatus {
 	}
 
 	st.Profile = p
-
-	if c.svc != nil || c.watch != nil {
-		c.registration(ctx, st)
-	}
 
 	return st
 }
