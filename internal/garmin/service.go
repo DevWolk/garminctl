@@ -27,10 +27,11 @@ type Service struct {
 	// unless a test points it at a fake server.
 	UpdatesURL string
 
-	mu      sync.Mutex
-	cache   map[string][]byte
-	schemas map[string]*ciqstore.Schema
-	gen     int // device reconnect count the cache belongs to
+	mu              sync.Mutex
+	cache           map[string][]byte
+	schemas         map[string]*ciqstore.Schema
+	cacheGeneration uint64
+	reconnectCount  int
 }
 
 // New wraps a device.
@@ -57,40 +58,9 @@ func (s *Service) Knowledge() *Knowledge { return s.know }
 // reconnecter is implemented by devices that reopen themselves after an unplug.
 type reconnecter interface{ Reconnects() int }
 
-func (s *Service) read(ctx context.Context, p string, cached bool) ([]byte, error) {
-	if r, ok := s.dev.(reconnecter); ok {
-		s.mu.Lock()
-		if g := r.Reconnects(); g != s.gen {
-			s.cache = map[string][]byte{} // the watch was replugged; it may have rewritten its files
-			s.gen = g
-		}
-		s.mu.Unlock()
-	}
-
-	if cached {
-		s.mu.Lock()
-		b, ok := s.cache[strings.ToLower(p)]
-		s.mu.Unlock()
-
-		if ok {
-			return b, nil
-		}
-	}
-
-	b, err := s.dev.Read(ctx, p)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", p, err)
-	}
-
-	s.mu.Lock()
-	s.cache[strings.ToLower(p)] = b
-	s.mu.Unlock()
-
-	return b, nil
-}
-
 func (s *Service) invalidate(p string) {
 	s.mu.Lock()
+	s.cacheGeneration++
 	delete(s.cache, strings.ToLower(p))
 	s.mu.Unlock()
 }
@@ -98,6 +68,7 @@ func (s *Service) invalidate(p string) {
 // Refresh drops cached file contents.
 func (s *Service) Refresh() {
 	s.mu.Lock()
+	s.cacheGeneration++
 	s.cache = map[string][]byte{}
 	s.mu.Unlock()
 }
