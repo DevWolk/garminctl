@@ -87,8 +87,10 @@ garminctl settings set 'hrZone[5].highBpm=180' 'deviceSettings.104[4]=8'
 ```
 
 Device settings write change files to `GARMIN/NewFiles`; they never rewrite
-`GARMIN/Settings/Settings.fit`. App-list changes use `GARMIN/Apps/IN.BIN` and
-attempt a registry backup in the [cache directory](desktop.md#data-updates-and-uninstall).
+`GARMIN/Settings/Settings.fit`. App-list changes use `GARMIN/Apps/IN.BIN` only
+after writing and reading back a private registry backup in the
+[cache directory](desktop.md#data-updates-and-uninstall). If the backup fails,
+the command returns an error without changing `IN.BIN`.
 The watch applies queued changes and completes app removal after USB
 disconnection. App `.SET` files are rewritten immediately. Fields marked `managedByConnect`
 also need changing in [Connect settings](cloud-sync.md#manual-sync).

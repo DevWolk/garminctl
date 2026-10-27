@@ -87,6 +87,13 @@ Linux paths respect `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`. Windows and WSL have
 separate data directories, so switching between them can require another
 Connect sign-in.
 
+Before staging an app-list visibility change, garminctl saves and reads back
+`OUT.BIN` in a unique `OUT.BIN-<timestamp>-<suffix>/OUT.BIN` snapshot under the
+cache directory. Directory/file access is restricted to the current user.
+If that backup fails, the visibility change is not written. Successful copies
+remain available even if the subsequent device write fails; cache removal also
+removes these recovery copies.
+
 ### Update an installed package
 
 Choose **Help → Download updates…** in the desktop app, or open

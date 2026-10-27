@@ -146,8 +146,9 @@ results. A missing schema does not imply a missing `.SET` file.
 
 [`SetAppHidden`](../internal/garmin/appsconfig_write.go) uses pending `IN.BIN`
 as its base when present, otherwise `OUT.BIN`. It refuses writes if identity
-re-encoding changes any bytes, changes field 4 for the matched entry, attempts
-an `OUT.BIN` backup, and writes `IN.BIN`. Finish the USB session before checking
+re-encoding changes any bytes, changes field 4 for the matched entry, writes
+and reads back a private `OUT.BIN` backup, then writes `IN.BIN`. Backup failure
+prevents the device write. Finish the USB session before checking
 visibility on the watch.
 
 [`InstallPRG`](../internal/garmin/updates.go) performs a minimal header check

@@ -4,13 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/paths"
 )
 
 // PathAppsIn is the pending app registry, encoded like OUT.BIN. The watch
@@ -148,26 +144,11 @@ func setHiddenFlag(f []pbField, hidden bool) bool {
 	return found
 }
 
-// backupRegistry keeps a copy of OUT.BIN next to the caches and returns its
-// path, or "" when it could not be written.
-func backupRegistry(out []byte) string {
-	dir := paths.Cache()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return ""
-	}
-
-	backup := filepath.Join(dir, "OUT.BIN-"+time.Now().Format("20060102-150405"))
-	if err := os.WriteFile(backup, out, 0o600); err != nil {
-		return ""
-	}
-
-	return backup
-}
-
 // SetAppHidden hides an activity, glance or app from the watch's lists or
 // shows it again, by writing IN.BIN with that one flag changed. A pending
 // IN.BIN is used as the base, so several changes can be queued before the
-// unplug that applies them. An OUT.BIN backup is attempted in the cache directory.
+// unplug that applies them. A private OUT.BIN backup in the cache directory must
+// be written and read back successfully before IN.BIN is changed.
 // ref matches the app's name, file id or store id.
 func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (backup string, err error) {
 	out, err := s.read(ctx, PathAppsConfig, false)
@@ -216,7 +197,10 @@ func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (ba
 		return "", fmt.Errorf("%q matches %d registry entries (a glance and an app share the name); use the store id", ref, hits)
 	}
 
-	backup = backupRegistry(out)
+	backup, err = backupRegistry(out)
+	if err != nil {
+		return "", fmt.Errorf("back up app registry before staging changes: %w", err)
+	}
 
 	if err := s.dev.Write(ctx, PathAppsIn, in); err != nil {
 		return backup, err
