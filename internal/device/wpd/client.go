@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
@@ -32,13 +33,24 @@ var script string
 
 // Bridge is a running PowerShell bridge process.
 type Bridge struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	out    *bufio.Reader
-	stderr *strings.Builder
-	mu     sync.Mutex
-	nextID int
-	closed bool
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	stdout      io.ReadCloser
+	out         *bufio.Reader
+	stderr      *bridgeDiagnostics
+	mu          sync.Mutex
+	nextID      int
+	closed      atomic.Bool
+	workers     sync.Once
+	stopOnce    sync.Once
+	closeOnce   sync.Once
+	stop        chan struct{}
+	responses   chan response
+	readerDone  chan struct{}
+	processDone chan struct{}
+	readErr     error // published by closing responses
+	waitErr     error // published by closing processDone
+	closeErr    error // published by closeOnce
 }
 
 type response struct {
@@ -141,20 +153,8 @@ func Start(ctx context.Context) (*Bridge, error) {
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), ps, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", sp)
 	hostexec.HideConsole(cmd)
 
-	stdin, err := cmd.StdinPipe()
+	b, err := startBridge(cmd)
 	if err != nil {
-		return nil, err
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-
-	b := &Bridge{cmd: cmd, stdin: stdin, out: bufio.NewReaderSize(stdout, 1<<20), stderr: &strings.Builder{}}
-
-	cmd.Stderr = b.stderr
-	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 
@@ -163,45 +163,14 @@ func Start(ctx context.Context) (*Bridge, error) {
 
 	resp, err := b.readResponse(readyCtx)
 	if err != nil {
-		err = fmt.Errorf("bridge did not start: %w (%s)", err, strings.TrimSpace(b.stderr.String()))
-		return nil, errors.Join(err, b.Close())
+		return nil, fmt.Errorf("bridge did not start: %w", b.fail(err))
 	}
 
-	if !resp.Ready {
-		return nil, errors.Join(fmt.Errorf("bridge did not report ready: %s", resp.Error), b.Close())
+	if !resp.Ready || !resp.OK || resp.ID != 0 {
+		return nil, b.fail(errors.New("bridge did not report ready"))
 	}
 
 	return b, nil
-}
-
-func (b *Bridge) readResponse(ctx context.Context) (*response, error) {
-	type result struct {
-		line []byte
-		err  error
-	}
-
-	ch := make(chan result, 1)
-
-	go func() {
-		line, err := b.out.ReadBytes('\n')
-		ch <- result{line, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case r := <-ch:
-		if r.err != nil && len(r.line) == 0 {
-			return nil, fmt.Errorf("bridge exited: %w", r.err)
-		}
-
-		var resp response
-		if err := json.Unmarshal(r.line, &resp); err != nil {
-			return nil, errors.New("bridge sent invalid JSON")
-		}
-
-		return &resp, nil
-	}
 }
 
 func asciiJSON(v any) ([]byte, error) {
@@ -246,7 +215,7 @@ func (b *Bridge) call(ctx context.Context, req map[string]any) (*response, error
 		return nil, err
 	}
 
-	if b.closed {
+	if b.closed.Load() {
 		return nil, fmt.Errorf("%w: bridge closed", device.ErrDisconnected)
 	}
 
@@ -258,19 +227,59 @@ func (b *Bridge) call(ctx context.Context, req map[string]any) (*response, error
 		return nil, err
 	}
 
-	if _, err := b.stdin.Write(append(data, '\n')); err != nil {
-		b.closed = true
-		return nil, fmt.Errorf("%w: bridge write: %w", device.ErrDisconnected, err)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if b.closed.Load() {
+		return nil, fmt.Errorf("%w: bridge closed", device.ErrDisconnected)
+	}
+
+	b.startWorkers()
+	// Admission arms cancellation for blocked pipe writes as well as reads.
+	// abort does not take mu, which is held throughout this exchange.
+	stop := context.AfterFunc(ctx, b.abort)
+	defer func() {
+		if !stop() {
+			// Finish an already scheduled abort before releasing the call lock.
+			b.abort()
+		}
+	}()
+
+	return b.exchange(ctx, append(data, '\n'))
+}
+
+// exchange runs with mu held and the caller's cancellation hook armed.
+func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
+	n, err := b.stdin.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+
+	if err != nil {
+		return nil, b.fail(errors.Join(ctx.Err(), fmt.Errorf("bridge write: %w", err)))
 	}
 
 	resp, err := b.readResponse(ctx)
 	if err != nil {
-		b.closed = true
-		return nil, fmt.Errorf("%w: %w", device.ErrDisconnected, err)
+		return nil, b.fail(err)
+	}
+
+	if resp.ID != b.nextID || resp.Ready {
+		return nil, b.fail(errors.New("bridge response ID does not match request"))
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, b.fail(err)
 	}
 
 	if !resp.OK {
-		return nil, remoteError(resp.Error)
+		err := remoteError(resp.Error)
+		if errors.Is(err, device.ErrDisconnected) {
+			return nil, b.fail(err)
+		}
+
+		return nil, err
 	}
 
 	return resp, nil
@@ -301,29 +310,6 @@ func validateRequestPath(req map[string]any) error {
 	path, _ := req["path"].(string)
 	if slices.Contains(strings.Split(strings.ReplaceAll(path, "\\", "/"), "/"), "..") {
 		return fmt.Errorf("%w: invalid watch path", device.ErrInvalidArgument)
-	}
-
-	return nil
-}
-
-// Close stops the bridge process.
-func (b *Bridge) Close() error {
-	b.mu.Lock()
-	if !b.closed {
-		b.closed = true
-		_, _ = b.stdin.Write([]byte(`{"id":0,"op":"quit"}` + "\n"))
-		_ = b.stdin.Close()
-	}
-	b.mu.Unlock()
-
-	done := make(chan struct{})
-
-	go func() { _ = b.cmd.Wait(); close(done) }()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		_ = b.cmd.Process.Kill()
 	}
 
 	return nil
@@ -367,12 +353,14 @@ func trimInfo(list []device.Info) []device.Info {
 
 // Device is an opened MTP device.
 type Device struct {
-	mu         sync.Mutex
-	bridge     *Bridge
-	info       device.Info
-	reconnects int
-	open       func(context.Context, string) (*Device, error)
-	closed     bool
+	mu           sync.Mutex
+	bridge       *Bridge
+	info         device.Info
+	reconnects   int
+	open         func(context.Context, string) (*Device, error)
+	closed       bool
+	reopening    chan struct{}
+	cancelReopen context.CancelFunc
 }
 
 var (
@@ -510,32 +498,10 @@ func (d *Device) call(ctx context.Context, req map[string]any) (*response, error
 		return nil, err
 	}
 
-	d.mu.Lock()
-	if d.closed {
-		d.mu.Unlock()
-		return nil, fmt.Errorf("%w: WPD device closed", device.ErrDisconnected)
+	b, oerr := d.reopen(ctx, b)
+	if oerr != nil {
+		return nil, fmt.Errorf("%w: the watch connection was lost and could not be reopened: %w", device.ErrDisconnected, errors.Join(err, oerr))
 	}
-
-	if d.bridge == b { // nobody else reopened it yet
-		_ = b.Close()
-
-		open := d.open
-		if open == nil {
-			open = Open
-		}
-
-		fresh, oerr := open(ctx, d.info.ID)
-		if oerr != nil {
-			d.mu.Unlock()
-			return nil, fmt.Errorf("%w: the watch connection was lost and could not be reopened: %w", device.ErrDisconnected, errors.Join(err, oerr))
-		}
-
-		d.bridge = fresh.bridge
-		d.reconnects++
-	}
-
-	b = d.bridge
-	d.mu.Unlock()
 
 	return b.call(ctx, cloneReq(req))
 }
@@ -688,9 +654,27 @@ func (d *Device) MtpNoData(ctx context.Context, opcode uint32, params []uint32) 
 // Close implements device.Device.
 func (d *Device) Close() error {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	d.closed = true
+	if d.cancelReopen != nil {
+		d.cancelReopen()
+	}
 
-	return d.bridge.Close()
+	b, reopening := d.bridge, d.reopening
+	d.mu.Unlock()
+
+	err := b.Close()
+
+	if reopening != nil {
+		timer := time.NewTimer(bridgeCleanupTimeout)
+		defer timer.Stop()
+
+		select {
+		case <-reopening:
+		case <-timer.C:
+			err = errors.Join(err, errors.New("WPD reopen cleanup timed out"))
+		}
+	}
+
+	return err
 }

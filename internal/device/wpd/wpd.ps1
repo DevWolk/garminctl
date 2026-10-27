@@ -715,7 +715,7 @@ while ($true) {
             'mtpread' { [uint32]$code = 0; [uint32[]]$rp = @(); $data = $wpd.MtpRead([uint32]$req.opcode, [uint32[]]@($req.params), [ref]$code, [ref]$rp); $resp.b64 = [Convert]::ToBase64String($data); $resp.code = $code; $resp.params = @($rp) }
             'mtpwrite' { [uint32]$code = 0; [uint32[]]$rp = @(); $wpd.MtpWrite([uint32]$req.opcode, [uint32[]]@($req.params), [Convert]::FromBase64String($req.b64), [ref]$code, [ref]$rp); $resp.code = $code; $resp.params = @($rp) }
             'mtpnodata' { [uint32]$code = 0; [uint32[]]$rp = @(); $wpd.MtpNoData([uint32]$req.opcode, [uint32[]]@($req.params), [ref]$code, [ref]$rp); $resp.code = $code; $resp.params = @($rp) }
-            'quit'    { Reply @{ id = $req.id; ok = $true }; break }
+            'quit'    { $wpd.Close(); Reply @{ id = $req.id; ok = $true }; exit 0 }
             default   { $resp.ok = $false; $resp.error = ('unknown op ' + $req.op) }
         }
         Reply $resp
@@ -725,3 +725,6 @@ while ($true) {
         Reply @{ id = $req.id; ok = $false; error = $msg }
     }
 }
+
+# Closing stdin is the graceful shutdown path used by the Go owner.
+$wpd.Close()

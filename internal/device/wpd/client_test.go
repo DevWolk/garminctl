@@ -29,7 +29,7 @@ func (*bridgeInput) Close() error { return nil }
 
 func scriptedBridge(reply string) (*Bridge, *bridgeInput) {
 	input := &bridgeInput{}
-	b := &Bridge{cmd: &exec.Cmd{}, stdin: input, out: bufio.NewReader(strings.NewReader(reply)), stderr: &strings.Builder{}}
+	b := &Bridge{cmd: &exec.Cmd{}, stdin: input, out: bufio.NewReader(strings.NewReader(reply)), stderr: &bridgeDiagnostics{}}
 
 	return b, input
 }
@@ -78,7 +78,7 @@ func TestIndependentPathReadRetriesOnlyOnce(t *testing.T) {
 	}}
 
 	data, err := d.Read(t.Context(), "GARMIN/test.txt")
-	if err != nil || string(data) != "sample" || opens != 1 || freshInput.writes != 1 || oldInput.writes != 2 || d.Reconnects() != 1 {
+	if err != nil || string(data) != "sample" || opens != 1 || freshInput.writes != 1 || oldInput.writes != 1 || d.Reconnects() != 1 {
 		t.Fatalf("independent read: data=%q, err=%v, opens=%d", data, err, opens)
 	}
 }
@@ -128,8 +128,8 @@ func TestBridgeRejectsBeforeIOWithoutBreakingSession(t *testing.T) {
 				cancel()
 			}
 
-			if _, err := b.call(ctx, tt.req); !errors.Is(err, tt.want) || errors.Is(err, device.ErrDisconnected) || b.closed || input.writes != 0 {
-				t.Fatalf("rejection: %v, closed=%t, writes=%d", err, b.closed, input.writes)
+			if _, err := b.call(ctx, tt.req); !errors.Is(err, tt.want) || errors.Is(err, device.ErrDisconnected) || b.closed.Load() || input.writes != 0 {
+				t.Fatalf("rejection: %v, closed=%t, writes=%d", err, b.closed.Load(), input.writes)
 			}
 
 			if _, err := b.call(t.Context(), pathReq("read", "GARMIN/test.txt")); err != nil {
@@ -192,7 +192,7 @@ func TestBridgeCancelledAfterWriteIsDisconnected(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	b := &Bridge{stdin: cancelInput{cancel: cancel}, out: bufio.NewReader(reader)}
+	b := &Bridge{stdin: cancelInput{cancel: cancel}, out: bufio.NewReader(reader), stdout: reader}
 	if _, err := b.call(ctx, pathReq("read", "GARMIN/test.txt")); !errors.Is(err, context.Canceled) || !errors.Is(err, device.ErrDisconnected) {
 		t.Fatalf("in-flight cancellation = %v", err)
 	}
