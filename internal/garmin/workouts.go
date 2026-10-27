@@ -690,7 +690,7 @@ func (c *Cloud) CreateWorkout(ctx context.Context, spec *WorkoutSpec) (*CloudWor
 
 // SendWorkout asks Connect to queue a workout for the watch, then pulls it.
 func (c *Cloud) SendWorkout(ctx context.Context, id int64, name string) ([]PulledFile, error) {
-	dx, err := c.svc.DeviceXML(ctx)
+	dx, err := c.deviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}

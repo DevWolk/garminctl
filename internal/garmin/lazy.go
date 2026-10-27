@@ -24,21 +24,23 @@ var ErrSessionChanged = errors.New("watch connection changed; restart the operat
 // Lazy owns one connection and exclusive bounded operation leases. Its state
 // mutex never covers opening, device I/O, close or cancellation callbacks.
 type Lazy struct {
-	open       Opener
-	gate       *lifecycle.Gate
-	slot       chan struct{}
-	stopped    chan struct{}
-	mu         sync.Mutex
-	svc        *Service
-	retired    *Service
-	cleanupErr error
-	epoch      ConnectionEpoch
-	active     *Lease
-	closed     bool
-	lastUse    time.Time
-	closeOnce  sync.Once
-	closeDone  chan struct{}
-	closeErr   error
+	open           Opener
+	gate           *lifecycle.Gate
+	slot           chan struct{}
+	stopped        chan struct{}
+	mu             sync.Mutex
+	svc            *Service
+	retired        *Service
+	cleanupErr     error
+	epoch          ConnectionEpoch
+	epochDone      chan struct{}
+	active         *Lease
+	closed         bool
+	lastUse        time.Time
+	operationLimit time.Duration
+	closeOnce      sync.Once
+	closeDone      chan struct{}
+	closeErr       error
 }
 
 // NewLazy creates a standalone owner. Shared runtimes inject their single Gate
@@ -47,7 +49,11 @@ func NewLazy(open Opener) *Lazy { return NewLazyWithGate(open, new(lifecycle.Gat
 
 // NewLazyWithGate shares operation/job/maintenance admission with the runtime.
 func NewLazyWithGate(open Opener, gate *lifecycle.Gate) *Lazy {
-	return &Lazy{open: open, gate: gate, slot: make(chan struct{}, 1), stopped: make(chan struct{}), closeDone: make(chan struct{})}
+	return &Lazy{
+		open: open, gate: gate,
+		slot: make(chan struct{}, 1), stopped: make(chan struct{}), closeDone: make(chan struct{}),
+		operationLimit: 10 * time.Minute,
+	}
 }
 
 // Gate is the same admission owner used by this Manager's queued operations.
@@ -100,6 +106,8 @@ func (l *Lazy) DropAt(epoch ConnectionEpoch) error {
 	retired := l.svc
 	l.retired, l.svc = retired, nil
 	l.epoch++
+	close(l.epochDone)
+	l.epochDone = nil
 	active := l.active
 	l.mu.Unlock()
 
@@ -203,6 +211,7 @@ func (l *Lazy) openConnection(ctx context.Context) (*Service, ConnectionEpoch, e
 	}
 
 	l.epoch++
+	l.epochDone = make(chan struct{})
 	l.svc = svc
 	epoch := l.epoch
 	l.mu.Unlock()
@@ -222,6 +231,8 @@ func (l *Lazy) Close(ctx context.Context) error {
 		if l.svc != nil {
 			l.retired, l.svc = l.svc, nil
 			l.epoch++
+			close(l.epochDone)
+			l.epochDone = nil
 		}
 
 		active, retired := l.active, l.retired

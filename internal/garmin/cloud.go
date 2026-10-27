@@ -26,6 +26,8 @@ type Cloud struct {
 	svc      *Service
 	gc       *gc.Client
 	cacheDir string
+	watch    *Lazy
+	epoch    ConnectionEpoch
 
 	mu      sync.Mutex
 	profile *CloudProfile
@@ -82,7 +84,7 @@ func (c *Cloud) Status(ctx context.Context) *CloudStatus {
 
 	st.Profile = p
 
-	if c.svc != nil {
+	if c.svc != nil || c.watch != nil {
 		c.registration(ctx, st)
 	}
 
@@ -129,7 +131,7 @@ func profileName(sp CloudProfile) string {
 
 // registration fills in whether the connected watch is on the account.
 func (c *Cloud) registration(ctx context.Context, st *CloudStatus) {
-	dx, err := c.svc.DeviceXML(ctx)
+	dx, err := c.deviceXML(ctx)
 	if err != nil {
 		return
 	}
@@ -199,7 +201,7 @@ var cloudFixedOptions = map[string][]CloudOption{
 }
 
 func (c *Cloud) deviceID(ctx context.Context) (uint64, error) {
-	dx, err := c.svc.DeviceXML(ctx)
+	dx, err := c.deviceXML(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -452,7 +454,7 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 		return nil, err
 	}
 
-	dx, err := c.svc.DeviceXML(ctx)
+	dx, err := c.deviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +503,9 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 		out = append(out, pf)
 	}
 
-	c.svc.invalidate(PathAppsConfig)
+	if err := c.invalidateApps(ctx); err != nil {
+		return out, err
+	}
 
 	return out, nil
 }
@@ -509,17 +513,18 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 // deliver writes a pulled file where the watch expects it; app binaries go
 // through the (possibly hidden) app folder.
 func (c *Cloud) deliver(ctx context.Context, target string, data []byte) error {
-	if strings.HasPrefix(target, AppFolder+"/") {
-		_, err := c.svc.WriteAppFile(ctx, path.Base(target), data)
+	return c.withWatch(ctx, func(ctx context.Context, svc *Service) error {
+		if strings.HasPrefix(target, AppFolder+"/") {
+			_, err := svc.WriteAppFile(ctx, path.Base(target), data)
+			return err
+		}
 
-		return err
-	}
+		if err := svc.ensureDir(ctx, path.Dir(target)); err != nil {
+			return err
+		}
 
-	if err := c.svc.ensureDir(ctx, path.Dir(target)); err != nil {
-		return err
-	}
-
-	return c.svc.dev.Write(ctx, target, data)
+		return svc.dev.Write(ctx, target, data)
+	})
 }
 
 func (c *Cloud) ack(ctx context.Context, id int64) error {
@@ -659,7 +664,7 @@ type uploadRun struct {
 // back as duplicates and are remembered too. Nothing is deleted from the
 // watch.
 func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, error) {
-	dx, err := c.svc.DeviceXML(ctx)
+	dx, err := c.deviceXML(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -697,7 +702,7 @@ func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, e
 func (r *uploadRun) folder(ctx context.Context, dtName string, t uploadTarget, f DataTypeFile) error {
 	dir := strings.TrimRight(f.Path, "/")
 
-	entries, err := r.c.svc.dev.List(ctx, dir)
+	entries, err := r.c.list(ctx, dir)
 	if err != nil {
 		if !errors.Is(err, device.ErrNotFound) {
 			r.fail(UploadedFile{Path: dir, Kind: t.What}, err.Error())
@@ -740,7 +745,7 @@ func (r *uploadRun) file(ctx context.Context, dtName string, t uploadTarget, p, 
 		return nil
 	}
 
-	data, err := r.c.svc.dev.Read(ctx, p)
+	data, err := r.c.read(ctx, p)
 	if err != nil {
 		r.fail(uf, err.Error())
 
@@ -846,6 +851,28 @@ type SyncResult struct {
 
 // Sync uploads new files and pulls queued messages.
 func (c *Cloud) Sync(ctx context.Context, upload, download bool, progress Progress) (*SyncResult, error) {
+	if c.watch == nil {
+		return c.sync(ctx, upload, download, progress)
+	}
+
+	bound, release, err := c.watch.BindEpoch(ctx, c.epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := c.sync(bound, upload, download, progress)
+	cause := context.Cause(bound)
+
+	release()
+
+	if cause != nil && !errors.Is(err, cause) {
+		err = errors.Join(err, cause)
+	}
+
+	return result, err
+}
+
+func (c *Cloud) sync(ctx context.Context, upload, download bool, progress Progress) (*SyncResult, error) {
 	if !c.gc.LoggedIn() {
 		return nil, gc.ErrNotLoggedIn
 	}

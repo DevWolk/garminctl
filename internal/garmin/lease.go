@@ -91,7 +91,9 @@ func (l *Lazy) AcquireAt(ctx context.Context, expected ConnectionEpoch) (*Lease,
 
 // acquireReserved consumes one reserved admission permit and the held slot.
 func (l *Lazy) acquireReserved(ctx context.Context, expected ConnectionEpoch, release func()) (*Lease, error) {
-	groupCtx, cancel := context.WithCancel(ctx)
+	// Bound one operation group independently of a long sync/decode job.
+	// A shorter request/job deadline still wins. Release never cancels its parent.
+	groupCtx, cancel := context.WithTimeout(ctx, l.operationLimit)
 	lease := &Lease{owner: l, ctx: groupCtx, cancel: cancel, releaseAdmission: release}
 	l.mu.Lock()
 	if l.closed || ctx.Err() != nil {

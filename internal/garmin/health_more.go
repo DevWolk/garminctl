@@ -311,7 +311,7 @@ func (c *Cloud) fetchSleep(ctx context.Context, h *historyBuild, from, to string
 
 func (c *Cloud) historyCachePath(ctx context.Context) string {
 	unit := uint64(0)
-	if dx, err := c.svc.DeviceXML(ctx); err == nil {
+	if dx, err := c.deviceXML(ctx); err == nil {
 		unit = dx.UnitID
 	}
 
