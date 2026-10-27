@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/DevWolk/garminctl/internal/ciqstore"
 )
 
 // deviceReconnectCount may acquire the transport's lock. It must be called
@@ -24,6 +26,7 @@ func (s *Service) observeReconnectLocked(count int) {
 		s.reconnectCount = count
 		s.cacheGeneration++
 		s.cache = map[string][]byte{}
+		s.schemas = map[appSchemaKey]*ciqstore.Schema{}
 	}
 }
 

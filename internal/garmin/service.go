@@ -29,7 +29,7 @@ type Service struct {
 
 	mu              sync.Mutex
 	cache           map[string][]byte
-	schemas         map[string]*ciqstore.Schema
+	schemas         map[appSchemaKey]*ciqstore.Schema
 	cacheGeneration uint64
 	reconnectCount  int
 }
@@ -42,7 +42,7 @@ func New(dev device.Device) *Service {
 		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
 		cache:      map[string][]byte{},
-		schemas:    map[string]*ciqstore.Schema{},
+		schemas:    map[appSchemaKey]*ciqstore.Schema{},
 	}
 }
 
@@ -59,6 +59,7 @@ func (s *Service) invalidate(p string) {
 	s.mu.Lock()
 	s.cacheGeneration++
 	delete(s.cache, strings.ToLower(p))
+	s.schemas = map[appSchemaKey]*ciqstore.Schema{}
 	s.mu.Unlock()
 }
 
@@ -67,6 +68,7 @@ func (s *Service) Refresh() {
 	s.mu.Lock()
 	s.cacheGeneration++
 	s.cache = map[string][]byte{}
+	s.schemas = map[appSchemaKey]*ciqstore.Schema{}
 	s.mu.Unlock()
 }
 

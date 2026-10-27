@@ -29,11 +29,10 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 		return nil, fmt.Errorf("%s is not a Connect IQ store app", app.Name)
 	}
 
+	reconnects := s.deviceReconnectCount()
 	s.mu.Lock()
-	if sc, ok := s.schemas[app.ID]; ok {
-		s.mu.Unlock()
-		return sc, nil
-	}
+	s.observeReconnectLocked(reconnects)
+	generation := s.cacheGeneration
 	s.mu.Unlock()
 
 	dx, err := s.DeviceXML(ctx)
@@ -41,6 +40,20 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 		return nil, err
 	}
 
+	key := appSchemaKey{appID: strings.ToLower(app.ID), version: app.Version, partNumber: dx.PartNumber, unit: dx.UnitID}
+	if sc := s.cachedAppSchema(key, generation, reconnects); sc != nil {
+		return sc, nil
+	}
+
+	sc, err := loadAppSchema(ctx, app, dx.PartNumber)
+	if err == nil {
+		s.rememberAppSchema(key, generation, reconnects, sc)
+	}
+
+	return sc, err
+}
+
+func loadAppSchema(ctx context.Context, app *App, partNumber string) (*ciqstore.Schema, error) {
 	var firstErr error
 
 	versions := []int{app.Version}
@@ -53,7 +66,7 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 			continue
 		}
 
-		sc, err := ciqstore.Load(ctx, app.ID, v, dx.PartNumber)
+		sc, err := ciqstore.Load(ctx, app.ID, v, partNumber)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -61,10 +74,6 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 
 			continue
 		}
-
-		s.mu.Lock()
-		s.schemas[app.ID] = sc
-		s.mu.Unlock()
 
 		return sc, nil
 	}
