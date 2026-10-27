@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -26,7 +28,7 @@ var (
 	appHintsVal  map[string]*AppHints
 )
 
-// AppHintsFor returns hints for a store app id, or nil.
+// AppHintsFor returns an independent hint snapshot for a store app id, or nil.
 func AppHintsFor(appID string) *AppHints {
 	appHintsOnce.Do(func() {
 		var raw map[string]json.RawMessage
@@ -50,7 +52,16 @@ func AppHintsFor(appID string) *AppHints {
 		}
 	})
 
-	return appHintsVal[strings.ToLower(appID)]
+	h := appHintsVal[strings.ToLower(appID)]
+	if h == nil {
+		return nil
+	}
+
+	hints := *h
+	hints.ValueHints = maps.Clone(h.ValueHints)
+	hints.KeyHints = maps.Clone(h.KeyHints)
+
+	return &hints
 }
 
 // Note is a hand-maintained note about an undocumented message or field.
@@ -70,14 +81,14 @@ type Knowledge struct {
 
 // ManagedByConnect reports whether the field is in the Connect-managed set.
 func (k *Knowledge) ManagedByConnect(mesg uint16, field uint8) bool {
-	if k.managed == nil {
-		k.managed = map[string]bool{}
-		for _, key := range k.ConnectManaged {
-			k.managed[key] = true
-		}
+	key := fmt.Sprintf("%d.%d", mesg, field)
+	if k.managed != nil {
+		return k.managed[key]
 	}
 
-	return k.managed[fmt.Sprintf("%d.%d", mesg, field)]
+	// Caller-created or decoded snapshots have no index. Lookups stay pure;
+	// deriving a map here would race when the same snapshot is read concurrently.
+	return slices.Contains(k.ConnectManaged, key)
 }
 
 var (
@@ -85,16 +96,32 @@ var (
 	knowledgeVal  *Knowledge
 )
 
-// DefaultKnowledge returns the embedded notes.
+// DefaultKnowledge returns an independent snapshot of the embedded notes.
 func DefaultKnowledge() *Knowledge {
+	return defaultKnowledge().snapshot()
+}
+
+func defaultKnowledge() *Knowledge {
 	knowledgeOnce.Do(func() {
 		var k Knowledge
 		if err := json.Unmarshal(deviceSettingsKnowledge, &k); err != nil {
 			panic("knowledge/device_settings.json: " + err.Error())
 		}
 
+		k.managed = make(map[string]bool, len(k.ConnectManaged))
+		for _, key := range k.ConnectManaged {
+			k.managed[key] = true
+		}
+
 		knowledgeVal = &k
 	})
 
 	return knowledgeVal
+}
+
+func (k *Knowledge) snapshot() *Knowledge {
+	return &Knowledge{
+		Messages: maps.Clone(k.Messages), Fields: maps.Clone(k.Fields),
+		ConnectManaged: slices.Clone(k.ConnectManaged),
+	}
 }

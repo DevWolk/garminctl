@@ -39,7 +39,7 @@ func New(dev device.Device) *Service {
 	return &Service{
 		dev:        dev,
 		profile:    fit.MustProfile(),
-		know:       DefaultKnowledge(),
+		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
 		cache:      map[string][]byte{},
 		schemas:    map[string]*ciqstore.Schema{},
@@ -49,8 +49,8 @@ func New(dev device.Device) *Service {
 // Profile returns the FIT profile.
 func (s *Service) Profile() *fit.Profile { return s.profile }
 
-// Knowledge returns the notes about undocumented fields.
-func (s *Service) Knowledge() *Knowledge { return s.know }
+// Knowledge returns an independent snapshot of notes about undocumented fields.
+func (s *Service) Knowledge() *Knowledge { return s.know.snapshot() }
 
 // reconnecter is implemented by devices that reopen themselves after an unplug.
 type reconnecter interface{ Reconnects() int }
@@ -141,7 +141,7 @@ func (s *Service) Settings(ctx context.Context) (*SettingsView, error) {
 		return nil, fmt.Errorf("%s: %w", PathSettings, err)
 	}
 
-	return &SettingsView{Path: PathSettings, Messages: s.profile.Describe(f), Knowledge: s.know}, nil
+	return &SettingsView{Path: PathSettings, Messages: s.profile.Describe(f), Knowledge: s.Knowledge()}, nil
 }
 
 // DecodeFIT decodes any FIT file on the watch through the profile.
