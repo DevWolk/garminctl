@@ -351,12 +351,20 @@ func (c *cli) printJSON(v any) error {
 }
 
 // flagsFirst moves "-flag" tokens ahead of positional arguments so that
-// "create FILE -send" parses like "create -send FILE".
+// "create FILE -send" parses like "create -send FILE". A standalone "--"
+// ends reordering and protects all following tokens as positional arguments.
 func flagsFirst(fs *flag.FlagSet, args []string) []string {
 	var flags, pos []string
 
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			flags = append(flags, "--")
+
+			return append(flags, pos...)
+		}
+
 		if !strings.HasPrefix(a, "-") || a == "-" {
 			pos = append(pos, a)
 			continue
