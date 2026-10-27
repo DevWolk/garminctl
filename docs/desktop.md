@@ -77,6 +77,10 @@ with those options, then launch the app at the same address to reuse it.
 
 ## Data, updates, and uninstall
 
+File exports are cancelled when the window closes and have a ten-minute
+transfer timeout. If an export fails or is cancelled, an existing destination
+file is retained; only a completed download replaces it.
+
 | Data | Windows default | Linux/WSL default |
 | --- | --- | --- |
 | Connect tokens | `%APPDATA%\garminctl\garmin-connect.json` | `~/.config/garminctl/garmin-connect.json` |

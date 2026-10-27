@@ -5,10 +5,8 @@ package desktop
 import (
 	"context"
 	_ "embed"
-	"fmt"
-	"io"
+	"errors"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -32,10 +30,11 @@ var appIcon []byte
 // App is the small native bridge: lifecycle, browser links and file dialogs.
 // Watch operations remain in the shared local API and MCP server.
 type App struct {
-	ctx     context.Context //nolint:containedctx // Wails supplies a window-lifetime context once; its native runtime methods require it.
-	backend *Backend
-	ready   atomic.Bool
-	closing atomic.Bool
+	ctx       context.Context //nolint:containedctx // Wails supplies a window-lifetime context once; its native runtime methods require it.
+	backend   *Backend
+	ready     atomic.Bool
+	closing   atomic.Bool
+	downloads nativeDownloads
 }
 
 // Run opens the single native window using an already-started backend.
@@ -64,7 +63,8 @@ func Run(backend *Backend) error {
 		Title: "garminctl", Width: 1280, Height: 850, MinWidth: 720, MinHeight: 540,
 		AssetServer:   &assetserver.Options{Handler: Proxy(backend.URL, desktopScript)},
 		Menu:          appMenu,
-		OnStartup:     func(ctx context.Context) { app.ctx = ctx },
+		OnStartup:     app.startup,
+		OnShutdown:    func(context.Context) { app.downloads.close() },
 		OnBeforeClose: app.beforeClose,
 		Bind:          []any{app},
 		SingleInstanceLock: &options.SingleInstanceLock{
@@ -77,6 +77,11 @@ func Run(backend *Backend) error {
 		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dataDir, "garminctl", "desktop"), Theme: windows.SystemDefault},
 		Linux:   &linux.Options{ProgramName: "garminctl", Icon: appIcon},
 	})
+}
+
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	a.downloads.startup(ctx)
 }
 
 func (a *App) emit(action string) { wailsruntime.EventsEmit(a.ctx, "desktop:action", action) }
@@ -100,6 +105,7 @@ func (a *App) Ready() {
 // FinishClose is called after the frontend confirms pending edits may be lost.
 func (a *App) FinishClose() {
 	a.closing.Store(true)
+	a.downloads.cancel()
 	wailsruntime.Quit(a.ctx)
 }
 
@@ -117,42 +123,24 @@ func (a *App) OpenExternal(raw string) error {
 
 // Download lets the user choose where a watch file or decoded JSON is saved.
 func (a *App) Download(relative, name string) error {
+	ctx, err := a.downloads.windowContext()
+	if err != nil {
+		return err
+	}
+
+	if a.backend == nil || a.backend.URL == nil {
+		return errors.New("desktop backend is not ready")
+	}
+
 	u, err := DownloadURL(a.backend.URL, relative)
 	if err != nil {
 		return err
 	}
 
-	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{DefaultFilename: filepath.Base(name), Title: "Save file"})
+	path, err := wailsruntime.SaveFileDialog(ctx, wailsruntime.SaveDialogOptions{DefaultFilename: filepath.Base(name), Title: "Save file"})
 	if err != nil || path == "" {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(a.ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	response, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed: %s", response.Status)
-	}
-
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // path is explicitly selected by the user in the native Save dialog.
-	if err != nil {
-		return err
-	}
-
-	_, copyErr := io.Copy(file, response.Body)
-	closeErr := file.Close()
-
-	if copyErr != nil {
-		return copyErr
-	}
-
-	return closeErr
+	return a.downloads.save(u, path)
 }
