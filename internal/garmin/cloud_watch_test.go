@@ -147,7 +147,7 @@ func TestManagedSyncReleasesLeaseForNetworkAndWritesBeforeAck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := lease.Service().Device().Stat(lease.Context(), "GARMIN"); err != nil {
+	if _, err := lease.Service().Stat(lease.Context(), "GARMIN"); err != nil {
 		t.Fatal(err)
 	}
 

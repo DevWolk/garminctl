@@ -181,7 +181,7 @@ func addWatchTools(srv *mcp.Server, s *server) {
 		Description: "List watch files with names, sizes and modification times. Use their paths with watch_decode_fit or watch_delete_file.",
 		Annotations: readOnly("List watch files", false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in listIn) (filesResult, error) {
-		entries, err := svc.Device().List(ctx, in.Path)
+		entries, err := svc.List(ctx, in.Path)
 		return filesResult{Entries: entries}, err
 	}))
 
@@ -208,11 +208,9 @@ func addWatchTools(srv *mcp.Server, s *server) {
 		Description: "Permanently delete one watch file, including a pending file in GARMIN/NewFiles. There is no undo. Use watch_remove_app for apps.",
 		Annotations: writes("Delete watch file", true, false),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in pathIn) (deletedResult, error) {
-		if err := svc.Device().Delete(ctx, in.Path); err != nil {
+		if err := svc.DeleteFile(ctx, in.Path); err != nil {
 			return deletedResult{}, err
 		}
-
-		svc.Refresh()
 
 		return deletedResult{Deleted: in.Path}, nil
 	}))

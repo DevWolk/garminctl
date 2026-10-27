@@ -46,9 +46,6 @@ func New(dev device.Device) *Service {
 	}
 }
 
-// Device returns the underlying device.
-func (s *Service) Device() device.Device { return s.dev }
-
 // Profile returns the FIT profile.
 func (s *Service) Profile() *fit.Profile { return s.profile }
 
@@ -106,19 +103,17 @@ func (s *Service) Summary(ctx context.Context) (*Summary, error) {
 		return nil, err
 	}
 
-	sum := &Summary{Device: s.dev.Info(), Model: dx.Description, PartNumber: dx.PartNumber, UnitID: dx.UnitID, Software: dx.SoftwareVersionString(), ProfileVers: s.profile.Version}
+	sum := &Summary{Device: s.Info(), Model: dx.Description, PartNumber: dx.PartNumber, UnitID: dx.UnitID, Software: dx.SoftwareVersionString(), ProfileVers: s.profile.Version}
 	if apps, err := s.Apps(ctx); err == nil {
 		sum.AppCount = len(apps)
 	}
 
-	if entries, err := s.dev.List(ctx, PathNewFiles); err == nil {
+	if entries, err := s.List(ctx, PathNewFiles); err == nil {
 		sum.NewFiles = len(entries)
 	}
 
-	if sr, ok := s.dev.(device.StorageReporter); ok {
-		if st, err := sr.Storage(ctx); err == nil && st.CapacityBytes > 0 {
-			sum.Storage = &st
-		}
+	if st, err := s.StorageInfo(ctx); err == nil && st.CapacityBytes > 0 {
+		sum.Storage = st
 	}
 
 	return sum, nil
@@ -282,7 +277,7 @@ func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[st
 		return nil, err
 	}
 
-	if err := s.dev.Write(ctx, as.Path, data); err != nil {
+	if err := s.WriteFile(ctx, as.Path, data); err != nil {
 		return nil, fmt.Errorf("write %s: %w", as.Path, err)
 	}
 

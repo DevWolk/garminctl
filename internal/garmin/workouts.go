@@ -643,7 +643,7 @@ func (s *Service) WriteWorkoutToWatch(ctx context.Context, spec *WorkoutSpec) (s
 	}
 
 	p := PathNewFiles + "/" + newUUID() + ".FIT"
-	if err := s.dev.Write(ctx, p, data); err != nil {
+	if err := s.WriteFile(ctx, p, data); err != nil {
 		return "", err
 	}
 

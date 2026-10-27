@@ -93,7 +93,10 @@ func TestHiddenWriteDiagnosticsUseTheSameHandles(t *testing.T) {
 	d := &diagnosticDevice{}
 
 	c := &cli{out: newPrinter(&bytes.Buffer{})}
-	if err := c.hiddenWriteTest(t.Context(), d, 0x11, 0x44); err != nil {
+
+	if err := garmin.New(d).WithDiagnostics(t.Context(), func(scope *garmin.Diagnostics) error {
+		return c.hiddenWriteTest(scope, 0x11, 0x44)
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -147,7 +150,9 @@ func TestHiddenFSDoesNotAdvertiseRawDiagnostics(t *testing.T) {
 		t.Fatalf("unsupported handle diagnostics = %v", err)
 	}
 
-	if err := c.mtp(t.Context(), svc, []string{"1009"}); err == nil || exitCode(err) != 2 {
-		t.Fatalf("unsupported raw operation = %v", err)
+	for _, args := range [][]string{{"1009"}, {"not-hex"}, nil} {
+		if err := c.mtp(t.Context(), svc, args); err == nil || exitCode(err) != 2 {
+			t.Fatalf("unsupported raw operation %q = %v", args, err)
+		}
 	}
 }

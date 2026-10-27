@@ -253,7 +253,7 @@ func (s *Service) decodeActivities(ctx context.Context, cp string, entries []dev
 			continue
 		}
 
-		data, err := s.dev.Read(ctx, "GARMIN/Activity/"+entry.Name)
+		data, err := s.ReadFile(ctx, "GARMIN/Activity/"+entry.Name)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -369,7 +369,7 @@ func (s *Service) scanActivities(ctx context.Context) (*activityScan, error) {
 		return nil, err
 	}
 
-	entries, err := s.dev.List(ctx, "GARMIN/Activity")
+	entries, err := s.List(ctx, "GARMIN/Activity")
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func (s *Service) Activity(ctx context.Context, name string, maxPoints int) (*Ac
 		return nil, errors.New("bad activity name")
 	}
 
-	data, err := s.dev.Read(ctx, "GARMIN/Activity/"+name)
+	data, err := s.ReadFile(ctx, "GARMIN/Activity/"+name)
 	if err != nil {
 		return nil, err
 	}

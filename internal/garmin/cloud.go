@@ -523,7 +523,7 @@ func (c *Cloud) deliver(ctx context.Context, target string, data []byte) error {
 			return err
 		}
 
-		return svc.dev.Write(ctx, target, data)
+		return svc.WriteFile(ctx, target, data)
 	})
 }
 

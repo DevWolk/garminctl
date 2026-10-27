@@ -157,3 +157,9 @@ func (s *Service) RawMTPRead(ctx context.Context, opcode uint32, params []uint32
 
 	return raw.MtpRead(ctx, opcode, params)
 }
+
+// SupportsRawMTP reports availability without exposing or invoking the device.
+func (s *Service) SupportsRawMTP() bool {
+	_, ok := s.dev.(device.RawMTPReader)
+	return ok
+}

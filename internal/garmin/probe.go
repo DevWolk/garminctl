@@ -69,7 +69,7 @@ func (l *Lazy) ProbeIfIdle(ctx context.Context, quiet time.Duration) (ProbeObser
 }
 
 func (l *Lazy) observeProbe(lease *Lease) (ProbeObservation, error) {
-	_, err := lease.Service().Device().Stat(lease.Context(), "GARMIN")
+	_, err := lease.Service().Stat(lease.Context(), "GARMIN")
 
 	observation := ProbeConnected
 	if err != nil {

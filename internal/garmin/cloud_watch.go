@@ -61,7 +61,7 @@ func (c *Cloud) list(ctx context.Context, dir string) ([]device.Entry, error) {
 	err := c.withWatch(ctx, func(ctx context.Context, svc *Service) error {
 		var err error
 
-		entries, err = svc.dev.List(ctx, dir)
+		entries, err = svc.List(ctx, dir)
 
 		return err
 	})
@@ -75,7 +75,7 @@ func (c *Cloud) read(ctx context.Context, path string) ([]byte, error) {
 	err := c.withWatch(ctx, func(ctx context.Context, svc *Service) error {
 		var err error
 
-		data, err = svc.dev.Read(ctx, path)
+		data, err = svc.ReadFile(ctx, path)
 
 		return err
 	})

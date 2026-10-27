@@ -157,7 +157,7 @@ func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (ba
 	}
 
 	base := out
-	if pending, err := s.dev.Read(ctx, PathAppsIn); err == nil && len(pending) > 0 {
+	if pending, err := s.ReadFile(ctx, PathAppsIn); err == nil && len(pending) > 0 {
 		base = pending
 	}
 
@@ -202,7 +202,7 @@ func (s *Service) SetAppHidden(ctx context.Context, ref string, hidden bool) (ba
 		return "", fmt.Errorf("back up app registry before staging changes: %w", err)
 	}
 
-	if err := s.dev.Write(ctx, PathAppsIn, in); err != nil {
+	if err := s.WriteFile(ctx, PathAppsIn, in); err != nil {
 		return backup, err
 	}
 
@@ -219,7 +219,7 @@ type AppChange struct {
 
 // PendingAppChanges lists what IN.BIN will change when the watch is unplugged.
 func (s *Service) PendingAppChanges(ctx context.Context) ([]AppChange, error) {
-	pending, err := s.dev.Read(ctx, PathAppsIn)
+	pending, err := s.ReadFile(ctx, PathAppsIn)
 	if err != nil {
 		if errors.Is(err, device.ErrNotFound) || strings.Contains(err.Error(), "not found") {
 			return []AppChange{}, nil
@@ -263,5 +263,5 @@ func (s *Service) PendingAppChanges(ctx context.Context) ([]AppChange, error) {
 
 // CancelAppChanges deletes the pending IN.BIN.
 func (s *Service) CancelAppChanges(ctx context.Context) error {
-	return s.dev.Delete(ctx, PathAppsIn)
+	return s.DeleteFile(ctx, PathAppsIn)
 }

@@ -507,7 +507,7 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.Device().List(ctx, r.URL.Query().Get("path"))
+		return svc.List(ctx, r.URL.Query().Get("path"))
 	})
 }
 
@@ -520,7 +520,7 @@ func (s *Server) fileGet(w http.ResponseWriter, r *http.Request) {
 
 	p := r.URL.Query().Get("path")
 
-	data, err := lease.Service().Device().Read(lease.Context(), p)
+	data, err := lease.Service().ReadFile(lease.Context(), p)
 	if errors.Is(err, device.ErrDisconnected) {
 		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
 	}
@@ -550,11 +550,9 @@ func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
 
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		p := r.URL.Query().Get("path")
-		if err := svc.Device().Write(ctx, p, data); err != nil {
+		if err := svc.WriteFile(ctx, p, data); err != nil {
 			return nil, err
 		}
-
-		svc.Refresh()
 
 		return map[string]any{"ok": true, "path": p, "bytes": len(data)}, nil
 	})
@@ -563,11 +561,9 @@ func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
 func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		p := r.URL.Query().Get("path")
-		if err := svc.Device().Delete(ctx, p); err != nil {
+		if err := svc.DeleteFile(ctx, p); err != nil {
 			return nil, err
 		}
-
-		svc.Refresh()
 
 		return map[string]any{"ok": true}, nil
 	})

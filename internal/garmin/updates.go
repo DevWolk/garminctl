@@ -180,7 +180,7 @@ func (s *Service) InstallSoftwareUpdate(ctx context.Context, partNumber string) 
 	}
 
 	target := path.Join(dir, u.FileName)
-	if err := s.dev.Write(ctx, target, data); err != nil {
+	if err := s.WriteFile(ctx, target, data); err != nil {
 		return nil, fmt.Errorf("write %s: %w", target, err)
 	}
 
@@ -269,13 +269,13 @@ func (s *Service) ensureDir(ctx context.Context, dir string) error {
 			cur += "/" + seg
 		}
 
-		if _, err := s.dev.Stat(ctx, cur); err == nil {
+		if _, err := s.Stat(ctx, cur); err == nil {
 			continue
 		} else if !errors.Is(err, device.ErrNotFound) {
 			return fmt.Errorf("stat %s: %w", cur, err)
 		}
 
-		if err := s.dev.Mkdir(ctx, cur); err != nil {
+		if err := s.Mkdir(ctx, cur); err != nil {
 			return fmt.Errorf("mkdir %s: %w", cur, err)
 		}
 	}
@@ -404,20 +404,17 @@ const AppFolder = "GARMIN/APPS/MEDIA"
 // registers the app when the USB session ends.
 func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (string, error) {
 	target := AppFolder + "/" + name
-	if _, err := s.dev.Stat(ctx, AppFolder); err == nil {
-		if err := s.dev.Write(ctx, target, data); err != nil {
+	if _, err := s.Stat(ctx, AppFolder); err == nil {
+		if err := s.WriteFile(ctx, target, data); err != nil {
 			return "", fmt.Errorf("write %s: %w", target, err)
 		}
 
 		return target, nil
 	}
 
-	h, ok := s.dev.(device.HiddenFS)
-	if !ok {
+	if err := s.WriteHidden(ctx, AppFolder, name, data); errors.Is(err, ErrCapabilityUnavailable) {
 		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
-	}
-
-	if err := h.WriteHidden(ctx, AppFolder, name, data); err != nil {
+	} else if err != nil {
 		return "", err
 	}
 
@@ -487,20 +484,17 @@ func installedApp(apps []App, ref string) *App {
 func (s *Service) removeAppBinary(ctx context.Context, prg string) (string, error) {
 	target := AppFolder + "/" + prg
 
-	if _, err := s.dev.Stat(ctx, target); err == nil {
-		if err := s.dev.Delete(ctx, target); err != nil {
+	if _, err := s.Stat(ctx, target); err == nil {
+		if err := s.DeleteFile(ctx, target); err != nil {
 			return "", err
 		}
 
 		return target, nil
 	}
 
-	h, ok := s.dev.(device.HiddenFS)
-	if !ok {
+	switch err := s.DeleteHidden(ctx, AppFolder, prg); {
+	case errors.Is(err, ErrCapabilityUnavailable):
 		return "", errors.New("this watch does not expose its app folder over USB from here")
-	}
-
-	switch err := h.DeleteHidden(ctx, AppFolder, prg); {
 	case err == nil:
 		return target, nil
 	case errors.Is(err, device.ErrNotFound):
@@ -513,11 +507,11 @@ func (s *Service) removeAppBinary(ctx context.Context, prg string) (string, erro
 // removeAppSidecars deletes the settings and data files of an app.
 func (s *Service) removeAppSidecars(ctx context.Context, fileName string, removed []string) ([]string, error) {
 	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + fileName + ".SET", "GARMIN/Apps/DATA/" + fileName + ".DAT", "GARMIN/Apps/DATA/" + fileName + ".IDX", "GARMIN/Apps/DATA/" + fileName + ".IMT"} {
-		if _, err := s.dev.Stat(ctx, p); err != nil {
+		if _, err := s.Stat(ctx, p); err != nil {
 			continue
 		}
 
-		if err := s.dev.Delete(ctx, p); err != nil {
+		if err := s.DeleteFile(ctx, p); err != nil {
 			return removed, err
 		}
 
@@ -529,13 +523,14 @@ func (s *Service) removeAppSidecars(ctx context.Context, fileName string, remove
 
 // AppFiles lists the app folder, hidden or not.
 func (s *Service) AppFiles(ctx context.Context) ([]device.Entry, error) {
-	if entries, err := s.dev.List(ctx, AppFolder); err == nil {
+	if entries, err := s.List(ctx, AppFolder); err == nil {
 		return entries, nil
 	}
 
-	if h, ok := s.dev.(device.HiddenFS); ok {
-		return h.ListHidden(ctx, AppFolder)
+	entries, err := s.ListHidden(ctx, AppFolder)
+	if errors.Is(err, ErrCapabilityUnavailable) {
+		return nil, device.ErrNotFound
 	}
 
-	return nil, device.ErrNotFound
+	return entries, err
 }

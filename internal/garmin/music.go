@@ -55,7 +55,7 @@ type AudioProvider struct {
 }
 
 func (s *Service) walk(ctx context.Context, dir string, fn func(p string, e device.Entry)) error {
-	entries, err := s.dev.List(ctx, dir)
+	entries, err := s.List(ctx, dir)
 	if err != nil {
 		if errors.Is(err, device.ErrNotFound) {
 			return nil
@@ -150,7 +150,7 @@ func trackFromEntry(root, p string, e device.Entry) Track {
 
 // readPlaylist parses an .m3u file into watch paths.
 func (s *Service) readPlaylist(ctx context.Context, pf string) (Playlist, error) {
-	data, err := s.dev.Read(ctx, pf)
+	data, err := s.ReadFile(ctx, pf)
 	if err != nil {
 		return Playlist{}, err
 	}
@@ -388,7 +388,7 @@ func (s *Service) AddTrack(ctx context.Context, folder, filename string, data []
 		return nil, err
 	}
 
-	if err := s.dev.Write(ctx, target, data); err != nil {
+	if err := s.WriteFile(ctx, target, data); err != nil {
 		return nil, err
 	}
 
@@ -412,7 +412,7 @@ func (s *Service) RemoveTrack(ctx context.Context, p string) error {
 		return err
 	}
 
-	return s.dev.Delete(ctx, p)
+	return s.DeleteFile(ctx, p)
 }
 
 // WritePlaylist writes Music/<name>.m3u listing the given watch paths.
@@ -443,7 +443,7 @@ func (s *Service) WritePlaylist(ctx context.Context, name string, tracks []strin
 		return nil, err
 	}
 
-	if err := s.dev.Write(ctx, p, []byte(b.String())); err != nil {
+	if err := s.WriteFile(ctx, p, []byte(b.String())); err != nil {
 		return nil, err
 	}
 

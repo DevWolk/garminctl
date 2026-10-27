@@ -165,7 +165,7 @@ func TestDropCancelsGroupClosesOnReleaseAndRejectsOldEpoch(t *testing.T) {
 	epoch := lease.Epoch()
 	readDone := make(chan error, 1)
 
-	go func() { _, err := lease.Service().Device().Read(lease.Context(), "GARMIN/test"); readDone <- err }()
+	go func() { _, err := lease.Service().ReadFile(lease.Context(), "GARMIN/test"); readDone <- err }()
 
 	<-old.readEntered
 
@@ -459,7 +459,7 @@ func TestLeaseKeepsReadModifyWriteTogetherAgainstQueuedMutation(t *testing.T) {
 	t.Cleanup(func() { closeOwner(t, l) })
 
 	first := acquireLease(t, l)
-	if _, err := first.Service().Device().Read(first.Context(), "OUT.BIN"); err != nil {
+	if _, err := first.Service().ReadFile(first.Context(), "OUT.BIN"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -472,7 +472,7 @@ func TestLeaseKeepsReadModifyWriteTogetherAgainstQueuedMutation(t *testing.T) {
 			return
 		}
 
-		err = second.Service().Device().Write(second.Context(), "competing mutation", nil)
+		err = second.Service().WriteFile(second.Context(), "competing mutation", nil)
 		done <- errors.Join(err, second.Release())
 	}()
 
@@ -490,7 +490,7 @@ func TestLeaseKeepsReadModifyWriteTogetherAgainstQueuedMutation(t *testing.T) {
 		}
 	}
 
-	if err := first.Service().Device().Write(first.Context(), "dependent IN.BIN", nil); err != nil {
+	if err := first.Service().WriteFile(first.Context(), "dependent IN.BIN", nil); err != nil {
 		t.Fatal(err)
 	}
 

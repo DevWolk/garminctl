@@ -155,7 +155,7 @@ func (c *cli) appRestore(ctx context.Context, svc *garmin.Service, args []string
 		return fmt.Errorf("%s is not an app registry: %w", args[0], err)
 	}
 
-	if err := svc.Device().Write(ctx, garmin.PathAppsIn, b); err != nil {
+	if err := svc.WriteFile(ctx, garmin.PathAppsIn, b); err != nil {
 		return err
 	}
 

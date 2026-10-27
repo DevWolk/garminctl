@@ -68,7 +68,7 @@ func (c *cli) ls(ctx context.Context, svc *garmin.Service, args []string) error 
 		p = args[0]
 	}
 
-	entries, err := svc.Device().List(ctx, p)
+	entries, err := svc.List(ctx, p)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (c *cli) cat(ctx context.Context, svc *garmin.Service, args []string) error
 		return usageErrorf("usage: cat [-o FILE] PATH")
 	}
 
-	data, err := svc.Device().Read(ctx, fs.Arg(0))
+	data, err := svc.ReadFile(ctx, fs.Arg(0))
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func (c *cli) put(ctx context.Context, svc *garmin.Service, args []string) error
 		return err
 	}
 
-	if err := svc.Device().Write(ctx, args[1], data); err != nil {
+	if err := svc.WriteFile(ctx, args[1], data); err != nil {
 		return err
 	}
 
@@ -163,7 +163,7 @@ func (c *cli) rm(ctx context.Context, svc *garmin.Service, args []string) error 
 		return usageErrorf("usage: rm PATH")
 	}
 
-	return svc.Device().Delete(ctx, args[0])
+	return svc.DeleteFile(ctx, args[0])
 }
 
 func (c *cli) mkdir(ctx context.Context, svc *garmin.Service, args []string) error {
@@ -171,7 +171,7 @@ func (c *cli) mkdir(ctx context.Context, svc *garmin.Service, args []string) err
 		return usageErrorf("usage: mkdir PATH")
 	}
 
-	return svc.Device().Mkdir(ctx, args[0])
+	return svc.Mkdir(ctx, args[0])
 }
 
 // hidden uses the vendor MTP listing to include hidden folders.
@@ -188,19 +188,25 @@ func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) er
 		return usageErrorf("usage: hidden [-write-test] PATH")
 	}
 
-	dev, ok := svc.Device().(device.MTPDiagnostics)
-	if !ok {
+	err := svc.WithDiagnostics(ctx, func(dev *garmin.Diagnostics) error {
+		return c.hiddenDiagnostic(dev, fs.Arg(0), *writeTest)
+	})
+	if errors.Is(err, garmin.ErrCapabilityUnavailable) {
 		return errors.New("hidden requires the Windows MTP bridge")
 	}
 
-	storage, handle, err := walkHidden(ctx, dev, fs.Arg(0))
+	return err
+}
+
+func (c *cli) hiddenDiagnostic(dev *garmin.Diagnostics, path string, writeTest bool) error {
+	storage, handle, err := walkHidden(dev, path)
 	if err != nil {
 		return err
 	}
 
-	c.out.Printf("%s: storage 0x%08X handle 0x%08X\n", fs.Arg(0), storage, handle)
+	c.out.Printf("%s: storage 0x%08X handle 0x%08X\n", path, storage, handle)
 
-	kids, err := dev.AllChildren(ctx, storage, handle)
+	kids, err := dev.AllChildren(storage, handle)
 	if err != nil {
 		return err
 	}
@@ -209,32 +215,32 @@ func (c *cli) hidden(ctx context.Context, svc *garmin.Service, args []string) er
 		c.out.Printf("  0x%08X  %-24s %s %d\n", k.Handle, k.Name, onOff(k.IsDir(), "dir ", "file"), k.Size)
 	}
 
-	if !*writeTest {
+	if !writeTest {
 		return nil
 	}
 
-	return c.hiddenWriteTest(ctx, dev, storage, handle)
+	return c.hiddenWriteTest(dev, storage, handle)
 }
 
 // walkHidden resolves a watch path to its storage and object handle, passing
 // through hidden folders.
-func walkHidden(ctx context.Context, dev device.MTPDiagnostics, p string) (storage, handle uint32, err error) {
+func walkHidden(dev *garmin.Diagnostics, p string) (storage, handle uint32, err error) {
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 
-	storage, handle, err = dev.Handles(ctx, "GARMIN")
+	storage, handle, err = dev.Handles("GARMIN")
 	if err != nil {
 		return 0, 0, err
 	}
 
 	if !strings.EqualFold(parts[0], "GARMIN") {
-		storage, handle, err = dev.Handles(ctx, parts[0])
+		storage, handle, err = dev.Handles(parts[0])
 		if err != nil {
 			return 0, 0, err
 		}
 	}
 
 	for _, part := range parts[1:] {
-		o, found, err := dev.FindChild(ctx, storage, handle, part)
+		o, found, err := dev.FindChild(storage, handle, part)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -249,37 +255,37 @@ func walkHidden(ctx context.Context, dev device.MTPDiagnostics, p string) (stora
 	return storage, handle, nil
 }
 
-func (c *cli) hiddenWriteTest(ctx context.Context, dev device.MTPDiagnostics, storage, handle uint32) error {
+func (c *cli) hiddenWriteTest(dev *garmin.Diagnostics, storage, handle uint32) error {
 	const name = "GCTLTEST.TMP"
 
-	if old, found, err := dev.FindChild(ctx, storage, handle, name); err == nil && found {
+	if old, found, err := dev.FindChild(storage, handle, name); err == nil && found {
 		c.out.Printf("leftover %s (handle 0x%08X, %d bytes) from an earlier run: deleting\n", name, old.Handle, old.Size)
 
-		if err := dev.DeleteHandle(ctx, old.Handle); err != nil {
+		if err := dev.DeleteHandle(old.Handle); err != nil {
 			return err
 		}
 	}
 
 	data := []byte(strings.Repeat("garminctl write test\n", 50))
 
-	h, err := dev.SendFile(ctx, storage, handle, name, data)
+	h, err := dev.SendFile(storage, handle, name, data)
 	if err != nil {
 		return fmt.Errorf("write test: %w", err)
 	}
 
 	c.out.Printf("wrote %s as handle 0x%08X (%d bytes)\n", name, h, len(data))
 
-	o, found, err := dev.FindChild(ctx, storage, handle, name)
+	o, found, err := dev.FindChild(storage, handle, name)
 	c.out.Printf("listed after write: found=%v size=%d err=%v\n", found, o.Size, err)
 
-	back, err := dev.ReadHandle(ctx, h)
+	back, err := dev.ReadHandle(h)
 	c.out.Printf("read back: %d bytes, identical=%v, err=%v\n", len(back), string(back) == string(data), err)
 
-	if err := dev.DeleteHandle(ctx, h); err != nil {
+	if err := dev.DeleteHandle(h); err != nil {
 		return fmt.Errorf("delete test file: %w", err)
 	}
 
-	_, found, err = dev.FindChild(ctx, storage, handle, name)
+	_, found, err = dev.FindChild(storage, handle, name)
 	c.out.Printf("deleted; listed after delete: found=%v err=%v\n", found, err)
 
 	return nil
@@ -287,8 +293,7 @@ func (c *cli) hiddenWriteTest(ctx context.Context, dev device.MTPDiagnostics, st
 
 // mtp reads a raw PTP operation; opcodes and parameters use hexadecimal.
 func (c *cli) mtp(ctx context.Context, svc *garmin.Service, args []string) error {
-	dev, ok := svc.Device().(device.RawMTPReader)
-	if !ok || len(args) < 1 {
+	if !svc.SupportsRawMTP() || len(args) < 1 {
 		return usageErrorf("usage: mtp OPCODE [PARAM...]  (requires the Windows MTP bridge)")
 	}
 
@@ -303,7 +308,7 @@ func (c *cli) mtp(ctx context.Context, svc *garmin.Service, args []string) error
 		nums = append(nums, n)
 	}
 
-	data, code, rp, err := dev.MtpRead(ctx, nums[0], nums[1:])
+	data, code, rp, err := svc.RawMTPRead(ctx, nums[0], nums[1:])
 	if err != nil {
 		return err
 	}
@@ -424,7 +429,7 @@ func (b *backupRun) walk(ctx context.Context, dir string) error {
 	err := b.withDeviceGroup(ctx, b.svc, func(ctx context.Context, svc *garmin.Service) error {
 		var err error
 
-		entries, err = svc.Device().List(ctx, dir)
+		entries, err = svc.List(ctx, dir)
 
 		return err
 	})
@@ -464,7 +469,7 @@ func (b *backupRun) copyFile(ctx context.Context, p string) error {
 	err := b.withDeviceGroup(ctx, b.svc, func(ctx context.Context, svc *garmin.Service) error {
 		var err error
 
-		data, err = svc.Device().Read(ctx, p)
+		data, err = svc.ReadFile(ctx, p)
 
 		return err
 	})

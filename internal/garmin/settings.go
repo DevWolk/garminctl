@@ -370,7 +370,7 @@ func (s *Service) ApplyChanges(ctx context.Context, changes []Change) (*ApplyRes
 	}
 
 	name := fmt.Sprintf("%s/%s.FIT", PathNewFiles, newUUID())
-	if err := s.dev.Write(ctx, name, data); err != nil {
+	if err := s.WriteFile(ctx, name, data); err != nil {
 		return nil, fmt.Errorf("write %s: %w", name, err)
 	}
 
