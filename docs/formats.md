@@ -97,6 +97,9 @@ pending file.
 Resolution applies profile scaling and accepts numeric identifiers for
 undocumented messages and fields. String values cannot use this change format;
 integers must fit the signed-32-bit through unsigned-32-bit range.
+Message/array indices must fit their unsigned 16-/8-bit slots. Nonfinite numbers
+and fractional raw integers are rejected; profile scaling retains its existing
+rounding before the range check.
 Both settings and workout builders propagate FIT construction errors before
 staging a file. Their `file_id` serial field deliberately stores the low 32 bits
 of the device's uint64 UnitID, preserving the existing protocol representation.
@@ -177,6 +180,13 @@ an `IN.BIN` entry.
   with heart rate encoded as bpm + 100 and power as watts + 1000.
 - Intensity: main 0, rest 1, warmup 2, cooldown 3, recovery 4, interval 5,
   other 6.
+
+Workout validation checks duration, distance and target units before converting
+them to unsigned FIT slots; existing fractional-unit truncation is retained.
+It also checks repeat counts, flattened step counts and the Connect duration
+estimate. Duration text must match complete decimal/unit groups or colon
+components, so unmatched signs/text cannot be silently discarded. Invalid input
+returns an error before a workout is staged or sent to Connect.
 
 ## Network transfers and local state
 

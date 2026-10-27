@@ -78,6 +78,9 @@ type ResolvedChange struct {
 // and, when available, the current settings for the previous value.
 func (s *Service) Resolve(c Change, view *SettingsView) (ResolvedChange, error) {
 	rc := ResolvedChange{Change: c}
+	if err := validateChangeIndices(c); err != nil {
+		return rc, err
+	}
 
 	mp, err := s.resolveMesg(&rc)
 	if err != nil {
@@ -165,20 +168,13 @@ func resolveField(rc *ResolvedChange, mp *fit.MesgProfile) (*fit.FieldProfile, e
 // changeRaw turns a parsed value into the unscaled integer the change file
 // carries in its 32-bit value slot.
 func changeRaw(v any) (int64, error) {
-	var raw int64
-
-	switch x := v.(type) {
-	case string:
+	if _, ok := v.(string); ok {
 		return 0, errors.New("string values cannot be sent as a settings change")
-	case float64:
-		raw = int64(x)
-	default:
-		iv, err := toInt64(v)
-		if err != nil {
-			return 0, err
-		}
+	}
 
-		raw = iv
+	raw, err := toInt64(v)
+	if err != nil {
+		return 0, err
 	}
 
 	if raw < math.MinInt32 || raw > math.MaxUint32 {
@@ -232,10 +228,26 @@ func toInt64(v any) (int64, error) {
 
 		return 0, nil
 	case float64:
+		if x != math.Trunc(x) || x < -0x1p63 || x >= 0x1p63 {
+			return 0, fmt.Errorf("finite int64 value expected, got %v", x)
+		}
+
 		return int64(x), nil
 	}
 
 	return 0, fmt.Errorf("integer expected, got %T", v)
+}
+
+func validateChangeIndices(c Change) error {
+	if c.Index < 0 || c.Index > math.MaxUint16 {
+		return fmt.Errorf("message index %d does not fit the settings-change slot", c.Index)
+	}
+
+	if c.ArrayIndex != nil && (*c.ArrayIndex < 0 || *c.ArrayIndex > math.MaxUint8) {
+		return fmt.Errorf("array index %d does not fit the settings-change slot", *c.ArrayIndex)
+	}
+
+	return nil
 }
 
 // BuildChangeFile produces a settings-change FIT file the watch applies
@@ -278,9 +290,17 @@ func BuildChangeFile(changes []ResolvedChange, unitID uint64, swVersion uint16, 
 	}
 
 	for _, c := range changes {
+		if err := validateChangeIndices(c.Change); err != nil {
+			return nil, err
+		}
+
+		if c.Raw < math.MinInt32 || c.Raw > math.MaxUint32 {
+			return nil, fmt.Errorf("raw value %d does not fit the settings-change slot", c.Raw)
+		}
+
 		// The value slot is a uint32; Resolve keeps Raw within int32..uint32,
 		// and a negative value travels as its two's complement.
-		raw := uint32(c.Raw) //nolint:gosec // range checked in changeRaw; negatives are sent as two's complement on purpose
+		raw := uint32(c.Raw)
 
 		vals := map[uint8]any{253: ts, 4: raw, 0: c.MesgNum, 2: c.FieldNum}
 		if c.ArrayIndex != nil || c.Index > 0 {
@@ -478,6 +498,10 @@ func ParseChangeSpec(spec string) (Change, error) {
 
 		c.ArrayIndex = &n
 		c.Field = c.Field[:i]
+	}
+
+	if err := validateChangeIndices(c); err != nil {
+		return Change{}, err
 	}
 
 	return c, nil

@@ -68,7 +68,7 @@ var (
 	fitSport   = map[string]int{sportRunning: 1, "cycling": 2, kindOther: 0, "swimming": 5, "strength": 10, "cardio": 4, "yoga": 10, "pilates": 10, "hiit": 10, "walking": 11, "hiking": 17}
 	fitIntens  = map[string]int{"warmup": 2, "cooldown": 3, stepInterval: 5, "recovery": 4, "rest": 1, kindOther: 6, "main": 0}
 	reRange    = regexp.MustCompile(`^(\S+)\s*[-–]\s*(\S+)$`)
-	reDuration = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*(h|m|min|s|sec)?`)
+	reDuration = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*(h|min|m|sec|s)?`)
 	reDistance = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*(km|k|m|mi|miles?|yd)?$`)
 )
 
@@ -84,7 +84,7 @@ func parseDurationSec(s string) (float64, error) {
 
 		for _, p := range parts {
 			v, err := strconv.ParseFloat(p, 64)
-			if err != nil {
+			if err != nil || v < 0 {
 				return 0, fmt.Errorf("bad duration %q", s)
 			}
 
@@ -92,6 +92,14 @@ func parseDurationSec(s string) (float64, error) {
 		}
 
 		return total, nil
+	}
+
+	return parseDurationUnits(s)
+}
+
+func parseDurationUnits(s string) (float64, error) {
+	if strings.TrimSpace(reDuration.ReplaceAllString(s, "")) != "" {
+		return 0, fmt.Errorf("bad duration %q", s)
 	}
 
 	total := 0.0
@@ -231,18 +239,25 @@ func rangeTarget(kind, lo, hi, spec string) (target, error) {
 		a, err1 := parsePaceSec(lo)
 
 		b, err2 := parsePaceSec(hi)
-		if err1 != nil || err2 != nil || a <= 0 || b <= 0 {
+		if err1 != nil || err2 != nil || !validPaceDuration(a) || !validPaceDuration(b) {
 			return target{}, fmt.Errorf("bad pace in %q (use min:sec per km)", spec)
 		}
 
 		t.low, t.hi = 1000/math.Max(a, b), 1000/math.Min(a, b) // m/s, slow..fast
 	case targetSpeed:
-		a, _ := strconv.ParseFloat(lo, 64)
-		b, _ := strconv.ParseFloat(hi, 64)
+		a, b, err := numericTargetRange(lo, hi)
+		if err != nil {
+			return target{}, err
+		}
+
 		t.low, t.hi = math.Min(a, b)/3.6, math.Max(a, b)/3.6
 	default: // hr, cadence, power: plain numbers
-		t.low, _ = strconv.ParseFloat(lo, 64)
-		t.hi, _ = strconv.ParseFloat(hi, 64)
+		a, b, err := numericTargetRange(lo, hi)
+		if err != nil {
+			return target{}, err
+		}
+
+		t.low, t.hi = a, b
 	}
 
 	return t, nil
@@ -267,13 +282,21 @@ func (w *WorkoutSpec) Validate() error {
 		return errors.New("workout needs steps")
 	}
 
-	return validateSteps(w.Steps, 0)
+	if err := validateSteps(w.Steps, 0); err != nil {
+		return err
+	}
+
+	return validateFITStepCount(w.Steps)
 }
 
 // validateSteps checks a step list; repeat groups may not nest.
 func validateSteps(steps []StepSpec, depth int) error {
 	for i := range steps {
 		st := &steps[i]
+		if st.Repeat < 0 || uint64(st.Repeat) > math.MaxUint32 {
+			return errors.New("repeat count must fit an unsigned 32-bit slot")
+		}
+
 		if st.Repeat > 0 {
 			if depth > 0 {
 				return errors.New("repeat groups cannot be nested")
@@ -328,21 +351,7 @@ func validateStep(st *StepSpec) error {
 		return fmt.Errorf("step %q: give one of duration, distance, calories or lap", st.Type)
 	}
 
-	if st.Duration != "" {
-		if _, err := parseDurationSec(st.Duration); err != nil {
-			return err
-		}
-	}
-
-	if st.Distance != "" {
-		if _, err := parseDistanceM(st.Distance); err != nil {
-			return err
-		}
-	}
-
-	_, err := parseTarget(st.Target)
-
-	return err
+	return validateStepNumbers(*st)
 }
 
 // endCondition and targetType build the small enum objects of Connect's
@@ -470,7 +479,11 @@ func (w *WorkoutSpec) ConnectJSON() (map[string]any, error) {
 	sp := sportIDs[w.Sport]
 	sport := map[string]any{"sportTypeId": sp[0], "sportTypeKey": sp[1]}
 	b := &connectSteps{}
+
 	steps := b.convert(w.Steps)
+	if math.IsNaN(b.est) || b.est < 0 || b.est >= float64(math.MaxInt) {
+		return nil, errors.New("estimated workout duration is outside the host integer range")
+	}
 
 	doc := map[string]any{
 		"workoutName": w.Name, "sportType": sport, "estimatedDurationInSecs": int(b.est),

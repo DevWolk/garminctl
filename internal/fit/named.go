@@ -2,6 +2,7 @@ package fit
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -153,7 +154,12 @@ func (p *Profile) ParseValue(fp *FieldProfile, v any) (any, error) {
 			return scaled, nil
 		}
 
-		return int64(scaled + 0.5), nil
+		rounded := scaled + 0.5
+		if math.IsNaN(rounded) || rounded < -0x1p63 || rounded >= 0x1p63 {
+			return nil, fmt.Errorf("%s: scaled value %v is outside int64 range", fp.Name, scaled)
+		}
+
+		return int64(rounded), nil
 	}
 
 	return v, nil
