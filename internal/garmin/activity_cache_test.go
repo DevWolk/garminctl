@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,15 @@ type activityBarrierDevice struct {
 	ignoreCancel bool
 	closeOnce    sync.Once
 	closeErr     error
+}
+
+func (d *activityBarrierDevice) List(ctx context.Context, path string) ([]device.Entry, error) {
+	entries, err := d.Device.List(ctx, path)
+	if path == "GARMIN/Activity" {
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	}
+
+	return entries, err
 }
 
 func (d *activityBarrierDevice) Close() error {
