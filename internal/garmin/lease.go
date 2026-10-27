@@ -86,6 +86,11 @@ func (l *Lazy) AcquireAt(ctx context.Context, expected ConnectionEpoch) (*Lease,
 		return nil, lifecycle.ErrStopped
 	}
 
+	return l.acquireReserved(ctx, expected, release)
+}
+
+// acquireReserved consumes one reserved admission permit and the held slot.
+func (l *Lazy) acquireReserved(ctx context.Context, expected ConnectionEpoch, release func()) (*Lease, error) {
 	groupCtx, cancel := context.WithCancel(ctx)
 	lease := &Lease{owner: l, ctx: groupCtx, cancel: cancel, releaseAdmission: release}
 	l.mu.Lock()

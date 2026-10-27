@@ -39,12 +39,13 @@ const (
 
 // Server holds the lazily connected device service.
 type Server struct {
-	svc     *garmin.Lazy
-	cloud   *gc.Client
-	job     syncJob
-	auto    autoState
-	version string
-	mcp     *mcpserver.HTTPServer
+	svc        *garmin.Lazy
+	cloud      *gc.Client
+	job        syncJob
+	auto       autoState
+	version    string
+	mcp        *mcpserver.HTTPServer
+	probeQuiet time.Duration
 }
 
 // syncJob is the one background sync run at a time.
@@ -146,7 +147,7 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 }
 
 func newServer(open garmin.Opener, autoSync bool) *Server {
-	s := &Server{svc: garmin.NewLazy(open), cloud: gc.New(gc.DefaultStorePath())}
+	s := &Server{svc: garmin.NewLazy(open), cloud: gc.New(gc.DefaultStorePath()), probeQuiet: watchTick}
 	s.auto.Enabled = autoSync
 
 	return s
