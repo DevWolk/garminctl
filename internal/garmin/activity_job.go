@@ -16,6 +16,13 @@ type activityJobKey struct {
 	path  string
 }
 
+// WatchAcquireError distinguishes initial connection failure from a domain
+// failure after acquisition. Adapters retain their existing status/body shapes.
+type WatchAcquireError struct{ Err error }
+
+func (e *WatchAcquireError) Error() string { return e.Err.Error() }
+func (e *WatchAcquireError) Unwrap() error { return e.Err }
+
 // ActivityCoordinator owns runtime-bounded decoding, independently of request
 // waiters. Managed callers use it without retaining an outer operation lease.
 type ActivityCoordinator struct {
@@ -46,7 +53,7 @@ func (c *ActivityCoordinator) Activities(ctx context.Context, wait bool) (*Activ
 
 	lease, err := c.watch.Acquire(ctx)
 	if err != nil {
-		return nil, err
+		return nil, &WatchAcquireError{Err: err}
 	}
 
 	scan, err := lease.Service().scanActivities(lease.Context())

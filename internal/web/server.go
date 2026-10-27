@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
@@ -23,6 +22,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
+	"github.com/DevWolk/garminctl/internal/notify"
+	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 
 //go:embed ui
@@ -41,31 +42,22 @@ const (
 type Server struct {
 	svc        *garmin.Lazy
 	cloud      *gc.Client
-	job        syncJob
+	runtime    *garmin.Runtime
+	watchDone  <-chan struct{}
 	auto       autoState
 	version    string
 	mcp        *mcpserver.HTTPServer
 	probeQuiet time.Duration
+	watchEvery time.Duration
+	notify     func(context.Context, string, string)
 }
 
-// syncJob is the one background sync run at a time.
-type syncJob struct {
-	mu        sync.Mutex
-	Running   bool               `json:"running"`
-	StartedAt time.Time          `json:"startedAt"`
-	EndedAt   time.Time          `json:"endedAt"`
-	Log       []string           `json:"log"`
-	Result    *garmin.SyncResult `json:"result,omitempty"`
-	Error     string             `json:"error,omitempty"`
-}
-
-func (j *syncJob) snapshot() map[string]any {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+func (s *Server) syncSnapshot() map[string]any {
+	state := s.runtime.Sync.Snapshot()
 
 	return map[string]any{
-		"running": j.Running, "startedAt": j.StartedAt, "endedAt": j.EndedAt,
-		"log": append([]string(nil), j.Log...), "result": j.Result, "error": j.Error,
+		"running": state.Running, "startedAt": state.StartedAt, "endedAt": state.EndedAt,
+		"log": state.Log, "result": state.Result, "error": state.Error,
 	}
 }
 
@@ -95,21 +87,26 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	s := newServer(open, autoSync)
+	s := newServer(ctx, open, autoSync)
 
 	s.version = version
-	defer s.svc.Drop()
-
-	if autoSync {
-		go s.watch(ctx)
-	}
+	ctx = s.runtime.Context()
 
 	addr := listener.Addr().String()
 
 	h, err := s.handler(addr)
 	if err != nil {
-		_ = listener.Close()
-		return err
+		closeCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		defer stop()
+
+		return errors.Join(err, listener.Close(), s.runtime.Close(closeCtx))
+	}
+
+	if autoSync {
+		done := make(chan struct{})
+
+		s.watchDone = done
+		go func() { defer close(done); s.watch(ctx) }()
 	}
 
 	// No read or write timeout on purpose: track uploads and syncs run for minutes.
@@ -117,6 +114,8 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 		Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
 	}
+
+	var shutdownErr error
 
 	stopped := make(chan struct{})
 	go func() {
@@ -127,9 +126,23 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer cancel()
 
-		if err := srv.Shutdown(sctx); err != nil {
-			_ = srv.Close()
+		s.runtime.Stop()
+
+		if s.watchDone != nil {
+			select {
+			case <-s.watchDone:
+			case <-sctx.Done():
+				shutdownErr = errors.Join(shutdownErr, sctx.Err())
+			}
 		}
+
+		shutdownErr = errors.Join(shutdownErr, s.runtime.Close(sctx))
+
+		if err := srv.Shutdown(sctx); err != nil {
+			shutdownErr = errors.Join(shutdownErr, err, srv.Close())
+		}
+
+		shutdownErr = errors.Join(shutdownErr, s.mcp.Close(sctx))
 	}()
 
 	slog.Info("garminctl web UI listening", "url", "http://"+addr)
@@ -140,14 +153,15 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 	<-stopped
 
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+		return errors.Join(err, shutdownErr)
 	}
 
-	return nil
+	return shutdownErr
 }
 
-func newServer(open garmin.Opener, autoSync bool) *Server {
-	s := &Server{svc: garmin.NewLazy(open), cloud: gc.New(gc.DefaultStorePath()), probeQuiet: watchTick}
+func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
+	runtime := garmin.NewRuntime(ctx, open)
+	s := &Server{svc: runtime.Watch, runtime: runtime, cloud: gc.New(gc.DefaultStorePath()), probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s
@@ -198,7 +212,7 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 var uiTab = regexp.MustCompile(`data-tab="([a-z]+)"`)
 
 func (s *Server) routes(mux *http.ServeMux) {
-	s.mcp = mcpserver.NewHTTPServer(s.svc, s.cloud, s.version)
+	s.mcp = mcpserver.NewHTTPServer(s.runtime, s.cloud, s.version)
 	mux.Handle("GET /mcp", s.mcp)
 	mux.Handle("POST /mcp", s.mcp)
 	mux.Handle("DELETE /mcp", s.mcp)
@@ -213,52 +227,52 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
 	mux.HandleFunc("GET /api/health/day", s.healthDay)
 	mux.HandleFunc("GET /api/health/extras", s.healthExtras)
-	mux.HandleFunc("POST /api/health/weight", s.healthWeight)
+	mux.HandleFunc("POST /api/health/weight", s.admittedOperation(s.healthWeight))
 	mux.HandleFunc("GET /api/workouts", s.workoutsList)
-	mux.HandleFunc("POST /api/workouts", s.workoutsCreate)
-	mux.HandleFunc("POST /api/workouts/{id}/send", s.workoutsSend)
-	mux.HandleFunc("DELETE /api/workouts/{id}", s.workoutsDelete)
-	mux.HandleFunc("POST /api/workouts/preview", s.workoutsPreview)
+	mux.HandleFunc("POST /api/workouts", s.admittedOperation(s.workoutsCreate))
+	mux.HandleFunc("POST /api/workouts/{id}/send", s.admittedOperation(s.workoutsSend))
+	mux.HandleFunc("DELETE /api/workouts/{id}", s.admittedOperation(s.workoutsDelete))
+	mux.HandleFunc("POST /api/workouts/preview", s.admittedOperation(s.workoutsPreview))
 	mux.HandleFunc("GET /api/music", s.musicList)
-	mux.HandleFunc("POST /api/music", s.musicAdd)
-	mux.HandleFunc("DELETE /api/music", s.musicRemove)
-	mux.HandleFunc("PUT /api/music/playlists/{name}", s.musicPlaylist)
+	mux.HandleFunc("POST /api/music", s.admittedOperation(s.musicAdd))
+	mux.HandleFunc("DELETE /api/music", s.admittedOperation(s.musicRemove))
+	mux.HandleFunc("PUT /api/music/playlists/{name}", s.admittedOperation(s.musicPlaylist))
 	mux.HandleFunc("GET /api/store", s.storeBrowse)
 	mux.HandleFunc("GET /api/store/apps/{id}", s.storeApp)
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
-	mux.HandleFunc("POST /api/cloud/login", s.cloudLogin)
-	mux.HandleFunc("POST /api/cloud/mfa", s.cloudMFA)
-	mux.HandleFunc("POST /api/cloud/logout", s.cloudLogout)
-	mux.HandleFunc("POST /api/cloud/sync", s.cloudSyncStart)
+	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
+	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
+	mux.HandleFunc("POST /api/cloud/logout", s.admittedOperation(s.cloudLogout))
+	mux.HandleFunc("POST /api/cloud/sync", s.admittedOperation(s.cloudSyncStart))
 	mux.HandleFunc("GET /api/cloud/sync", s.cloudSyncState)
 	mux.HandleFunc("GET /api/cloud/messages", s.cloudMessages)
 	mux.HandleFunc("GET /api/cloud/settings", s.cloudSettings)
-	mux.HandleFunc("PUT /api/cloud/settings", s.cloudSettingsPut)
+	mux.HandleFunc("PUT /api/cloud/settings", s.admittedOperation(s.cloudSettingsPut))
 	mux.HandleFunc("GET /api/status", s.status)
-	mux.HandleFunc("POST /api/connect", s.connect)
-	mux.HandleFunc("POST /api/disconnect", s.disconnectHandler)
-	mux.HandleFunc("POST /api/refresh", s.refresh)
+	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
+	mux.HandleFunc("POST /api/disconnect", s.admittedOperation(s.disconnectHandler))
+	mux.HandleFunc("POST /api/refresh", s.admittedOperation(s.refresh))
 	mux.HandleFunc("GET /api/files", s.files)
 	mux.HandleFunc("GET /api/file", s.fileGet)
-	mux.HandleFunc("POST /api/file", s.filePut)
-	mux.HandleFunc("DELETE /api/file", s.fileDelete)
+	mux.HandleFunc("POST /api/file", s.admittedOperation(s.filePut))
+	mux.HandleFunc("DELETE /api/file", s.admittedOperation(s.fileDelete))
 	mux.HandleFunc("GET /api/decode", s.decode)
 	mux.HandleFunc("GET /api/settings", s.settings)
-	mux.HandleFunc("POST /api/settings/apply", s.settingsApply)
+	mux.HandleFunc("POST /api/settings/apply", s.admittedOperation(s.settingsApply))
 	mux.HandleFunc("GET /api/schema", s.schema)
 	mux.HandleFunc("GET /api/apps", s.apps)
 	mux.HandleFunc("GET /api/apps/{ref}/settings", s.appSettings)
-	mux.HandleFunc("PUT /api/apps/{ref}/settings", s.appSettingsPut)
+	mux.HandleFunc("PUT /api/apps/{ref}/settings", s.admittedOperation(s.appSettingsPut))
 	mux.HandleFunc("GET /api/apps/{ref}/schema", s.appSchema)
 	mux.HandleFunc("GET /api/updates/software", s.updatesSoftware)
-	mux.HandleFunc("POST /api/updates/software/install", s.updatesInstall)
+	mux.HandleFunc("POST /api/updates/software/install", s.admittedOperation(s.updatesInstall))
 	mux.HandleFunc("GET /api/updates/apps", s.updatesApps)
 	mux.HandleFunc("GET /api/software", s.software)
-	mux.HandleFunc("POST /api/apps/install", s.appsInstall)
-	mux.HandleFunc("DELETE /api/apps/{ref}", s.appRemove)
-	mux.HandleFunc("PUT /api/apps/{ref}/hidden", s.appHidden)
+	mux.HandleFunc("POST /api/apps/install", s.admittedOperation(s.appsInstall))
+	mux.HandleFunc("DELETE /api/apps/{ref}", s.admittedOperation(s.appRemove))
+	mux.HandleFunc("PUT /api/apps/{ref}/hidden", s.admittedOperation(s.appHidden))
 	mux.HandleFunc("GET /api/apps/pending", s.appPending)
-	mux.HandleFunc("DELETE /api/apps/pending", s.appPendingCancel)
+	mux.HandleFunc("DELETE /api/apps/pending", s.admittedOperation(s.appPendingCancel))
 }
 
 // localOnly refuses requests that did not come from a page this server
@@ -398,7 +412,9 @@ func deviceErrorStatus(err error, fallback int) int {
 		return http.StatusRequestTimeout
 	case errors.Is(err, device.ErrDisconnected):
 		return http.StatusServiceUnavailable
-	case errors.Is(err, device.ErrBusy):
+	case errors.Is(err, lifecycle.ErrStopped):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, lifecycle.ErrMaintenance), errors.Is(err, lifecycle.ErrBusy), errors.Is(err, device.ErrBusy):
 		return http.StatusConflict
 	case errors.Is(err, device.ErrNotFound):
 		return http.StatusNotFound
@@ -411,19 +427,20 @@ func deviceErrorStatus(err error, fallback int) int {
 
 // withService runs fn with a connected service; a bridge failure drops the
 // connection so the next call reconnects.
-func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(svc *garmin.Service) (any, error)) {
-	svc, err := s.svc.Get(r.Context())
+func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(context.Context, *garmin.Service) (any, error)) {
+	lease, err := s.svc.Acquire(r.Context())
 	if err != nil {
 		writeJSON(w, deviceErrorStatus(err, http.StatusServiceUnavailable), statusResponse{Error: err.Error()})
 		return
 	}
 
-	v, err := fn(svc)
-	if err != nil {
-		if errors.Is(err, device.ErrDisconnected) {
-			s.svc.Drop()
-		}
+	v, err := fn(lease.Context(), lease.Service())
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
+	}
 
+	err = errors.Join(err, lease.Release())
+	if err != nil {
 		writeErr(w, err)
 
 		return
@@ -455,8 +472,8 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		sum, err := svc.Summary(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		sum, err := svc.Summary(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -466,8 +483,8 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		sum, err := svc.Summary(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		sum, err := svc.Summary(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -482,20 +499,20 @@ func (s *Server) disconnectHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
 		svc.Refresh()
 		return map[string]any{"ok": true}, nil
 	})
 }
 
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.Device().List(r.Context(), r.URL.Query().Get("path"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.Device().List(ctx, r.URL.Query().Get("path"))
 	})
 }
 
 func (s *Server) fileGet(w http.ResponseWriter, r *http.Request) {
-	svc, err := s.svc.Get(r.Context())
+	lease, err := s.svc.Acquire(r.Context())
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -503,7 +520,12 @@ func (s *Server) fileGet(w http.ResponseWriter, r *http.Request) {
 
 	p := r.URL.Query().Get("path")
 
-	data, err := svc.Device().Read(r.Context(), p)
+	data, err := lease.Service().Device().Read(lease.Context(), p)
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
+	}
+
+	err = errors.Join(err, lease.Release())
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -526,9 +548,9 @@ func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		p := r.URL.Query().Get("path")
-		if err := svc.Device().Write(r.Context(), p, data); err != nil {
+		if err := svc.Device().Write(ctx, p, data); err != nil {
 			return nil, err
 		}
 
@@ -539,9 +561,9 @@ func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		p := r.URL.Query().Get("path")
-		if err := svc.Device().Delete(r.Context(), p); err != nil {
+		if err := svc.Device().Delete(ctx, p); err != nil {
 			return nil, err
 		}
 
@@ -552,14 +574,14 @@ func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) decode(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.DecodeFIT(r.Context(), r.URL.Query().Get("path"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.DecodeFIT(ctx, r.URL.Query().Get("path"))
 	})
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		view, err := svc.Settings(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		view, err := svc.Settings(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -577,38 +599,38 @@ func (s *Server) settingsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.ApplyChanges(r.Context(), body.Changes)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.ApplyChanges(ctx, body.Changes)
 	})
 }
 
 func (s *Server) schema(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
 		return svc.Schema(r.URL.Query().Get("mesg"))
 	})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.Apps(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.Apps(ctx)
 	})
 }
 
 func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.AppSettings(r.Context(), r.PathValue("ref"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.AppSettings(ctx, r.PathValue("ref"))
 	})
 }
 
 func (s *Server) appSchema(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.AppSchema(r.Context(), r.PathValue("ref"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.AppSchema(ctx, r.PathValue("ref"))
 	})
 }
 
 func (s *Server) updatesSoftware(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.CheckSoftwareUpdates(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.CheckSoftwareUpdates(ctx)
 	})
 }
 
@@ -626,20 +648,20 @@ func (s *Server) updatesInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.InstallSoftwareUpdate(r.Context(), body.PartNumber)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.InstallSoftwareUpdate(ctx, body.PartNumber)
 	})
 }
 
 func (s *Server) updatesApps(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.CheckAppUpdates(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.CheckAppUpdates(ctx)
 	})
 }
 
 func (s *Server) software(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.SoftwareInventory(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.SoftwareInventory(ctx)
 	})
 }
 
@@ -652,8 +674,8 @@ func (s *Server) appHidden(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		backup, err := svc.SetAppHidden(r.Context(), r.PathValue("ref"), in.Hidden)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		backup, err := svc.SetAppHidden(ctx, r.PathValue("ref"), in.Hidden)
 		if err != nil {
 			return nil, err
 		}
@@ -663,12 +685,12 @@ func (s *Server) appHidden(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appPending(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) { return svc.PendingAppChanges(r.Context()) })
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) { return svc.PendingAppChanges(ctx) })
 }
 
 func (s *Server) appPendingCancel(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		if err := svc.CancelAppChanges(r.Context()); err != nil {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		if err := svc.CancelAppChanges(ctx); err != nil {
 			return nil, err
 		}
 
@@ -677,8 +699,8 @@ func (s *Server) appPendingCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) appRemove(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		removed, err := svc.RemoveApp(r.Context(), r.PathValue("ref"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		removed, err := svc.RemoveApp(ctx, r.PathValue("ref"))
 		if err != nil {
 			return nil, err
 		}
@@ -693,8 +715,8 @@ func (s *Server) appsInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		p, err := svc.InstallPRG(r.Context(), data)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		p, err := svc.InstallPRG(ctx, data)
 		if err != nil {
 			return nil, err
 		}
@@ -712,15 +734,38 @@ func (s *Server) appSettingsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.SetAppSettings(r.Context(), r.PathValue("ref"), body.Values)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.SetAppSettings(ctx, r.PathValue("ref"), body.Values)
 	})
+}
+
+// admittedOperation admits mutating requests before body reads or account-store
+// work, without acquiring a watch or serializing the network through USB.
+func (s *Server) admittedOperation(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		release, err := s.svc.Gate().Enter(r.Context())
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		defer release()
+
+		next(w, r)
+	}
 }
 
 // ---------- Garmin Connect ----------
 
 func (s *Server) cloudStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, garmin.NewCloud(s.svc.Current(), s.cloud).Status(r.Context()))
+	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Status(ctx), nil
+	})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) cloudLogin(w http.ResponseWriter, r *http.Request) {
@@ -794,38 +839,57 @@ func (s *Server) cloudSyncStart(w http.ResponseWriter, r *http.Request) {
 	up := body.Upload == nil || *body.Upload
 	down := body.Download == nil || *body.Download
 
-	svc, err := s.svc.Get(r.Context())
+	if s.cloud.LoggedIn() && s.runtime.Sync.Snapshot().Running {
+		writeError(w, http.StatusConflict, "a sync is already running")
+		return
+	}
+
+	lease, err := s.svc.Acquire(r.Context())
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 
 	if !s.cloud.LoggedIn() {
+		_ = lease.Release()
+
 		writeError(w, http.StatusUnauthorized, gc.ErrNotLoggedIn.Error())
+
 		return
 	}
 
-	if _, started := s.startSync(r.Context(), svc, up, down); !started {
-		writeError(w, http.StatusConflict, "a sync is already running")
+	epoch := lease.Epoch()
+	if err := lease.Release(); err != nil {
+		writeErr(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, s.job.snapshot())
+	if _, _, err := s.startSync(r.Context(), epoch, up, down); err != nil {
+		if errors.Is(err, garmin.ErrSyncBusy) {
+			writeError(w, http.StatusConflict, "a sync is already running")
+		} else {
+			writeErr(w, err)
+		}
+
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, s.syncSnapshot())
 }
 
 func (s *Server) cloudSyncState(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.job.snapshot())
+	writeJSON(w, http.StatusOK, s.syncSnapshot())
 }
 
 func (s *Server) cloudMessages(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Messages(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Messages(ctx)
 	})
 }
 
 func (s *Server) cloudSettings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Settings(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Settings(ctx)
 	})
 }
 
@@ -843,84 +907,116 @@ func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).SetSettings(r.Context(), body.Changes)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).SetSettings(ctx, body.Changes)
 	})
 }
 
 // ---------- Connect IQ store ----------
 
-// storeSvc returns the connected service (or nil) and the watch's part number.
-func (s *Server) storeSvc(ctx context.Context) (*garmin.Service, string) {
-	svc := s.svc.Current()
-	part := ""
+// withOptionalService keeps offline catalog/account behavior without exporting
+// an unleased Service or opening a watch solely to decorate a network response.
+func (s *Server) withOptionalService(ctx context.Context, body func(context.Context, *garmin.Service) (any, error)) (any, error) {
+	lease, err := s.svc.AcquireCurrent(ctx)
+	if err != nil {
+		return nil, err
+	}
 
+	if lease == nil {
+		release, err := s.svc.Gate().Enter(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+
+		return body(ctx, nil)
+	}
+
+	out, err := body(lease.Context(), lease.Service())
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
+	}
+
+	return out, errors.Join(err, lease.Release())
+}
+
+func storePart(ctx context.Context, svc *garmin.Service) string {
 	if svc != nil {
-		if dx, err := svc.DeviceXML(ctx); err == nil && dx.PartNumber != "" {
-			part = dx.PartNumber
+		if dx, err := svc.DeviceXML(ctx); err == nil {
+			return dx.PartNumber
 		}
 	}
 
-	return svc, part
+	return ""
 }
 
 func (s *Server) storeBrowse(w http.ResponseWriter, r *http.Request) {
-	svc, part := s.storeSvc(r.Context())
 	q := r.URL.Query()
 	page, _ := strconv.Atoi(q.Get("page"))
+	query := ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 0}
 
-	query := ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 0} // the store's default page
-
-	view, err := svc.BrowseStore(r.Context(), part, query)
+	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.BrowseStore(ctx, storePart(ctx, svc), query)
+	})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, view)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) storeApp(w http.ResponseWriter, r *http.Request) {
-	svc, part := s.storeSvc(r.Context())
-
-	d, err := svc.StoreApp(r.Context(), part, r.PathValue("id"))
+	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.StoreApp(ctx, storePart(ctx, svc), r.PathValue("id"))
+	})
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ---------- health ----------
 
 func (s *Server) healthActivities(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.Activities(r.Context(), r.URL.Query().Get("wait") == "1")
-	})
+	out, err := s.runtime.Activities.Activities(r.Context(), r.URL.Query().Get("wait") == "1")
+	if err != nil {
+		if _, ok := errors.AsType[*garmin.WatchAcquireError](err); ok {
+			writeJSON(w, deviceErrorStatus(err, http.StatusServiceUnavailable), statusResponse{Error: err.Error()})
+			return
+		}
+
+		writeErr(w, err)
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) healthActivity(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.Activity(r.Context(), r.PathValue("name"), 0) // default track resolution
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.Activity(ctx, r.PathValue("name"), 0) // default track resolution
 	})
 }
 
 func (s *Server) healthDaily(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		if days > rangeDays {
-			return garmin.NewCloud(svc, s.cloud).History(r.Context(), days)
+			return garmin.NewCloud(svc, s.cloud).History(ctx, days)
 		}
 
-		return garmin.NewCloud(svc, s.cloud).Daily(r.Context(), days)
+		return garmin.NewCloud(svc, s.cloud).Daily(ctx, days)
 	})
 }
 
 func (s *Server) healthExtras(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Extras(r.Context())
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Extras(ctx)
 	})
 }
 
@@ -933,8 +1029,8 @@ func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		if err := garmin.NewCloud(svc, s.cloud).LogWeight(r.Context(), in.Kg, time.Time{}); err != nil {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		if err := garmin.NewCloud(svc, s.cloud).LogWeight(ctx, in.Kg, time.Time{}); err != nil {
 			return nil, err
 		}
 
@@ -943,16 +1039,16 @@ func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) healthDay(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Day(r.Context(), r.URL.Query().Get("date"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Day(ctx, r.URL.Query().Get("date"))
 	})
 }
 
 // ---------- workouts ----------
 
 func (s *Server) workoutsList(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Workouts(r.Context(), 0) // default page
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return garmin.NewCloud(svc, s.cloud).Workouts(ctx, 0) // default page
 	})
 }
 
@@ -983,9 +1079,9 @@ func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		if req.Local {
-			p, err := svc.WriteWorkoutToWatch(r.Context(), &req.Spec)
+			p, err := svc.WriteWorkoutToWatch(ctx, &req.Spec)
 			if err != nil {
 				return nil, err
 			}
@@ -995,7 +1091,7 @@ func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
 
 		cloud := garmin.NewCloud(svc, s.cloud)
 
-		wk, err := cloud.CreateWorkout(r.Context(), &req.Spec)
+		wk, err := cloud.CreateWorkout(ctx, &req.Spec)
 		if err != nil {
 			return nil, err
 		}
@@ -1007,7 +1103,7 @@ func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
 			return res, nil
 		}
 
-		pulled, err := cloud.SendWorkout(r.Context(), wk.ID, wk.Name)
+		pulled, err := cloud.SendWorkout(ctx, wk.ID, wk.Name)
 		if err != nil {
 			res[noteKey] = "Saved in Garmin Connect, but sending to the watch failed: " + err.Error()
 
@@ -1037,8 +1133,8 @@ func (s *Server) workoutsSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		pulled, err := garmin.NewCloud(svc, s.cloud).SendWorkout(r.Context(), id, r.URL.Query().Get("name"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		pulled, err := garmin.NewCloud(svc, s.cloud).SendWorkout(ctx, id, r.URL.Query().Get("name"))
 		if err != nil {
 			return nil, err
 		}
@@ -1054,15 +1150,15 @@ func (s *Server) workoutsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(r.Context(), id)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(ctx, id)
 	})
 }
 
 // ---------- music ----------
 
 func (s *Server) musicList(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) { return svc.Music(r.Context()) })
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) { return svc.Music(ctx) })
 }
 
 func (s *Server) musicAdd(w http.ResponseWriter, r *http.Request) {
@@ -1071,14 +1167,14 @@ func (s *Server) musicAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.AddTrack(r.Context(), r.URL.Query().Get("folder"), r.URL.Query().Get("name"), data)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.AddTrack(ctx, r.URL.Query().Get("folder"), r.URL.Query().Get("name"), data)
 	})
 }
 
 func (s *Server) musicRemove(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return map[string]any{"ok": true}, svc.RemoveTrack(r.Context(), r.URL.Query().Get("path"))
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return map[string]any{"ok": true}, svc.RemoveTrack(ctx, r.URL.Query().Get("path"))
 	})
 }
 
@@ -1091,7 +1187,7 @@ func (s *Server) musicPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.withService(w, r, func(svc *garmin.Service) (any, error) {
-		return svc.WritePlaylist(r.Context(), r.PathValue("name"), body.Tracks)
+	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
+		return svc.WritePlaylist(ctx, r.PathValue("name"), body.Tracks)
 	})
 }

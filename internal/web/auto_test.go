@@ -122,3 +122,65 @@ func TestSkippedProbePreservesEitherPreviousObservation(t *testing.T) {
 		t.Fatal("busy probe touched USB or changed previous observation")
 	}
 }
+
+func TestPollConnectionConfirmsEachEpochOnce(t *testing.T) {
+	t.Parallel()
+	s, _ := probeService(t, func(context.Context) error { return nil })
+
+	var state watchState
+
+	first, _, ok := s.pollConnection(t.Context(), &state)
+	if !ok || first == 0 {
+		t.Fatal("API-opened connection was not observed")
+	}
+
+	if _, _, ok := s.pollConnection(t.Context(), &state); ok {
+		t.Fatal("same epoch repeated connection actions")
+	}
+
+	if err := s.svc.DropAt(first); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, ok := s.pollConnection(t.Context(), &state); ok {
+		t.Fatal("missing connection was reported connected")
+	}
+
+	lease, err := s.svc.Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second := lease.Epoch()
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	observed, _, ok := s.pollConnection(t.Context(), &state)
+	if !ok || observed != second || second == first {
+		t.Fatalf("replacement epoch not observed: first=%d current=%d observed=%d", first, second, observed)
+	}
+}
+
+func TestPollConnectionSkippedProbeDoesNotInventConnection(t *testing.T) {
+	t.Parallel()
+	s, _ := probeService(t, func(context.Context) error { return nil })
+
+	lease, err := s.svc.Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var state watchState
+	if _, _, ok := s.pollConnection(t.Context(), &state); ok || state.connected {
+		t.Fatal("busy probe invented connection observation")
+	}
+
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, ok := s.pollConnection(t.Context(), &state); !ok {
+		t.Fatal("idle confirmed epoch was not observed")
+	}
+}

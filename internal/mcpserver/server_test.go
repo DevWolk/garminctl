@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -71,7 +72,8 @@ func newClient(t *testing.T) *mcp.ClientSession {
 
 	root := testdump.Root(t)
 
-	s := &server{svc: garmin.NewLazy(func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) })}
+	runtime := garmin.NewRuntime(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) })
+	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")))
 
 	ct, st := mcp.NewInMemoryTransports()
@@ -92,7 +94,12 @@ func newClient(t *testing.T) *mcp.ClientSession {
 		_ = cs.Close()
 		_ = ss.Wait()
 
-		s.svc.Drop()
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
+		defer cancel()
+
+		if err := runtime.Close(closeCtx); err != nil {
+			t.Error(err)
+		}
 	})
 
 	return cs

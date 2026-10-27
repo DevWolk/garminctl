@@ -13,9 +13,9 @@ import (
 
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
-// Send shows a balloon notification through PowerShell. It never blocks and
-// does nothing where no powershell.exe is reachable. Ending ctx removes the
-// balloon early.
+// Send shows a balloon notification through PowerShell and waits for its child.
+// The caller owns its worker. Ending ctx removes the balloon and joins the child;
+// where PowerShell is unavailable, Send returns immediately.
 func Send(ctx context.Context, title, text string) {
 	ps := wpd.PowerShellPath()
 	if ps == "" {
@@ -31,9 +31,5 @@ func Send(ctx context.Context, title, text string) {
 	cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
 	hostexec.HideConsole(cmd)
 
-	if err := cmd.Start(); err != nil {
-		return
-	}
-
-	go func() { _ = cmd.Wait() }()
+	_ = cmd.Run() // notification failure does not fail an otherwise completed sync
 }

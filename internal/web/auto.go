@@ -2,13 +2,14 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
-	"github.com/DevWolk/garminctl/internal/notify"
 )
 
 // Auto-sync watches for USB connections, syncs when signed in to Connect,
@@ -17,7 +18,6 @@ import (
 const (
 	watchTick    = 5 * time.Second
 	probeTimeout = 30 * time.Second
-	syncTimeout  = 2 * time.Hour
 	maxEvents    = 30
 )
 
@@ -53,18 +53,27 @@ func (s *Server) autoNote(ctx context.Context, kind, text string, notifyUser boo
 
 	s.auto.mu.Unlock()
 
-	if notifyUser {
-		notify.Send(ctx, "garminctl", text)
+	if notifyUser && s.notify != nil {
+		s.notify(ctx, "garminctl", text)
 	}
 }
 
 // watch polls for the watch and reacts to plug and unplug. It returns when
 // ctx ends.
-func (s *Server) watch(ctx context.Context) {
-	connected := false
-	misses := 0
+type watchState struct {
+	connected bool
+	misses    int
+	observed  garmin.ConnectionEpoch
+}
 
-	tick := time.NewTicker(watchTick)
+func (s *Server) watch(ctx context.Context) {
+	var (
+		state   watchState
+		actions sync.WaitGroup
+	)
+	defer actions.Wait()
+
+	tick := time.NewTicker(s.watchEvery)
 	defer tick.Stop()
 
 	for {
@@ -74,37 +83,50 @@ func (s *Server) watch(ctx context.Context) {
 		case <-tick.C:
 		}
 
-		if svc := s.svc.Current(); svc != nil {
-			connected = s.probe(ctx, connected)
-			continue
-		}
-
-		// Not connected: look for the watch, but not on every tick (each try starts a bridge).
-		misses++
-		if misses%2 != 0 {
-			continue
-		}
-
-		svc, ok := s.tryOpen(ctx)
+		epoch, name, ok := s.pollConnection(ctx, &state)
 		if !ok {
 			continue
 		}
 
-		connected = true
-
-		name := "Watch"
-
-		sctx, cancel := context.WithTimeout(ctx, probeTimeout)
-		if sum, err := svc.Summary(sctx); err == nil && sum.Model != "" {
-			name = sum.Model
-		}
-
-		cancel()
-
 		s.autoNote(ctx, "plugged", name+" connected over USB", false)
 
-		go s.autoActions(ctx, svc, name)
+		release, err := s.svc.Gate().EnterJob(ctx)
+		if err != nil {
+			continue
+		}
+
+		actions.Go(func() { defer release(); s.autoActions(ctx, epoch, name) })
 	}
+}
+
+func (s *Server) pollConnection(ctx context.Context, state *watchState) (garmin.ConnectionEpoch, string, bool) {
+	epoch := s.svc.CurrentEpoch()
+	if epoch != 0 {
+		state.connected = s.probe(ctx, state.connected && state.observed == epoch)
+		if !state.connected || state.observed == epoch {
+			return 0, "", false
+		}
+	} else {
+		if state.connected {
+			s.autoNote(ctx, "unplugged", "Watch unplugged", false)
+		}
+
+		state.connected = false
+
+		state.misses++
+		if state.misses%2 != 0 {
+			return 0, "", false
+		}
+	}
+
+	epoch, name, ok := s.tryOpen(ctx, epoch)
+	if !ok {
+		return 0, "", false
+	}
+
+	state.observed, state.connected = epoch, true
+
+	return epoch, name, true
 }
 
 // probe checks that an open device still answers. Only a broken transport
@@ -129,31 +151,57 @@ func (s *Server) probe(ctx context.Context, connected bool) bool {
 	}
 }
 
-func (s *Server) tryOpen(ctx context.Context) (*garmin.Service, bool) {
-	svc, err := s.svc.Get(ctx) // the opener bounds its own waiting
+func (s *Server) tryOpen(ctx context.Context, expected garmin.ConnectionEpoch) (garmin.ConnectionEpoch, string, bool) {
+	lease, err := s.svc.AcquireAt(ctx, expected)
 	if err != nil {
-		return nil, false
+		return 0, "", false
 	}
 
-	return svc, true
+	name := "Watch"
+	sctx, cancel := context.WithTimeout(lease.Context(), probeTimeout)
+	sum, summaryErr := lease.Service().Summary(sctx)
+
+	cancel()
+
+	if summaryErr == nil && sum.Model != "" {
+		name = sum.Model
+	}
+
+	if errors.Is(summaryErr, device.ErrDisconnected) {
+		summaryErr = errors.Join(summaryErr, s.svc.DropAt(lease.Epoch()))
+	}
+
+	epoch := lease.Epoch()
+	if err := lease.Release(); err != nil || errors.Is(summaryErr, device.ErrDisconnected) || ctx.Err() != nil {
+		return 0, "", false
+	}
+
+	return epoch, name, true
 }
 
 // autoActions starts sync and an update check after connection.
-func (s *Server) autoActions(ctx context.Context, svc *garmin.Service, name string) {
+func (s *Server) autoActions(ctx context.Context, epoch garmin.ConnectionEpoch, name string) {
 	var parts []string
 
 	if s.cloud.LoggedIn() {
-		if done, started := s.startSync(ctx, svc, true, true); started {
+		cloud := garmin.NewJobCloud(s.svc, epoch, s.cloud)
+
+		job, _, err := s.runtime.Sync.JoinOrStart(ctx, garmin.SyncOptions{Upload: true, Download: true, Epoch: epoch}, func(ctx context.Context, progress garmin.Progress) (*garmin.SyncResult, error) {
+			return cloud.Sync(ctx, true, true, progress)
+		})
+		if err == nil {
 			select {
-			case <-done:
-				parts = s.syncSummary()
+			case <-job.Done():
+				parts = s.syncSummary(job)
 			case <-ctx.Done():
 				return
 			}
+		} else {
+			parts = append(parts, "sync failed: "+err.Error())
 		}
 	}
 
-	parts = append(parts, s.updateNotes(ctx, svc)...)
+	parts = append(parts, s.updateNotes(ctx, epoch)...)
 	if len(parts) == 0 {
 		parts = append(parts, "synced, nothing new")
 	}
@@ -162,10 +210,9 @@ func (s *Server) autoActions(ctx context.Context, svc *garmin.Service, name stri
 }
 
 // syncSummary describes the outcome of the last sync job in a few phrases.
-func (s *Server) syncSummary() []string {
-	s.job.mu.Lock()
-	res, errText := s.job.Result, s.job.Error
-	s.job.mu.Unlock()
+func (s *Server) syncSummary(job *garmin.SyncJob) []string {
+	state := job.Snapshot()
+	res, errText := state.Result, state.Error
 
 	if errText != "" {
 		return []string{"sync failed: " + errText}
@@ -192,8 +239,18 @@ func (s *Server) syncSummary() []string {
 	return parts
 }
 
-func (s *Server) updateNotes(ctx context.Context, svc *garmin.Service) []string {
-	ups, err := svc.CheckSoftwareUpdates(ctx)
+func (s *Server) updateNotes(ctx context.Context, epoch garmin.ConnectionEpoch) []string {
+	lease, err := s.svc.AcquireAt(ctx, epoch)
+	if err != nil {
+		return nil
+	}
+
+	ups, err := lease.Service().CheckSoftwareUpdates(lease.Context())
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, s.svc.DropAt(epoch))
+	}
+
+	err = errors.Join(err, lease.Release())
 	if err != nil || len(ups) == 0 {
 		return nil
 	}
@@ -206,46 +263,11 @@ func (s *Server) updateNotes(ctx context.Context, svc *garmin.Service) []string 
 	return []string{"update available: " + strings.Join(names, ", ")}
 }
 
-// startSync begins the background sync job. It reports whether it started
-// and, when it did, a channel closed once the job ends. The job outlives ctx:
-// a sync begun from a request keeps going after the request ends.
-func (s *Server) startSync(ctx context.Context, svc *garmin.Service, up, down bool) (<-chan struct{}, bool) {
-	j := &s.job
+// startSync starts runtime-owned work after its initial lease is released.
+func (s *Server) startSync(ctx context.Context, epoch garmin.ConnectionEpoch, up, down bool) (*garmin.SyncJob, bool, error) {
+	cloud := garmin.NewJobCloud(s.svc, epoch, s.cloud)
 
-	j.mu.Lock()
-
-	if j.Running {
-		j.mu.Unlock()
-		return nil, false
-	}
-
-	done := make(chan struct{})
-	j.Running, j.StartedAt, j.EndedAt, j.Log, j.Result, j.Error = true, time.Now(), time.Time{}, nil, nil, ""
-
-	j.mu.Unlock()
-
-	cloud := garmin.NewCloud(svc, s.cloud)
-
-	go func() {
-		defer close(done)
-
-		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), syncTimeout)
-		defer cancel()
-
-		res, err := cloud.Sync(sctx, up, down, func(line string) {
-			j.mu.Lock()
-			j.Log = append(j.Log, line)
-			j.mu.Unlock()
-		})
-
-		j.mu.Lock()
-		defer j.mu.Unlock()
-
-		j.Running, j.EndedAt, j.Result = false, time.Now(), res
-		if err != nil {
-			j.Error = err.Error()
-		}
-	}()
-
-	return done, true
+	return s.runtime.Sync.Start(ctx, garmin.SyncOptions{Upload: up, Download: down, Epoch: epoch}, func(ctx context.Context, progress garmin.Progress) (*garmin.SyncResult, error) {
+		return cloud.Sync(ctx, up, down, progress)
+	})
 }

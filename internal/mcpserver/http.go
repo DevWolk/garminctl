@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"sync"
@@ -43,16 +44,25 @@ type Snapshot struct {
 // HTTPServer shares the web UI's watch and cloud session over Streamable HTTP.
 // Its caller must apply the same Host and Origin checks as the local API.
 type HTTPServer struct {
-	server   *mcp.Server
-	handler  http.Handler
-	mu       sync.Mutex
-	clients  map[*mcp.ServerSession]Client
-	activity []*Activity
+	ctx       context.Context //nolint:containedctx // This protocol owner cancels its request lifetime at Close and joins its worker.
+	cancel    context.CancelFunc
+	server    *mcp.Server
+	handler   http.Handler
+	mu        sync.Mutex
+	clients   map[*mcp.ServerSession]Client
+	activity  []*Activity
+	stopping  bool
+	requests  int
+	drained   chan struct{}
+	closeDone chan struct{}
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewHTTPServer registers tools and tracks sessions and calls for the web UI.
-func NewHTTPServer(watch *garmin.Lazy, cloudClient *gc.Client, version string) *HTTPServer {
-	h := &HTTPServer{server: newServer(&server{svc: watch}, version, cloudClient), clients: make(map[*mcp.ServerSession]Client)}
+func NewHTTPServer(runtime *garmin.Runtime, cloudClient *gc.Client, version string) *HTTPServer {
+	ctx, cancel := context.WithCancel(runtime.Context())
+	h := &HTTPServer{ctx: ctx, cancel: cancel, server: newServer(&server{svc: runtime.Watch, runtime: runtime}, version, cloudClient), clients: make(map[*mcp.ServerSession]Client), drained: make(chan struct{}), closeDone: make(chan struct{})}
 	h.server.AddReceivingMiddleware(h.observe)
 	h.handler = mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return h.server }, &mcp.StreamableHTTPOptions{
 		JSONResponse:   true,
@@ -63,7 +73,73 @@ func NewHTTPServer(watch *garmin.Lazy, cloudClient *gc.Client, version string) *
 }
 
 // ServeHTTP handles an MCP request after the caller's origin checks.
-func (h *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.handler.ServeHTTP(w, r) }
+func (h *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	if h.stopping {
+		h.mu.Unlock()
+		http.Error(w, "application is stopping", http.StatusServiceUnavailable)
+
+		return
+	}
+
+	h.requests++
+
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+
+		h.requests--
+		if h.stopping && h.requests == 0 {
+			close(h.drained)
+		}
+		h.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithCancel(r.Context())
+
+	stop := context.AfterFunc(h.ctx, cancel)
+	defer func() { stop(); cancel() }()
+
+	if h.ctx.Err() != nil {
+		cancel()
+	}
+
+	h.handler.ServeHTTP(w, r.WithContext(ctx))
+}
+
+// Close stops protocol admission, waits for active HTTP requests and closes all
+// SDK sessions. The runtime owner cancels tool contexts before calling Close.
+// A timed-out caller can rejoin the same owned cleanup worker on a later call.
+func (h *HTTPServer) Close(ctx context.Context) error {
+	h.closeOnce.Do(func() {
+		h.mu.Lock()
+
+		h.stopping = true
+		if h.requests == 0 {
+			close(h.drained)
+		}
+
+		h.mu.Unlock()
+
+		h.cancel()
+		go func() {
+			defer close(h.closeDone)
+
+			<-h.drained
+
+			for session := range h.server.Sessions() {
+				h.closeErr = errors.Join(h.closeErr, session.Close())
+			}
+		}()
+	})
+
+	select {
+	case <-h.closeDone:
+		return h.closeErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func (h *HTTPServer) observe(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {

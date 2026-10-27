@@ -27,7 +27,8 @@ const (
 
 // server holds the lazily connected watch the tools share.
 type server struct {
-	svc *garmin.Lazy
+	svc     *garmin.Lazy
+	runtime *garmin.Runtime
 }
 
 const instructions = `Manage a Garmin watch over USB and access Garmin Connect after sign-in.
@@ -50,17 +51,26 @@ music_list track paths for music_playlist; store_search.id for store_app.`
 // withWatch adapts a tool body that needs the connected watch.
 func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmin.Service, in In) (Out, error)) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
-		svc, err := s.svc.Get(ctx)
+		if s.runtime != nil {
+			bound, cancel := s.runtime.RequestContext(ctx)
+			defer cancel()
+
+			ctx = bound
+		}
+
+		lease, err := s.svc.Acquire(ctx)
 		if err != nil {
 			var zero Out
 
 			return nil, zero, err
 		}
 
-		out, err := body(ctx, svc, in) // the SDK turns a non-nil err into an error result and drops out
+		out, err := body(lease.Context(), lease.Service(), in) // the SDK turns a non-nil err into an error result and drops out
 		if errors.Is(err, device.ErrDisconnected) {
-			s.svc.Drop()
+			err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
 		}
+
+		err = errors.Join(err, lease.Release())
 
 		return nil, out, err
 	}
@@ -78,13 +88,20 @@ func writes(title string, destructive, network bool) *mcp.ToolAnnotations {
 }
 
 // Serve runs the MCP server until ctx ends. version is reported to clients.
-func Serve(ctx context.Context, open garmin.Opener, version string) error {
-	s := &server{svc: garmin.NewLazy(open)}
-	defer s.svc.Drop()
+func Serve(ctx context.Context, open garmin.Opener, version string) (err error) {
+	runtime := garmin.NewRuntime(ctx, open)
+	s := &server{svc: runtime.Watch, runtime: runtime}
+
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		defer cancel()
+
+		err = errors.Join(err, runtime.Close(closeCtx))
+	}()
 
 	srv := newServer(s, version, gc.New(gc.DefaultStorePath()))
 
-	return srv.Run(ctx, &mcp.StdioTransport{})
+	return srv.Run(runtime.Context(), &mcp.StdioTransport{})
 }
 
 func newServer(s *server, version string, cloudClient *gc.Client) *mcp.Server {
@@ -416,20 +433,30 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 		Description: "Read Garmin Connect sign-in and account status, plus watch registration when connected. Works without a watch.",
 		Annotations: readOnly("Garmin Connect status", true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ empty) (*mcp.CallToolResult, *garmin.CloudStatus, error) {
-		svc, _ := s.svc.Get(ctx) // the account status is useful without the watch
-		return nil, garmin.NewCloud(svc, cloudClient).Status(ctx), nil
+		ctx, cancel := s.runtime.RequestContext(ctx)
+		defer cancel()
+
+		lease, err := s.svc.Acquire(ctx)
+		if err != nil {
+			release, admissionErr := s.svc.Gate().Enter(ctx)
+			if admissionErr != nil {
+				return nil, nil, admissionErr
+			}
+			defer release()
+
+			return nil, garmin.NewCloud(nil, cloudClient).Status(ctx), nil
+		}
+
+		out := garmin.NewCloud(lease.Service(), cloudClient).Status(lease.Context())
+
+		return nil, out, lease.Release()
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_sync",
 		Description: "Upload recorded files to Garmin Connect, then download queued apps, settings, workouts and courses to the watch. Recognizes duplicate uploads.",
 		Annotations: writes("Sync with Garmin Connect", false, true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in syncIn) (*garmin.SyncResult, error) {
-		up := in.Upload == nil || *in.Upload
-		down := in.Download == nil || *in.Download
-
-		return garmin.NewCloud(svc, cloudClient).Sync(ctx, up, down, nil)
-	}))
+	}, s.syncTool(cloudClient))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "cloud_settings",
@@ -525,23 +552,7 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 		Name:        "activities_list",
 		Description: "List recorded activities with time, sport, distance, calories and heart rate. Call again while pending > 0. Use file with activity_detail.",
 		Annotations: readOnly("List activities", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in actsIn) (*garmin.ActivityList, error) {
-		list, err := svc.Activities(ctx, false)
-		if err != nil {
-			return nil, err
-		}
-
-		n := in.Limit
-		if n <= 0 {
-			n = defaultActivities
-		}
-
-		if len(list.Activities) > n {
-			list.Activities = list.Activities[:n]
-		}
-
-		return list, nil
-	}))
+	}, s.activitiesTool())
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "activity_detail",
@@ -757,4 +768,58 @@ func addMusicTools(srv *mcp.Server, s *server) {
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in plIn) (*garmin.Playlist, error) {
 		return svc.WritePlaylist(ctx, in.Name, in.Tracks)
 	}))
+}
+
+func (s *server) syncTool(client *gc.Client) mcp.ToolHandlerFor[syncIn, *garmin.SyncResult] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in syncIn) (*mcp.CallToolResult, *garmin.SyncResult, error) {
+		ctx, cancel := s.runtime.RequestContext(ctx)
+		defer cancel()
+
+		lease, err := s.svc.Acquire(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		epoch := lease.Epoch()
+		if err := lease.Release(); err != nil {
+			return nil, nil, err
+		}
+
+		up, down := in.Upload == nil || *in.Upload, in.Download == nil || *in.Download
+		cloud := garmin.NewJobCloud(s.svc, epoch, client)
+
+		job, _, err := s.runtime.Sync.JoinOrStart(ctx, garmin.SyncOptions{Upload: up, Download: down, Epoch: epoch}, func(ctx context.Context, progress garmin.Progress) (*garmin.SyncResult, error) {
+			return cloud.Sync(ctx, up, down, progress)
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		out, err := job.Wait(ctx)
+
+		return nil, out, err
+	}
+}
+
+func (s *server) activitiesTool() mcp.ToolHandlerFor[actsIn, *garmin.ActivityList] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in actsIn) (*mcp.CallToolResult, *garmin.ActivityList, error) {
+		ctx, cancel := s.runtime.RequestContext(ctx)
+		defer cancel()
+
+		list, err := s.runtime.Activities.Activities(ctx, false)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		n := in.Limit
+		if n <= 0 {
+			n = defaultActivities
+		}
+
+		if len(list.Activities) > n {
+			list.Activities = list.Activities[:n]
+		}
+
+		return nil, list, nil
+	}
 }

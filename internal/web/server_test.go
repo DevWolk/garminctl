@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -63,7 +65,7 @@ func TestWithServiceDropsOnlyDisconnectedSessions(t *testing.T) {
 			s := &Server{svc: lazy}
 			w := httptest.NewRecorder()
 			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/files", nil)
-			s.withService(w, r, func(*garmin.Service) (any, error) { return nil, tt.err })
+			s.withService(w, r, func(context.Context, *garmin.Service) (any, error) { return nil, tt.err })
 
 			if w.Code != tt.status || (closes == 1) != tt.drop {
 				t.Fatalf("response status=%d, closes=%d, body=%s", w.Code, closes, w.Body)
@@ -97,11 +99,22 @@ const (
 // garmin package's fixtures. It returns the server and the dump root.
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
+	_, ts, root := newTestBackend(t, nil)
+
+	return ts, root
+}
+
+func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, string) {
+	t.Helper()
 
 	root := testdump.Root(t)
 
-	s := newServer(func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-	s.cloud = gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")) // never the user's real session
+	s := newServer(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
+	if cloud != nil {
+		s.cloud = cloud
+	} else {
+		s.cloud = gc.New(filepath.Join(t.TempDir(), "garmin-connect.json"))
+	}
 
 	ts := httptest.NewUnstartedServer(nil)
 
@@ -111,14 +124,22 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	}
 
 	ts.Config.Handler = h
+	ts.Config.BaseContext = func(net.Listener) context.Context { return s.runtime.Context() }
 	ts.Start()
 
 	t.Cleanup(func() {
+		s.runtime.Stop()
 		ts.Close()
-		s.svc.Drop()
+
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
+		defer cancel()
+
+		if err := errors.Join(s.runtime.Close(ctx), s.mcp.Close(ctx)); err != nil {
+			t.Error(err)
+		}
 	})
 
-	return ts, root
+	return s, ts, root
 }
 
 func getJSON(t *testing.T, ts *httptest.Server, path string, v any) int {
@@ -164,25 +185,41 @@ func TestServer_StoreDeviceSelection(t *testing.T) {
 	t.Parallel()
 
 	root := testdump.Root(t)
-	s := newServer(func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
+	s := newServer(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
 	t.Cleanup(s.svc.Drop)
 
-	if svc, part := s.storeSvc(t.Context()); svc != nil || part != "" {
-		t.Fatalf("disconnected store must not assume a device: service=%v part=%q", svc, part)
-	}
+	_, err := s.withOptionalService(t.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
+		if part := storePart(ctx, svc); svc != nil || part != "" {
+			t.Fatalf("disconnected store must not assume a device: service=%v part=%q", svc, part)
+		}
 
-	svc, err := s.svc.Get(t.Context())
+		return nil, nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	dx, err := svc.DeviceXML(t.Context())
+	lease, err := s.svc.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if selected, part := s.storeSvc(t.Context()); selected != svc || part != dx.PartNumber {
-		t.Fatalf("connected store selected service=%v part=%q, want service=%v part=%q", selected, part, svc, dx.PartNumber)
+	svc := lease.Service()
+
+	dx, err := svc.DeviceXML(lease.Context())
+	if err := errors.Join(err, lease.Release()); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = s.withOptionalService(t.Context(), func(ctx context.Context, selected *garmin.Service) (any, error) {
+		if part := storePart(ctx, selected); selected != svc || part != dx.PartNumber {
+			t.Fatalf("connected store selected service=%v part=%q, want service=%v part=%q", selected, part, svc, dx.PartNumber)
+		}
+
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
