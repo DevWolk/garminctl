@@ -97,6 +97,12 @@ Updates check the MD5 when Garmin supplies one, then write Garmin's indicated
 path. The watch applies them after USB disconnection. Connect IQ app packages
 arrive through Connect's queue or `.PRG` sideloading in the [UI](web-ui.md).
 
+`updates` retains successful results when another check fails. In `-json` mode,
+the existing `software` and `apps` fields remain; failures add an `errors` object
+with `software` and/or `apps` messages. Per-app errors also remain on their app
+rows. A failed check returns exit status 1 in text and JSON modes; an interrupted
+check returns 130. Successful JSON output omits `errors`.
+
 ## Health, workouts, music, and store
 
 ```text

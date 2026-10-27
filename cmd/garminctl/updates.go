@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -26,8 +27,18 @@ func (c *cli) updates(ctx context.Context, svc *garmin.Service, args []string) e
 	sw, swErr := svc.CheckSoftwareUpdates(ctx)
 	apps, appErr := svc.CheckAppUpdates(ctx)
 
+	return errors.Join(c.reportUpdates(sw, swErr, apps, appErr), ctx.Err())
+}
+
+func (c *cli) reportUpdates(sw []garmin.SoftwareUpdate, swErr error, apps []garmin.AppUpdate, appErr error) error {
+	checkErrors, checkErr := updateCheckErrors(swErr, appErr, apps)
 	if c.asJSON {
-		return c.printJSON(map[string]any{"software": sw, "apps": apps})
+		out := map[string]any{"software": sw, "apps": apps}
+		if len(checkErrors) > 0 {
+			out["errors"] = checkErrors
+		}
+
+		return errors.Join(c.printJSON(out), checkErr)
 	}
 
 	c.out.Println("Watch software (Garmin update service):")
@@ -68,7 +79,7 @@ func (c *cli) updates(ctx context.Context, svc *garmin.Service, args []string) e
 		c.out.Printf("  %-20s v%-4d %s\n", a.App.Name, a.InstalledVersion, st)
 	}
 
-	return nil
+	return checkErr
 }
 
 func (c *cli) software(ctx context.Context, svc *garmin.Service, _ []string) error {
@@ -86,4 +97,28 @@ func (c *cli) software(ctx context.Context, svc *garmin.Service, _ []string) err
 	}
 
 	return nil
+}
+
+func updateCheckErrors(swErr, appErr error, apps []garmin.AppUpdate) (map[string]string, error) {
+	for _, app := range apps {
+		if app.Error != "" {
+			appErr = errors.Join(appErr, fmt.Errorf("app %s: %s", app.App.ID, app.Error))
+		}
+	}
+
+	out := make(map[string]string)
+
+	var checks []error
+
+	if swErr != nil {
+		out["software"] = swErr.Error()
+		checks = append(checks, fmt.Errorf("software updates: %w", swErr))
+	}
+
+	if appErr != nil {
+		out["apps"] = appErr.Error()
+		checks = append(checks, fmt.Errorf("app updates: %w", appErr))
+	}
+
+	return out, errors.Join(checks...)
 }
