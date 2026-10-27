@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
@@ -78,27 +79,29 @@ func TestProbeDropsTypedDisconnect(t *testing.T) {
 func TestProbeLateDeadlineRetainsSession(t *testing.T) {
 	t.Parallel()
 
-	entered, release := make(chan struct{}), make(chan struct{})
-	s, svc := probeService(t, func(ctx context.Context) error {
-		close(entered)
-		<-release // models an ordinary device mutex that ignores cancellation
+	synctest.Test(t, func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		s, svc := probeService(t, func(ctx context.Context) error {
+			close(entered)
+			<-release // models an ordinary device mutex that ignores cancellation
 
-		return ctx.Err()
+			return ctx.Err()
+		})
+
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+		defer cancel()
+
+		result := make(chan bool, 1)
+		go func() { result <- s.probe(ctx, true) }()
+
+		<-entered
+		<-ctx.Done()
+		close(release)
+
+		if !<-result || s.svc.Current() != svc {
+			t.Fatal("late deadline dropped the session after waiting for the device")
+		}
 	})
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
-	defer cancel()
-
-	result := make(chan bool, 1)
-	go func() { result <- s.probe(ctx, true) }()
-
-	<-entered
-	<-ctx.Done()
-	close(release)
-
-	if !<-result || s.svc.Current() != svc {
-		t.Fatal("late deadline dropped the session after waiting for the device")
-	}
 }
 
 func TestSkippedProbePreservesEitherPreviousObservation(t *testing.T) {
