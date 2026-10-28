@@ -39,14 +39,8 @@ func NewCloud(svc *Service, client *gc.Client) *Cloud {
 // Client exposes the session for login handling.
 func (c *Cloud) Client() *gc.Client { return c.gc }
 
-// CloudProfile is the signed-in user's public profile. Garmin's displayName
-// is an opaque id for most accounts; Name holds the best human label.
-type CloudProfile struct {
-	DisplayName string `json:"displayName"`
-	FullName    string `json:"fullName"`
-	UserName    string `json:"userName"`
-	Name        string `json:"name"`
-}
+// CloudProfile preserves the public account profile type.
+type CloudProfile = gc.CloudProfile
 
 // CloudStatus is what the UI shows at the top of the Garmin Connect tab.
 type CloudStatus struct {
@@ -106,32 +100,16 @@ func (c *Cloud) cachedProfile(ctx context.Context) (*CloudProfile, error) {
 		return p, nil
 	}
 
-	var sp CloudProfile
-	if err := c.gc.GetJSON(ctx, "/userprofile-service/socialProfile", &sp); err != nil {
+	sp, err := c.gc.SocialProfile(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	sp.Name = profileName(sp)
-
 	c.mu.Lock()
-	c.profile = &sp
+	c.profile = sp
 	c.mu.Unlock()
 
-	return &sp, nil
-}
-
-// profileName picks the best human label of a profile.
-func profileName(sp CloudProfile) string {
-	switch {
-	case sp.FullName != "":
-		return sp.FullName
-	case sp.UserName != "":
-		return sp.UserName
-	case !strings.Contains(sp.DisplayName, "-"):
-		return sp.DisplayName
-	default:
-		return ""
-	}
+	return sp, nil
 }
 
 // registration fills in whether the connected watch is on the account.

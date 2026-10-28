@@ -55,7 +55,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/gc`: Garmin Connect session (SSO sign-in with MFA, OAuth1 →
   OAuth2, token file, bearer helpers). `internal/garmin/cloud.go` builds the
   sync on it: `Status`, `Settings`/`SetSettings`, `Messages`/`Pull`,
-  `Upload`, `Sync`.
+  `Upload`, `Sync`. `gc.CloudProfile`/`Client.SocialProfile` own the profile
+  protocol and label mapping; caller-scoped profile caching and health/status
+  error policy remain in Cloud while feature consumers are extracted.
 - `internal/garmin/health.go` (activities from the watch's FIT files with a
   disk cache, daily/intraday health from Connect), `workouts.go`
   (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
