@@ -28,6 +28,9 @@ See CLAUDE.md for the working rules. Module map:
   app folder, storage info).
 - `internal/fit`: `Decode`/`Encode` keep raw records; `Profile.Describe`
   names fields; `Builder` writes new files Garmin-style (local slot 0).
+- `internal/deviceinfo`: pure GarminDevice.xml models, parsing and software
+  version formatting. `internal/garmin/devicexml.go` retains compatibility aliases
+  while Session and feature containers are extracted.
 - `internal/garmin`: `Service` (cached reads), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
