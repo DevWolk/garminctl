@@ -37,6 +37,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
   and shared status mapping. `internal/web/httpx_compat.go` temporarily delegates
   existing routes; Wails-specific private-origin validation stays in desktop.
+- `internal/ship/mcpx` owns generic Streamable HTTP tracking and protocol close.
+  `internal/mcpserver` supplies registered Garmin tools/runtime context and keeps
+  metadata type aliases; `withWatch` stays there until watchsession extraction.
 - `internal/garmin`: `Service` (cached reads), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
