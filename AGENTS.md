@@ -34,6 +34,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/app` assembles runtime/account owners for entry points and supplies
   them to HTTP/MCP shells. `internal/ship/clix` owns CLI printing, errors and
   parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
+- `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
+  and shared status mapping. `internal/web/httpx_compat.go` temporarily delegates
+  existing routes; Wails-specific private-origin validation stays in desktop.
 - `internal/garmin`: `Service` (cached reads), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
