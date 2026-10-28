@@ -104,6 +104,12 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	return ts, root
 }
 
+// newServer retains the test fixture's constructor while production wiring
+// supplies process owners through ServeRuntime.
+func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
+	return serverWithRuntime(garmin.NewRuntime(ctx, open), gc.New(gc.DefaultStorePath()), autoSync)
+}
+
 func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, string) {
 	t.Helper()
 

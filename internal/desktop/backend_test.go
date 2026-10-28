@@ -3,11 +3,13 @@ package desktop
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -16,8 +18,11 @@ func TestStartBackend(t *testing.T) {
 	t.Parallel()
 	root := testdump.Root(t)
 	open := func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }
+	serve := func(ctx context.Context, listener net.Listener) error {
+		return app.ServeListener(ctx, listener, open, false, "test-version")
+	}
 
-	backend, err := StartBackend(t.Context(), "127.0.0.1:0", open, false, "test-version")
+	backend, err := StartBackend(t.Context(), "127.0.0.1:0", serve)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +33,7 @@ func TestStartBackend(t *testing.T) {
 		}
 	})
 
-	other, err := StartBackend(t.Context(), backend.URL.Host, open, false, "test-version")
+	other, err := StartBackend(t.Context(), backend.URL.Host, serve)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +75,7 @@ func TestStartBackendRefusesUnrelatedServer(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := StartBackend(t.Context(), strings.TrimPrefix(server.URL, "http://"), nil, false, "test")
+	_, err := StartBackend(t.Context(), strings.TrimPrefix(server.URL, "http://"), nil)
 	if err == nil {
 		t.Fatal("accepted an unrelated service as garminctl")
 	}
@@ -83,7 +88,7 @@ func TestStartBackendRejectsNonLoopback(t *testing.T) {
 		t.Run(address, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := StartBackend(t.Context(), address, nil, false, "test"); err == nil {
+			if _, err := StartBackend(t.Context(), address, nil); err == nil {
 				t.Fatal("accepted a non-loopback address")
 			}
 		})

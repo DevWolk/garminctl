@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/mcpserver"
-	"github.com/DevWolk/garminctl/internal/web"
 )
 
 func (c *cli) serve(ctx context.Context, args []string) error {
@@ -17,11 +16,11 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 		return err
 	}
 
-	return web.Serve(ctx, *addr, c.opener(), *autoSync && c.root == "", version)
+	return app.Serve(ctx, *addr, c.opener(), *autoSync && c.root == "", version)
 }
 
 func (c *cli) mcp(ctx context.Context, _ []string) error {
-	return mcpserver.Serve(ctx, c.opener(), version)
+	return app.ServeMCP(ctx, c.opener(), version)
 }
 
 func (c *cli) opener() func(ctx context.Context) (device.Device, error) {

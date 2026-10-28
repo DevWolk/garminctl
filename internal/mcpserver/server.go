@@ -87,19 +87,19 @@ func writes(title string, destructive, network bool) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{Title: title, DestructiveHint: new(destructive), OpenWorldHint: new(network)}
 }
 
-// Serve runs the MCP server until ctx ends. version is reported to clients.
-func Serve(ctx context.Context, open garmin.Opener, version string) (err error) {
-	runtime := garmin.NewRuntime(ctx, open)
+// ServeRuntime runs the stdio shell with process owners supplied by app wiring.
+// It closes the supplied runtime before returning.
+func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string) (err error) {
 	s := &server{svc: runtime.Watch, runtime: runtime}
 
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(runtime.Context()), 3*time.Second)
 		defer cancel()
 
 		err = errors.Join(err, runtime.Close(closeCtx))
 	}()
 
-	srv := newServer(s, version, gc.New(gc.DefaultStorePath()))
+	srv := newServer(s, version, account)
 
 	return srv.Run(runtime.Context(), &mcp.StdioTransport{})
 }

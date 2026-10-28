@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -239,7 +240,7 @@ func (c *cli) run(args []string) error {
 }
 
 func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args []string) (err error) {
-	runtime := garmin.NewRuntime(ctx, func(ctx context.Context) (device.Device, error) { return openDevice(ctx, c.root, c.devID) })
+	runtime := app.NewRuntime(ctx, func(ctx context.Context) (device.Device, error) { return openDevice(ctx, c.root, c.devID) })
 	c.runtime = runtime
 
 	defer func() {

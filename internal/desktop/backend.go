@@ -11,9 +11,6 @@ import (
 	"net/url"
 	"sync"
 	"time"
-
-	"github.com/DevWolk/garminctl/internal/garmin"
-	"github.com/DevWolk/garminctl/internal/web"
 )
 
 // Backend is either an existing local server or one owned by this application.
@@ -27,7 +24,7 @@ type Backend struct {
 
 // StartBackend reserves the loopback port or reuses a running garminctl server.
 // It never takes over a port occupied by an unrelated program.
-func StartBackend(ctx context.Context, addr string, open garmin.Opener, autoSync bool, version string) (*Backend, error) {
+func StartBackend(ctx context.Context, addr string, serve func(context.Context, net.Listener) error) (*Backend, error) {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil || !net.ParseIP(host).IsLoopback() {
 		return nil, fmt.Errorf("desktop server address must be a loopback IP and port: %q", addr)
@@ -40,11 +37,15 @@ func StartBackend(ctx context.Context, addr string, open garmin.Opener, autoSync
 		return existingBackend(ctx, addr, err)
 	}
 
+	if serve == nil {
+		return nil, errors.Join(errors.New("desktop backend runner is required"), listener.Close())
+	}
+
 	runCtx, cancel := context.WithCancel(ctx)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- web.ServeListener(runCtx, listener, open, autoSync, version)
+		done <- serve(runCtx, listener)
 	}()
 
 	return &Backend{URL: &url.URL{Scheme: "http", Host: listener.Addr().String()}, cancel: cancel, done: done}, nil

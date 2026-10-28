@@ -69,29 +69,15 @@ type statusResponse struct {
 	Error     string         `json:"error,omitempty"`
 }
 
-// Serve runs the HTTP server until ctx ends.
-func Serve(ctx context.Context, addr string, open garmin.Opener, autoSync bool, version string) error {
-	var config net.ListenConfig
-
-	listener, err := config.Listen(ctx, "tcp", addr)
-	if err != nil {
-		return err
-	}
-
-	return ServeListener(ctx, listener, open, autoSync, version)
-}
-
-// ServeListener serves an already-bound listener and owns its lifetime. Desktop
-// launchers use it to reserve a port before showing the window.
-func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opener, autoSync bool, version string) error {
-	ctx, cancel := context.WithCancel(ctx)
+// ServeRuntime serves an already-bound listener with owners supplied by the
+// composition root. It owns the listener and closes the runtime on every exit.
+func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string) error {
+	ctx, cancel := context.WithCancel(runtime.Context())
 	defer cancel()
 
-	s := newServer(ctx, open, autoSync)
+	s := serverWithRuntime(runtime, account, autoSync)
 
 	s.version = version
-	ctx = s.runtime.Context()
-
 	addr := listener.Addr().String()
 
 	h, err := s.handler(addr)
@@ -159,9 +145,8 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 	return shutdownErr
 }
 
-func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
-	runtime := garmin.NewRuntime(ctx, open)
-	s := &Server{svc: runtime.Watch, runtime: runtime, cloud: gc.New(gc.DefaultStorePath()), probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
+func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool) *Server {
+	s := &Server{svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s

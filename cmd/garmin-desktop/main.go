@@ -8,9 +8,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/desktop"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
@@ -38,7 +40,11 @@ func run() error {
 		return devicehost.Open(ctx, *root, "")
 	}
 
-	backend, err := desktop.StartBackend(ctx, *addr, open, *root == "", version)
+	serve := func(ctx context.Context, listener net.Listener) error {
+		return app.ServeListener(ctx, listener, open, *root == "", version)
+	}
+
+	backend, err := desktop.StartBackend(ctx, *addr, serve)
 	if err != nil {
 		return errors.Join(err, desktop.ShowError(err))
 	}
