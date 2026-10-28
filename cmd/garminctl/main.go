@@ -3,15 +3,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -108,70 +105,6 @@ type cli struct {
 	asJSON  bool
 	out     *printer // program output
 	errOut  *printer // prompts and diagnostics
-}
-
-// printer retains the first output error for run to report.
-type printer struct {
-	w   io.Writer
-	err error
-}
-
-func newPrinter(w io.Writer) *printer { return &printer{w: w} }
-
-func (p *printer) Write(b []byte) (int, error) {
-	n, err := p.w.Write(b)
-	p.note(err)
-
-	return n, err
-}
-
-func (p *printer) Printf(format string, a ...any) {
-	_, err := fmt.Fprintf(p.w, format, a...)
-	p.note(err)
-}
-
-func (p *printer) Println(a ...any) {
-	_, err := fmt.Fprintln(p.w, a...)
-	p.note(err)
-}
-
-func (p *printer) Print(a ...any) {
-	_, err := fmt.Fprint(p.w, a...)
-	p.note(err)
-}
-
-func (p *printer) note(err error) {
-	if p.err == nil && err != nil {
-		p.err = err
-	}
-}
-
-// Err is the first write error, if any.
-func (p *printer) Err() error { return p.err }
-
-// usageError is a mistake in the command line; main exits with 2 for it.
-type usageError struct{ msg string }
-
-func (e *usageError) Error() string { return e.msg }
-
-func usageErrorf(format string, a ...any) error {
-	return &usageError{msg: fmt.Sprintf(format, a...)}
-}
-
-// exitCode maps the outcome of run to a Unix exit status.
-func exitCode(err error) int {
-	var ue *usageError
-
-	switch {
-	case err == nil, errors.Is(err, flag.ErrHelp):
-		return 0
-	case errors.As(err, &ue):
-		return 2
-	case errors.Is(err, context.Canceled):
-		return 130
-	}
-
-	return 1
 }
 
 // deviceCommand runs against the connected watch.
@@ -334,71 +267,6 @@ func (c *cli) flagSet(name string) *flag.FlagSet {
 	return fs
 }
 
-// parseFlags parses args and turns a bad flag into a usage error.
-func parseFlags(fs *flag.FlagSet, args []string) error {
-	err := fs.Parse(args)
-	if err != nil && !errors.Is(err, flag.ErrHelp) {
-		return &usageError{msg: err.Error()}
-	}
-
-	return err
-}
-
-func (c *cli) printJSON(v any) error {
-	enc := json.NewEncoder(c.out)
-	enc.SetIndent("", "  ")
-
-	return enc.Encode(v)
-}
-
-// flagsFirst moves "-flag" tokens ahead of positional arguments so that
-// "create FILE -send" parses like "create -send FILE". A standalone "--"
-// ends reordering and protects all following tokens as positional arguments.
-func flagsFirst(fs *flag.FlagSet, args []string) []string {
-	var flags, pos []string
-
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			pos = append(pos, args[i+1:]...)
-			flags = append(flags, "--")
-
-			return append(flags, pos...)
-		}
-
-		if !strings.HasPrefix(a, "-") || a == "-" {
-			pos = append(pos, a)
-			continue
-		}
-
-		flags = append(flags, a)
-
-		if takesValue(fs, a) && i+1 < len(args) {
-			flags = append(flags, args[i+1])
-			i++
-		}
-	}
-
-	return append(flags, pos...)
-}
-
-// takesValue identifies known non-boolean flags without an inline value.
-func takesValue(fs *flag.FlagSet, a string) bool {
-	name := strings.TrimLeft(a, "-")
-	if strings.Contains(name, "=") {
-		return false
-	}
-
-	f := fs.Lookup(name)
-	if f == nil {
-		return false
-	}
-
-	b, ok := f.Value.(interface{ IsBoolFlag() bool })
-
-	return !ok || !b.IsBoolFlag()
-}
-
 func ifEmpty(s, d string) string {
 	if s == "" {
 		return d
@@ -422,29 +290,6 @@ func onOff(b bool, yes, no string) string {
 	}
 
 	return no
-}
-
-// parseScalar accepts booleans, numbers and JSON objects or arrays, otherwise a string.
-func parseScalar(v string) any {
-	switch v {
-	case "true":
-		return true
-	case "false":
-		return false
-	}
-
-	if n, err := strconv.ParseFloat(v, 64); err == nil && strconv.FormatFloat(n, 'g', -1, 64) == v {
-		return n
-	}
-
-	if strings.HasPrefix(v, "{") || strings.HasPrefix(v, "[") {
-		var j any
-		if json.Unmarshal([]byte(v), &j) == nil {
-			return j
-		}
-	}
-
-	return v
 }
 
 func deviceJob(cmd string, args []string) bool {

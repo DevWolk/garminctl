@@ -31,6 +31,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/deviceinfo`: pure GarminDevice.xml models, parsing and software
   version formatting. `internal/garmin/devicexml.go` retains compatibility aliases
   while Session and feature containers are extracted.
+- `internal/app` assembles runtime/account owners for entry points and supplies
+  them to HTTP/MCP shells. `internal/ship/clix` owns CLI printing, errors and
+  parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
 - `internal/garmin`: `Service` (cached reads), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
