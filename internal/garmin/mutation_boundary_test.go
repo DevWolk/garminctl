@@ -15,8 +15,8 @@ import (
 func TestRawDeviceAccessStaysAtBoundary(t *testing.T) {
 	t.Parallel()
 
-	checkDeviceAccessBoundary(t, ".", map[string]bool{"filesystem.go": true, "diagnostics.go": true, "lazy.go": true})
-	checkDeviceAccessBoundary(t, "../ship/watchsession", map[string]bool{"file_cache.go": true})
+	checkDeviceAccessBoundary(t, ".", nil)
+	checkDeviceAccessBoundary(t, "../ship/watchsession", map[string]bool{"file_cache.go": true, "filesystem.go": true, "diagnostics.go": true, "session.go": true})
 }
 
 func checkDeviceAccessBoundary(t *testing.T, dir string, owners map[string]bool) {
@@ -44,7 +44,7 @@ func checkDeviceAccessBoundary(t *testing.T, dir string, owners map[string]bool)
 				continue
 			}
 
-			if !owners[name] && (name != "service.go" || fn.Name.Name != "Close") {
+			if !owners[name] {
 				assertNoRawDeviceSelector(t, name, fn)
 			}
 

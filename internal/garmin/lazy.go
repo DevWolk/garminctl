@@ -125,7 +125,7 @@ func (l *Lazy) DropAt(epoch ConnectionEpoch) error {
 
 	if active != nil {
 		active.cancel()
-		abortDevice(retired.dev)
+		retired.session.Abort()
 
 		return nil
 	}
@@ -136,12 +136,6 @@ func (l *Lazy) DropAt(epoch ConnectionEpoch) error {
 		return l.closeRetired()
 	default:
 		return nil // The admitted owner closes it before opening/releasing.
-	}
-}
-
-func abortDevice(dev device.Device) {
-	if aborter, ok := dev.(device.Aborter); ok {
-		aborter.Abort()
 	}
 }
 
@@ -258,7 +252,7 @@ func (l *Lazy) Close(ctx context.Context) error {
 		go func() {
 			if active != nil {
 				if retired != nil {
-					abortDevice(retired.dev)
+					retired.session.Abort()
 				}
 			}
 

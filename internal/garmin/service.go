@@ -19,7 +19,6 @@ import (
 
 // Service is the high-level API over one connected watch.
 type Service struct {
-	dev     device.Device
 	profile *fit.Profile
 	know    *Knowledge
 
@@ -34,7 +33,6 @@ type Service struct {
 // New wraps a device.
 func New(dev device.Device) *Service {
 	return &Service{
-		dev:        dev,
 		profile:    fit.MustProfile(),
 		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
@@ -58,16 +56,11 @@ func (s *Service) Refresh() {
 }
 
 // Close releases the device.
-func (s *Service) Close() error { return s.dev.Close() }
+func (s *Service) Close() error { return s.session.Close() }
 
 // DeviceXML reads and parses GarminDevice.xml.
 func (s *Service) DeviceXML(ctx context.Context) (*DeviceXML, error) {
-	b, err := s.read(ctx, PathDeviceXML, true)
-	if err != nil {
-		return nil, err
-	}
-
-	return ParseDeviceXML(b)
+	return s.session.DeviceXML(ctx)
 }
 
 // Summary describes the connected watch.

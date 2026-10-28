@@ -2,6 +2,7 @@ package garmin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/device"
 )
 
 const (
@@ -295,6 +297,51 @@ func TestSchemaCacheLatePublicationKeepsNewerGeneration(t *testing.T) {
 
 			if got := cache.load(key, 3); got != nil {
 				t.Fatalf("new generation reused old schema: %+v", got)
+			}
+		})
+	}
+}
+
+func TestSessionMutationInvalidatesFeatureSchemaCache(t *testing.T) { //nolint:paralleltest // replaces the shared schema HTTP client and cache environment
+	for _, raw := range []bool{false, true} { //nolint:paralleltest // cases share the schema client and environment
+		t.Run(fmt.Sprintf("raw=%v", raw), func(t *testing.T) {
+			var metadataCalls int
+
+			schemaCacheHTTP(t, func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.Path, "/appSettings2/") {
+					return schemaFormResponse(req, "schema"), nil
+				}
+
+				metadataCalls++
+
+				return syncResponse(req, []byte(`{"latestInternalVersion":1}`)), nil
+			})
+
+			d := &mutationTestDevice{
+				cacheTestDevice: &cacheTestDevice{data: []byte(schemaXML("PART-A"))},
+				failure:         device.ErrDisconnected,
+			}
+			svc := New(d)
+			requireAppSchema(t, svc, schemaApp())
+
+			var err error
+			if raw {
+				_, _, _, err = svc.RawMTPRead(t.Context(), 0x9999, nil)
+			} else {
+				err = svc.WriteFile(t.Context(), "other-file", nil)
+			}
+
+			if !errors.Is(err, device.ErrDisconnected) {
+				t.Fatalf("mutation error = %v", err)
+			}
+
+			// This fake mutates storage before returning a failure. Restore its XML
+			// payload, without Refresh, so only the attempted mutation invalidates.
+			d.replace(schemaXML("PART-A"), false)
+			requireAppSchema(t, svc, schemaApp())
+
+			if metadataCalls != 2 {
+				t.Fatalf("mutation retained the old feature cache: metadata calls=%d", metadataCalls)
 			}
 		})
 	}

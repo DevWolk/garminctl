@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 // Paths on the watch.
 const (
-	PathSettings    = "GARMIN/Settings/Settings.fit"
-	PathDeviceXML   = "GARMIN/GarminDevice.xml"
-	PathDeviceFIT   = "GARMIN/Device.fit"
-	PathAppsConfig  = "GARMIN/Apps/OUT.BIN"
-	PathAppSettings = "GARMIN/Apps/SETTINGS"
-	PathNewFiles    = "GARMIN/NewFiles"
-	PathSports      = "GARMIN/Sports"
+	PathSettings    = watchsession.PathSettings
+	PathDeviceXML   = watchsession.PathDeviceXML
+	PathDeviceFIT   = watchsession.PathDeviceFIT
+	PathAppsConfig  = watchsession.PathAppsConfig
+	PathAppSettings = watchsession.PathAppSettings
+	PathNewFiles    = watchsession.PathNewFiles
+	PathSports      = watchsession.PathSports
 )
 
 // FileTypeSettingsChange is the file_id.type of the settings-change files

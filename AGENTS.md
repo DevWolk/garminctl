@@ -40,10 +40,10 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/mcpx` owns generic Streamable HTTP tracking and protocol close.
   `internal/mcpserver` supplies registered Garmin tools/runtime context and keeps
   metadata type aliases; `withWatch` stays there until watchsession extraction.
-- `internal/ship/watchsession` owns the generation-aware raw file cache.
-  Legacy Service delegates reads and retains feature schema/profile caches;
-  transport operations, admission and Close still belong to the legacy owner
-  while the Session/Manager boundary is extracted.
+- `internal/ship/watchsession` owns cached/raw filesystem access, optional
+  capabilities, scoped diagnostics, watch paths and metadata reads. Legacy
+  Service delegates and retains feature schema/profile caches. Lazy still owns
+  leases/retirement/close policy, calling Session Abort/Close without raw access.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

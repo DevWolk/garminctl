@@ -3,13 +3,16 @@
 package watchsession
 
 import (
+	"context"
 	"sync"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/deviceinfo"
 )
 
-// Session holds one device's raw file cache. The legacy connection owner still
-// owns admission and Close until the Manager extraction is complete.
+// Session provides cached filesystem and optional capability access to one
+// device. Its connection owner admits operations and calls Close after joining
+// them; Session does not acquire operation leases or start a close worker.
 type Session struct {
 	dev device.Device
 
@@ -22,4 +25,25 @@ type Session struct {
 // New wraps the supplied transport without opening or closing it.
 func New(dev device.Device) *Session {
 	return &Session{dev: dev, files: map[string][]byte{}}
+}
+
+// Close releases the device after the connection owner has joined its users.
+func (s *Session) Close() error { return s.dev.Close() }
+
+// Abort interrupts in-flight I/O without waiting for its transaction lock.
+// The connection owner still joins the operation and calls Close afterwards.
+func (s *Session) Abort() {
+	if aborter, ok := s.dev.(device.Aborter); ok {
+		aborter.Abort()
+	}
+}
+
+// DeviceXML reads and parses metadata through the generation-aware raw cache.
+func (s *Session) DeviceXML(ctx context.Context) (*deviceinfo.DeviceXML, error) {
+	b, err := s.ReadThrough(ctx, PathDeviceXML, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return deviceinfo.ParseDeviceXML(b)
 }
