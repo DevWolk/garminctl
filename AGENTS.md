@@ -41,9 +41,10 @@ See CLAUDE.md for the working rules. Module map:
   `internal/mcpserver` supplies registered Garmin tools/runtime context and keeps
   metadata type aliases; `withWatch` stays there until watchsession extraction.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
-  capabilities, scoped diagnostics, watch paths and metadata reads. Legacy
-  Service delegates and retains feature schema/profile caches. Lazy still owns
-  leases/retirement/close policy, calling Session Abort/Close without raw access.
+  capabilities, scoped diagnostics, watch paths and metadata reads. Its Manager
+  owns leases/epochs/probe/retirement/close. Legacy Lazy/Lease delegate to that
+  owner and preserve one current Service facade with feature schema/profile
+  caches. New adapters use Manager directly; no second owner is constructed.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -89,8 +90,8 @@ host-UID toolchain container. `make package` builds native installers in `dist/`
 `make install` rebuilds the CLI and desktop binaries and rolls the CLI out on
 this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
 the Windows autostart copy, keeping stopped servers stopped); `make update`
-pulls the current branch first. The web and HTTP MCP servers share `garmin.Lazy` (one lazily opened
-watch); `internal/paths` names the cache directory; tests over a dump use
+pulls the current branch first. The web and HTTP MCP servers share the `garmin.Lazy` facade over one
+`watchsession.Manager` (one lazily opened watch); `internal/paths` names the cache directory; tests over a dump use
 `internal/testdump`. `tools/expresswatch` monitors upstream release notes
 (state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.

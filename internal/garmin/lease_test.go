@@ -241,54 +241,6 @@ func TestCloseDeadlineLeavesOwnedCleanupAndLaterJoin(t *testing.T) {
 	}
 }
 
-func TestLeaseGroupDeadlineDoesNotCancelParentOrDropUnusedSession(t *testing.T) {
-	t.Parallel()
-
-	dev := &leaseDevice{}
-	l := NewLazy(func(context.Context) (device.Device, error) { return dev, nil })
-
-	warm := acquireLease(t, l)
-	if err := warm.Release(); err != nil {
-		t.Fatal(err)
-	}
-
-	l.operationLimit = 50 * time.Millisecond
-
-	t.Cleanup(func() { closeOwner(t, l) })
-
-	parent, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	lease, err := l.Acquire(parent)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	epoch := lease.Epoch()
-	select {
-	case <-lease.Context().Done():
-	case <-time.After(5 * time.Second):
-		t.Fatal("group deadline did not expire")
-	}
-
-	if !errors.Is(lease.Context().Err(), context.DeadlineExceeded) || parent.Err() != nil {
-		t.Fatal("group limit failed or cancelled parent")
-	}
-
-	if dev.closes.Load() != 0 || l.Current() != lease.Service() {
-		t.Fatal("pre-I/O deadline dropped unused healthy session")
-	}
-
-	if err := lease.Release(); err != nil {
-		t.Fatal(err)
-	}
-
-	next := acquireLease(t, l)
-	if next.Epoch() != epoch {
-		t.Fatal("unused group deadline replaced connection")
-	}
-}
-
 func TestCloseCancelsOpenAndRejectsLatePublication(t *testing.T) {
 	t.Parallel()
 

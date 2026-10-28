@@ -31,12 +31,16 @@ type Service struct {
 }
 
 // New wraps a device.
-func New(dev device.Device) *Service {
+func New(dev device.Device) *Service { return NewFromSession(watchsession.New(dev)) }
+
+// NewFromSession adds feature caches/profile to an existing Session without
+// taking transport ownership or creating another admission/close worker.
+func NewFromSession(session *watchsession.Session) *Service {
 	return &Service{
 		profile:    fit.MustProfile(),
 		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
-		session:    watchsession.New(dev),
+		session:    session,
 	}
 }
 
