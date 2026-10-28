@@ -37,9 +37,10 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
   and shared status mapping. `internal/web/httpx_compat.go` temporarily delegates
   existing routes; Wails-specific private-origin validation stays in desktop.
-- `internal/ship/mcpx` owns generic Streamable HTTP tracking and protocol close.
-  `internal/mcpserver` supplies registered Garmin tools/runtime context and keeps
-  metadata type aliases; `withWatch` stays there until watchsession extraction.
+- `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
+  watch lease handlers and annotation helpers. Its narrow owner/lease contracts
+  accept Session Manager directly and legacy leases without a garmin import.
+  `internal/mcpserver` supplies Garmin bodies/runtime context and keeps delegates.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
   capabilities, scoped diagnostics, watch paths and metadata reads. Its Manager
   owns leases/epochs/probe/retirement/close. Legacy Lazy/Lease delegate to that

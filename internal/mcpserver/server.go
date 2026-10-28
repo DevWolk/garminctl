@@ -16,6 +16,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 )
 
 const (
@@ -50,41 +51,28 @@ music_list track paths for music_playlist; store_search.id for store_app.`
 
 // withWatch adapts a tool body that needs the connected watch.
 func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmin.Service, in In) (Out, error)) mcp.ToolHandlerFor[In, Out] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
-		if s.runtime != nil {
-			bound, cancel := s.runtime.RequestContext(ctx)
-			defer cancel()
+	return mcpx.WithWatch(s.svc, s.requestContext, func(ctx context.Context, lease *garmin.Lease, in In) (Out, error) {
+		return body(ctx, lease.Service(), in)
+	})
+}
 
-			ctx = bound
-		}
-
-		lease, err := s.svc.Acquire(ctx)
-		if err != nil {
-			var zero Out
-
-			return nil, zero, err
-		}
-
-		out, err := body(lease.Context(), lease.Service(), in) // the SDK turns a non-nil err into an error result and drops out
-		if errors.Is(err, device.ErrDisconnected) {
-			err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
-		}
-
-		err = errors.Join(err, lease.Release())
-
-		return nil, out, err
+func (s *server) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if s.runtime != nil {
+		return s.runtime.RequestContext(ctx)
 	}
+
+	return ctx, func() {}
 }
 
 // readOnly marks tools that leave watch and account data unchanged.
 // network marks access to Garmin's services.
 func readOnly(title string, network bool) *mcp.ToolAnnotations {
-	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, OpenWorldHint: new(network)}
+	return mcpx.ReadOnly(title, network)
 }
 
 // writes marks a tool that changes the watch or the Garmin account.
 func writes(title string, destructive, network bool) *mcp.ToolAnnotations {
-	return &mcp.ToolAnnotations{Title: title, DestructiveHint: new(destructive), OpenWorldHint: new(network)}
+	return mcpx.Writes(title, destructive, network)
 }
 
 // ServeRuntime runs the stdio shell with process owners supplied by app wiring.
