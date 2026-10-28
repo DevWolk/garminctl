@@ -182,21 +182,3 @@ func TestLateReadCannotReplaceNewCacheGeneration(t *testing.T) {
 		})
 	}
 }
-
-func TestReconnectSamplingDoesNotHoldCacheMutex(t *testing.T) {
-	t.Parallel()
-
-	d := &cacheTestDevice{data: []byte("data")}
-	svc := New(d)
-	d.onCount = func() {
-		if !svc.mu.TryLock() {
-			t.Error("sampling the transport while holding the cache mutex violates lock ordering")
-			return
-		}
-
-		svc.mu.Unlock()
-	}
-
-	readCachedTestValue(t, svc, true)
-	readCachedTestValue(t, svc, true)
-}

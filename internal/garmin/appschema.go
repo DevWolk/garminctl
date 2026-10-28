@@ -29,11 +29,7 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 		return nil, fmt.Errorf("%s is not a Connect IQ store app", app.Name)
 	}
 
-	reconnects := s.deviceReconnectCount()
-	s.mu.Lock()
-	s.observeReconnectLocked(reconnects)
-	generation := s.cacheGeneration
-	s.mu.Unlock()
+	generation, cacheable := s.session.CacheGeneration()
 
 	dx, err := s.DeviceXML(ctx)
 	if err != nil {
@@ -41,13 +37,15 @@ func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, er
 	}
 
 	key := appSchemaKey{appID: strings.ToLower(app.ID), version: app.Version, partNumber: dx.PartNumber, unit: dx.UnitID}
-	if sc := s.cachedAppSchema(key, generation, reconnects); sc != nil {
-		return sc, nil
+	if cacheable {
+		if sc := s.cachedAppSchema(key, generation); sc != nil {
+			return sc, nil
+		}
 	}
 
 	sc, err := loadAppSchema(ctx, app, dx.PartNumber)
-	if err == nil {
-		s.rememberAppSchema(key, generation, reconnects, sc)
+	if err == nil && cacheable {
+		s.rememberAppSchema(key, generation, sc)
 	}
 
 	return sc, err

@@ -243,11 +243,11 @@ func TestAppSchemaFallbackRemainsCachedForRequestedVersion(t *testing.T) { //nol
 	d := &cacheTestDevice{data: []byte(schemaXML("PART-A"))}
 	svc := New(d)
 	d.onCount = func() {
-		if !svc.mu.TryLock() {
+		if !svc.schemas.mu.TryLock() {
 			t.Error("schema cache sampled transport while holding cache mutex")
 			return
 		}
-		svc.mu.Unlock()
+		svc.schemas.mu.Unlock()
 	}
 
 	for range 2 {
@@ -258,5 +258,44 @@ func TestAppSchemaFallbackRemainsCachedForRequestedVersion(t *testing.T) { //nol
 
 	if latest.Load() != 1 || forms.Load() != 2 {
 		t.Fatalf("cache hit retried fallback: latest=%d forms=%d", latest.Load(), forms.Load())
+	}
+}
+
+func TestSchemaCacheLatePublicationKeepsNewerGeneration(t *testing.T) {
+	t.Parallel()
+
+	for _, late := range []string{"lookup", "publish", "reset", "same-generation reset"} {
+		t.Run(late, func(t *testing.T) {
+			t.Parallel()
+
+			var cache appSchemaCache
+
+			key := appSchemaKey{appID: "app"}
+			newer := &ciqstore.Schema{Version: 2}
+			cache.store(key, 2, newer)
+
+			// A caller sampled generation 1 before another caller published 2.
+			// Complete its remaining in-memory operation after that publication.
+			switch late {
+			case "lookup":
+				if got := cache.load(key, 1); got != nil {
+					t.Fatalf("old lookup returned newer entry: %+v", got)
+				}
+			case "publish":
+				cache.store(key, 1, &ciqstore.Schema{Version: 1})
+			case "reset":
+				cache.reset(1)
+			case "same-generation reset":
+				cache.reset(2)
+			}
+
+			if got := cache.load(key, 2); got != newer {
+				t.Fatalf("late %s replaced/cleared current schema: %+v", late, got)
+			}
+
+			if got := cache.load(key, 3); got != nil {
+				t.Fatalf("new generation reused old schema: %+v", got)
+			}
+		})
 	}
 }

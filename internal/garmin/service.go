@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"path"
 	"strings"
-	"sync"
 	"unicode"
 
 	"github.com/DevWolk/garminctl/internal/ciq"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 // Service is the high-level API over one connected watch.
@@ -27,11 +27,8 @@ type Service struct {
 	// unless a test points it at a fake server.
 	UpdatesURL string
 
-	mu              sync.Mutex
-	cache           map[string][]byte
-	schemas         map[appSchemaKey]*ciqstore.Schema
-	cacheGeneration uint64
-	reconnectCount  int
+	session *watchsession.Session
+	schemas appSchemaCache
 }
 
 // New wraps a device.
@@ -41,8 +38,7 @@ func New(dev device.Device) *Service {
 		profile:    fit.MustProfile(),
 		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
-		cache:      map[string][]byte{},
-		schemas:    map[appSchemaKey]*ciqstore.Schema{},
+		session:    watchsession.New(dev),
 	}
 }
 
@@ -52,24 +48,13 @@ func (s *Service) Profile() *fit.Profile { return s.profile }
 // Knowledge returns an independent snapshot of notes about undocumented fields.
 func (s *Service) Knowledge() *Knowledge { return s.know.snapshot() }
 
-// reconnecter is implemented by devices that reopen themselves after an unplug.
-type reconnecter interface{ Reconnects() int }
-
 func (s *Service) invalidate(p string) {
-	s.mu.Lock()
-	s.cacheGeneration++
-	delete(s.cache, strings.ToLower(p))
-	s.schemas = map[appSchemaKey]*ciqstore.Schema{}
-	s.mu.Unlock()
+	s.schemas.reset(s.session.Invalidate(p))
 }
 
 // Refresh drops cached file contents.
 func (s *Service) Refresh() {
-	s.mu.Lock()
-	s.cacheGeneration++
-	s.cache = map[string][]byte{}
-	s.schemas = map[appSchemaKey]*ciqstore.Schema{}
-	s.mu.Unlock()
+	s.schemas.reset(s.session.Refresh())
 }
 
 // Close releases the device.

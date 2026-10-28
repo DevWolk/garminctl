@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -14,12 +15,17 @@ import (
 func TestRawDeviceAccessStaysAtBoundary(t *testing.T) {
 	t.Parallel()
 
-	entries, err := os.ReadDir(".")
+	checkDeviceAccessBoundary(t, ".", map[string]bool{"filesystem.go": true, "diagnostics.go": true, "lazy.go": true})
+	checkDeviceAccessBoundary(t, "../ship/watchsession", map[string]bool{"file_cache.go": true})
+}
+
+func checkDeviceAccessBoundary(t *testing.T, dir string, owners map[string]bool) {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	owners := map[string]bool{"filesystem.go": true, "file_cache.go": true, "diagnostics.go": true, "lazy.go": true}
 
 	for _, entry := range entries {
 		name := entry.Name()
@@ -27,7 +33,7 @@ func TestRawDeviceAccessStaysAtBoundary(t *testing.T) {
 			continue
 		}
 
-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.SkipObjectResolution)
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name), nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
