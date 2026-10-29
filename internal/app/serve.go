@@ -5,10 +5,13 @@ import (
 	"net"
 
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
+	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
+	"github.com/DevWolk/garminctl/internal/ship/httpx"
+	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/web"
 )
 
@@ -30,8 +33,10 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return web.ServeRuntime(listener, runtime, account, autoSync, version,
-		&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()})
+	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{
+		HTTP: []httpx.RouteRegistrar{&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}},
+		MCP:  []mcpx.ToolRegistrar{settingsTools(runtime)},
+	})
 }
 
 // ServeMCP assembles a standalone stdio backend, with its own process owners.
@@ -39,5 +44,9 @@ func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version)
+	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime))
+}
+
+func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
+	return &settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext}
 }

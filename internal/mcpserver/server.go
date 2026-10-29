@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,7 +76,7 @@ func writes(title string, destructive, network bool) *mcp.ToolAnnotations {
 
 // ServeRuntime runs the stdio shell with process owners supplied by app wiring.
 // It closes the supplied runtime before returning.
-func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string) (err error) {
+func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string, registrars ...mcpx.ToolRegistrar) (err error) {
 	s := &server{svc: runtime.Watch, runtime: runtime}
 
 	defer func() {
@@ -87,15 +86,20 @@ func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string) (
 		err = errors.Join(err, runtime.Close(closeCtx))
 	}()
 
-	srv := newServer(s, version, account)
+	srv := newServer(s, version, account, registrars...)
 
 	return srv.Run(runtime.Context(), &mcp.StdioTransport{})
 }
 
-func newServer(s *server, version string, cloudClient *gc.Client) *mcp.Server {
+func newServer(s *server, version string, cloudClient *gc.Client, registrars ...mcpx.ToolRegistrar) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "garminctl", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
 	addWatchTools(srv, s)
+
+	for _, registrar := range registrars {
+		registrar.RegisterTools(srv)
+	}
+
 	addAppTools(srv, s)
 	addCloudTools(srv, s, cloudClient)
 	addStoreTools(srv, s)
@@ -116,19 +120,6 @@ type pathIn struct {
 	Path string `json:"path" jsonschema:"file path on the watch, e.g. GARMIN/Sports/WalkingWalk.fit"`
 }
 
-type settingsIn struct {
-	IncludeUnknown bool   `json:"includeUnknown,omitempty" jsonschema:"also return undocumented fields (numbers only)"`
-	Message        string `json:"message,omitempty" jsonschema:"restrict to one message, e.g. deviceSettings or userProfile"`
-}
-
-type schemaIn struct {
-	Message string `json:"message" jsonschema:"message name or number, e.g. deviceSettings, userProfile, hrZone, zonesTarget"`
-}
-
-type setIn struct {
-	Changes []garmin.Change `json:"changes" jsonschema:"field changes: mesg and field (name or number), value (enum name, number or scaled value), optional index for repeated messages and arrayIndex for array fields"`
-}
-
 type deletedResult struct {
 	Deleted string `json:"deleted"`
 }
@@ -141,14 +132,6 @@ type filesResult struct {
 type messagesResult struct {
 	Messages  []fit.NamedMessage `json:"messages"`
 	Truncated bool               `json:"truncated,omitempty"`
-}
-
-type settingsResult struct {
-	Rows []garmin.SettingsRow `json:"rows"`
-}
-
-type fieldsResult struct {
-	Fields []garmin.SchemaField `json:"fields"`
 }
 
 type appsResult struct {
@@ -202,54 +185,6 @@ func addWatchTools(srv *mcp.Server, s *server) {
 
 		return deletedResult{Deleted: in.Path}, nil
 	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_settings",
-		Description: "Read watch settings with values, types, options and notes. Use watch_app_settings for Connect IQ apps and cloud_settings for Garmin Connect's copy.",
-		Annotations: readOnly("Read watch settings", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in settingsIn) (settingsResult, error) {
-		view, err := svc.Settings(ctx)
-		if err != nil {
-			return settingsResult{}, err
-		}
-
-		return settingsResult{Rows: filterRows(view.Rows(), in)}, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_settings_schema",
-		Description: "List documented settings fields, types, units and options. Use before watch_set_settings.",
-		Annotations: readOnly("Settings field schema", false),
-	}, withWatch(s, func(_ context.Context, svc *garmin.Service, in schemaIn) (fieldsResult, error) {
-		fields, err := svc.Schema(in.Message)
-		return fieldsResult{Fields: fields}, err
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_set_settings",
-		Description: "Queue watch settings changes and return their previous values. Tell the user to unplug the watch to apply them.",
-		Annotations: writes("Change watch settings", false, false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in setIn) (*garmin.ApplyResult, error) {
-		return svc.ApplyChanges(ctx, in.Changes)
-	}))
-}
-
-func filterRows(rows []garmin.SettingsRow, in settingsIn) []garmin.SettingsRow {
-	out := make([]garmin.SettingsRow, 0, len(rows))
-
-	for _, r := range rows {
-		if !in.IncludeUnknown && !r.Known && r.Note == "" {
-			continue
-		}
-
-		if in.Message != "" && r.Mesg != in.Message && strconv.FormatUint(uint64(r.MesgNum), 10) != in.Message {
-			continue
-		}
-
-		out = append(out, r)
-	}
-
-	return out
 }
 
 type appIn struct {

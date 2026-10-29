@@ -23,12 +23,21 @@ import (
 
 type trackedRootDevice struct {
 	device.Device
-	closes *atomic.Int32
+	closes        *atomic.Int32
+	settingsReads *atomic.Int32
 }
 
 func (d trackedRootDevice) Close() error {
 	d.closes.Add(1)
 	return d.Device.Close()
+}
+
+func (d trackedRootDevice) Read(ctx context.Context, path string) ([]byte, error) {
+	if path == "GARMIN/Settings/Settings.fit" {
+		d.settingsReads.Add(1)
+	}
+
+	return d.Device.Read(ctx, path)
 }
 
 func rootGetJSON(ctx context.Context, t *testing.T, base, path string, output any) {
@@ -60,14 +69,14 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	t.Setenv("APPDATA", config)
 	root := testdump.Root(t)
 
-	var opens, closes atomic.Int32
+	var opens, closes, settingsReads atomic.Int32
 
 	open := func(context.Context) (device.Device, error) {
 		opens.Add(1)
 
 		dev, err := device.NewDirFS(root)
 
-		return trackedRootDevice{Device: dev, closes: &closes}, err
+		return trackedRootDevice{Device: dev, closes: &closes, settingsReads: &settingsReads}, err
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -114,7 +123,6 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 
 	var entries []device.Entry
 	rootGetJSON(ctx, t, base, "/api/files?path=GARMIN", &entries)
-	checkRootMCPEntries(ctx, t, base, entries)
 
 	var settingsRows struct {
 		Rows []map[string]any `json:"rows"`
@@ -123,6 +131,12 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 
 	if len(settingsRows.Rows) == 0 {
 		t.Fatal("composition root did not register the settings HTTP adapter")
+	}
+
+	checkRootMCPReads(ctx, t, base, entries, settingsRows.Rows)
+
+	if settingsReads.Load() != 1 {
+		t.Fatalf("HTTP/MCP did not share the settings raw cache: reads=%d", settingsReads.Load())
 	}
 
 	if opens.Load() != 1 || closes.Load() != 0 {
@@ -136,7 +150,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	}
 }
 
-func checkRootMCPEntries(ctx context.Context, t *testing.T, base string, expected []device.Entry) {
+func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected []device.Entry, settingsRows []map[string]any) {
 	t.Helper()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "root-test", Version: "1"}, nil)
@@ -168,6 +182,27 @@ func checkRootMCPEntries(ctx context.Context, t *testing.T, base string, expecte
 	if !reflect.DeepEqual(output.Entries, expected) {
 		t.Fatalf("MCP entries=%+v HTTP entries=%+v", output.Entries, expected)
 	}
+
+	result, err = session.CallTool(ctx, &mcp.CallToolParams{Name: "watch_settings", Arguments: map[string]any{"includeUnknown": true}})
+	if err != nil || result.IsError {
+		t.Fatalf("MCP settings=%+v error=%v", result, err)
+	}
+
+	data, err = json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var rows struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := json.Unmarshal(data, &rows); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(rows.Rows, settingsRows) {
+		t.Fatal("MCP includeUnknown and HTTP settings rows differ")
+	}
 }
 
 func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
@@ -191,7 +226,7 @@ func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
 	runtime := NewRuntime(ctx, nil)
 
 	account := gc.New(filepath.Join(t.TempDir(), "account.json"))
-	if err := web.ServeRuntime(listener, runtime, account, false, "test"); !errors.Is(err, net.ErrClosed) {
+	if err := web.ServeRuntime(listener, runtime, account, false, "test", web.Features{}); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("closed listener error=%v", err)
 	}
 

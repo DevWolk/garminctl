@@ -24,6 +24,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/mcpserver"
 	"github.com/DevWolk/garminctl/internal/notify"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
+	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 )
 
 //go:embed ui
@@ -35,9 +36,16 @@ const (
 	rangeDays       = 14     // beyond this the range endpoints replace one request per day
 )
 
+// Features contains adapters assembled by the composition root. HTTP and MCP
+// shells receive registrations, never import the feature implementations.
+type Features struct {
+	HTTP []httpx.RouteRegistrar
+	MCP  []mcpx.ToolRegistrar
+}
+
 // Server holds the lazily connected device service.
 type Server struct {
-	registrars []httpx.RouteRegistrar
+	features   Features
 	svc        *garmin.Lazy
 	cloud      *gc.Client
 	runtime    *garmin.Runtime
@@ -69,11 +77,11 @@ type statusResponse struct {
 
 // ServeRuntime serves an already-bound listener with owners supplied by the
 // composition root. It owns the listener and closes the runtime on every exit.
-func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string, registrars ...httpx.RouteRegistrar) error {
+func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string, features Features) error {
 	ctx, cancel := context.WithCancel(runtime.Context())
 	defer cancel()
 
-	s := serverWithRuntime(runtime, account, autoSync, registrars...)
+	s := serverWithRuntime(runtime, account, autoSync, features)
 
 	s.version = version
 	addr := listener.Addr().String()
@@ -143,8 +151,8 @@ func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Cl
 	return shutdownErr
 }
 
-func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool, registrars ...httpx.RouteRegistrar) *Server {
-	s := &Server{registrars: registrars, svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
+func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool, features Features) *Server {
+	s := &Server{features: features, svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s
@@ -195,11 +203,11 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 var uiTab = regexp.MustCompile(`data-tab="([a-z]+)"`)
 
 func (s *Server) routes(mux *http.ServeMux) {
-	for _, registrar := range s.registrars {
+	for _, registrar := range s.features.HTTP {
 		registrar.RegisterRoutes(mux)
 	}
 
-	s.mcp = mcpserver.NewHTTPServer(s.runtime, s.cloud, s.version)
+	s.mcp = mcpserver.NewHTTPServer(s.runtime, s.cloud, s.version, s.features.MCP...)
 	mux.Handle("GET /mcp", s.mcp)
 	mux.Handle("POST /mcp", s.mcp)
 	mux.Handle("DELETE /mcp", s.mcp)

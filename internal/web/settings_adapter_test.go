@@ -80,7 +80,7 @@ func TestSettingsAdapterPreservesBodyAndAcquisitionErrors(t *testing.T) {
 			r := httptest.NewRequestWithContext(t.Context(), test.method, test.path, strings.NewReader(test.body))
 
 			mux := http.NewServeMux()
-			for _, registrar := range s.registrars {
+			for _, registrar := range s.features.HTTP {
 				registrar.RegisterRoutes(mux)
 			}
 
@@ -118,7 +118,7 @@ func TestSettingsAdapterAdmitsBeforeReadingBody(t *testing.T) {
 	defer resume()
 
 	mux := http.NewServeMux()
-	for _, registrar := range s.registrars {
+	for _, registrar := range s.features.HTTP {
 		registrar.RegisterRoutes(mux)
 	}
 

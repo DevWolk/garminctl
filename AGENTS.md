@@ -40,7 +40,7 @@ See CLAUDE.md for the working rules. Module map:
   route registrar contract. `internal/web/httpx_compat.go` temporarily delegates
   existing routes; Wails-specific private-origin validation stays in desktop.
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
-  watch lease handlers and annotation helpers. Its narrow owner/lease contracts
+  watch lease handlers, tool registration and annotation helpers. Its narrow owner/lease contracts
   accept Session Manager directly and legacy leases without a garmin import.
   `internal/mcpserver` supplies Garmin bodies/runtime context and keeps delegates.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
@@ -53,8 +53,9 @@ See CLAUDE.md for the working rules. Module map:
   Actions use watchsession directly and import no legacy/transport package.
   `ui/cli` owns CLI settings flags/output and uses the entry point's leased
   Session. `ui/http` registers the settings/schema/apply API through the shared
-  Manager. App supplies that registrar to the web shell. `garmin` retains model
-  aliases/Service delegates; the MCP settings adapter still awaits migration.
+  Manager. `ui/mcp` registers the three typed settings tools through mcpx.
+  App supplies route/tool registrars to HTTP and stdio shells with the same
+  runtime owners. `garmin` retains model aliases/Service delegates.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -84,9 +85,10 @@ See CLAUDE.md for the working rules. Module map:
   the URL path, so `handler` serves `index.html` for every first segment
   that `index.html` declares as a `data-tab`. `auto.go` is the USB watcher
   and the background sync job; `server_test.go` drives the API over a dump.
-- `internal/mcpserver`: go-sdk tools, all thin wrappers over `Service`
+- `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
-  (`addWatchTools`, `addAppTools`, `addCloudTools`, ...). Every tool has
+  (`addWatchTools`, `addAppTools`, `addCloudTools`, ...). Extracted settings
+  tools arrive through an injected registrar. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`
   and friends) and recursive inputs are flattened (`workoutIn`: one level of

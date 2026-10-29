@@ -16,10 +16,13 @@ import (
 	"time"
 
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
+	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/httpx"
+	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -111,8 +114,10 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 	runtime := garmin.NewRuntime(ctx, open)
 
-	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync,
-		&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()})
+	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
+		HTTP: []httpx.RouteRegistrar{&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}},
+		MCP:  []mcpx.ToolRegistrar{&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext}},
+	})
 }
 
 func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, string) {

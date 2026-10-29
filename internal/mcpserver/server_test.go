@@ -12,7 +12,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -78,7 +80,8 @@ func newClientForRoot(t *testing.T, root string) *mcp.ClientSession {
 
 	runtime := garmin.NewRuntime(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) })
 	s := &server{svc: runtime.Watch, runtime: runtime}
-	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")))
+	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")),
+		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext})
 
 	ct, st := mcp.NewInMemoryTransports()
 

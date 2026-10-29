@@ -19,7 +19,7 @@ type Snapshot = mcpx.Snapshot
 type HTTPServer = mcpx.HTTPServer
 
 // NewHTTPServer supplies the registered Garmin tools and process lifetime to mcpx.
-func NewHTTPServer(runtime *garmin.Runtime, cloudClient *gc.Client, version string) *HTTPServer {
-	protocol := newServer(&server{svc: runtime.Watch, runtime: runtime}, version, cloudClient)
+func NewHTTPServer(runtime *garmin.Runtime, cloudClient *gc.Client, version string, registrars ...mcpx.ToolRegistrar) *HTTPServer {
+	protocol := newServer(&server{svc: runtime.Watch, runtime: runtime}, version, cloudClient, registrars...)
 	return mcpx.NewHTTPServer(runtime.Context(), protocol)
 }
