@@ -69,6 +69,8 @@ See CLAUDE.md for the working rules. Module map:
   `ui/http` owns file/list/decode/download handlers. App injects their registrar
   and a Session-based Summary reader into web's connection-state aggregation.
   Watcher/auto/disconnect and aggregate feature-cache refresh remain shell-owned.
+  `ui/mcp` owns the four watch tools, including object result schemas and the
+  400-message decode cap; app supplies the same registrar for HTTP and stdio.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -100,8 +102,8 @@ See CLAUDE.md for the working rules. Module map:
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
-  (`addWatchTools`, `addAppTools`, `addCloudTools`, ...). Extracted settings
-  tools arrive through an injected registrar. Every tool has
+  (`addAppTools`, `addCloudTools`, ...). Extracted settings and watch
+  tools arrive through injected registrars. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`
   and friends) and recursive inputs are flattened (`workoutIn`: one level of

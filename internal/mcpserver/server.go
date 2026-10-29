@@ -11,15 +11,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 )
 
 const (
-	maxDecodedMsgs    = 400
 	defaultActivities = 30
 	defaultPoints     = 200
 	storePageSize     = 20
@@ -94,8 +91,6 @@ func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string, r
 func newServer(s *server, version string, cloudClient *gc.Client, registrars ...mcpx.ToolRegistrar) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "garminctl", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
-	addWatchTools(srv, s)
-
 	for _, registrar := range registrars {
 		registrar.RegisterTools(srv)
 	}
@@ -112,79 +107,8 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 
 type empty struct{}
 
-type listIn struct {
-	Path string `json:"path" jsonschema:"directory on the watch, e.g. GARMIN/Activity; empty for the storage root"`
-}
-
-type pathIn struct {
-	Path string `json:"path" jsonschema:"file path on the watch, e.g. GARMIN/Sports/WalkingWalk.fit"`
-}
-
-type deletedResult struct {
-	Deleted string `json:"deleted"`
-}
-
-// MCP output schemas must be objects, so list results are wrapped.
-type filesResult struct {
-	Entries []device.Entry `json:"entries"`
-}
-
-type messagesResult struct {
-	Messages  []fit.NamedMessage `json:"messages"`
-	Truncated bool               `json:"truncated,omitempty"`
-}
-
 type appsResult struct {
 	Apps []garmin.App `json:"apps"`
-}
-
-func addWatchTools(srv *mcp.Server, s *server) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_info",
-		Description: "Read the connected watch's model, unit ID, software, app count, pending files and storage.",
-		Annotations: readOnly("Watch summary", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.Summary, error) {
-		return svc.Summary(ctx)
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_list_files",
-		Description: "List watch files with names, sizes and modification times. Use their paths with watch_decode_fit or watch_delete_file.",
-		Annotations: readOnly("List watch files", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in listIn) (filesResult, error) {
-		entries, err := svc.List(ctx, in.Path)
-		return filesResult{Entries: entries}, err
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_decode_fit",
-		Description: "Decode a watch FIT file into named messages and fields. Undocumented fields use numbers. Returns up to 400 messages.",
-		Annotations: readOnly("Decode FIT file", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in pathIn) (messagesResult, error) {
-		msgs, err := svc.DecodeFIT(ctx, in.Path)
-		if err != nil {
-			return messagesResult{}, err
-		}
-
-		out := messagesResult{Messages: msgs}
-		if len(msgs) > maxDecodedMsgs {
-			out.Messages, out.Truncated = msgs[:maxDecodedMsgs], true
-		}
-
-		return out, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_delete_file",
-		Description: "Permanently delete one watch file, including a pending file in GARMIN/NewFiles. There is no undo. Use watch_remove_app for apps.",
-		Annotations: writes("Delete watch file", true, false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in pathIn) (deletedResult, error) {
-		if err := svc.DeleteFile(ctx, in.Path); err != nil {
-			return deletedResult{}, err
-		}
-
-		return deletedResult{Deleted: in.Path}, nil
-	}))
 }
 
 type appIn struct {

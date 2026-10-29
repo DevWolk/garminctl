@@ -13,10 +13,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
+	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -87,7 +89,11 @@ func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")),
-		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext})
+		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
+		&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext, AppCount: func(ctx context.Context, sess *watchsession.Session) (int, error) {
+			apps, err := garmin.NewFromSession(sess).Apps(ctx)
+			return len(apps), err
+		}})
 
 	ct, st := mcp.NewInMemoryTransports()
 
@@ -185,7 +191,9 @@ func TestTools_OverDump(t *testing.T) {
 		{name: "watch_list_files", args: map[string]any{"path": "GARMIN"}, check: func(t *testing.T, out map[string]any) {
 			t.Helper()
 
-			var files filesResult
+			var files struct {
+				Entries []device.Entry `json:"entries"`
+			}
 			if b, err := json.Marshal(out); err == nil {
 				_ = json.Unmarshal(b, &files)
 			}

@@ -31,7 +31,9 @@ func TestDeleteToolInvalidatesWatchMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var output deletedResult
+	var output struct {
+		Deleted string `json:"deleted"`
+	}
 	if err := json.Unmarshal(data, &output); err != nil || output.Deleted != path {
 		t.Fatalf("delete output changed: %s, %v", data, err)
 	}
