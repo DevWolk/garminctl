@@ -65,7 +65,7 @@ byte-identical output for the included fixtures.
 or field layout changes. Absent values use FIT invalid values. Field edits keep
 the existing width; scalar writes affect the first array element, while
 `SetElement` addresses an individual element. Notes on undocumented settings
-live in [device_settings.json](../internal/garmin/knowledge/device_settings.json).
+live in [device_settings.json](../internal/containers/settings/knowledge/device_settings.json).
 Explicit integer edits reject values outside the base type's signed/unsigned
 range while allowing its FIT invalid pattern. Failed edits leave `Raw` unchanged,
 including a failure late in an array; a shorter array edit retains the tail.

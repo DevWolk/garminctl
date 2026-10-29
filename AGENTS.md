@@ -46,12 +46,17 @@ See CLAUDE.md for the working rules. Module map:
   owns leases/epochs/probe/retirement/close. Legacy Lazy/Lease delegate to that
   owner and preserve one current Service facade with feature schema/profile
   caches. New adapters use Manager directly; no second owner is constructed.
+- `internal/containers/settings` owns settings models, read/apply/schema Actions,
+  private resolver/read tasks, FIT patch encoding and immutable settings Knowledge.
+  Actions use watchsession directly and import no legacy/transport package.
+  `garmin` retains model aliases/Service delegates; adapters still await migration.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
   `CheckSoftwareUpdates`/`InstallSoftwareUpdate` (Garmin's OMT update
   service), `CheckAppUpdates`, `InstallPRG`, `SoftwareInventory`,
-  `knowledge/device_settings.json` (notes on undocumented fields).
+  `containers/settings/knowledge/device_settings.json` owns settings notes;
+  the old JSON remains a compatibility test fixture until facade removal.
 - `internal/gc`: Garmin Connect session (SSO sign-in with MFA, OAuth1 →
   OAuth2, token file, bearer helpers). `internal/garmin/cloud.go` builds the
   sync on it: `Status`, `Settings`/`SetSettings`, `Messages`/`Pull`,

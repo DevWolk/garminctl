@@ -4,7 +4,6 @@ package garmin
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"path"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/ciq"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/settings"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
@@ -20,7 +20,6 @@ import (
 // Service is the high-level API over one connected watch.
 type Service struct {
 	profile *fit.Profile
-	know    *Knowledge
 
 	// UpdatesURL is the software update service to ask; DefaultUpdatesURL
 	// unless a test points it at a fake server.
@@ -38,7 +37,6 @@ func New(dev device.Device) *Service { return NewFromSession(watchsession.New(de
 func NewFromSession(session *watchsession.Session) *Service {
 	return &Service{
 		profile:    fit.MustProfile(),
-		know:       defaultKnowledge(),
 		UpdatesURL: DefaultUpdatesURL,
 		session:    session,
 	}
@@ -48,7 +46,7 @@ func NewFromSession(session *watchsession.Session) *Service {
 func (s *Service) Profile() *fit.Profile { return s.profile }
 
 // Knowledge returns an independent snapshot of notes about undocumented fields.
-func (s *Service) Knowledge() *Knowledge { return s.know.snapshot() }
+func (s *Service) Knowledge() *Knowledge { return settings.DefaultKnowledge() }
 
 func (s *Service) invalidate(p string) {
 	s.schemas.reset(s.session.Invalidate(p))
@@ -115,17 +113,7 @@ func (s *Service) Apps(ctx context.Context) ([]App, error) {
 
 // Settings reads Settings.fit.
 func (s *Service) Settings(ctx context.Context) (*SettingsView, error) {
-	b, err := s.read(ctx, PathSettings, true)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := fit.Decode(b)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", PathSettings, err)
-	}
-
-	return &SettingsView{Path: PathSettings, Messages: s.profile.Describe(f), Knowledge: s.Knowledge()}, nil
+	return settings.NewReadAction(s.profile).Run(ctx, s.session)
 }
 
 // DecodeFIT decodes any FIT file on the watch through the profile.
@@ -270,15 +258,7 @@ func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[st
 	return s.AppSettings(ctx, ref)
 }
 
-func newUUID() string {
-	var b [16]byte
-
-	_, _ = rand.Read(b[:])
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
-}
+func newUUID() string { return watchsession.NewFileID() }
 
 func schemaSetting(sc *ciqstore.Schema, key string) (*ciqstore.Setting, bool) {
 	if sc == nil {
