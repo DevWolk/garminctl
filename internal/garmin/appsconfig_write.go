@@ -2,7 +2,6 @@ package garmin
 
 import (
 	"context"
-	"strings"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 )
@@ -26,9 +25,4 @@ func (s *Service) PendingAppChanges(ctx context.Context) ([]AppChange, error) {
 // CancelAppChanges deletes the pending registry through the same Session.
 func (s *Service) CancelAppChanges(ctx context.Context) error {
 	return s.session.DeleteFile(ctx, PathAppsIn)
-}
-
-// matchesApp remains with the legacy PRG removal consumer until binary extraction.
-func matchesApp(app App, ref string) bool {
-	return strings.EqualFold(app.Name, ref) || strings.EqualFold(app.FileName, ref) || strings.EqualFold(app.ID, ref)
 }

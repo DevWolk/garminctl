@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/md5" //nolint:gosec // Garmin's update manifest publishes MD5 checksums; integrity check only, not security
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 )
@@ -347,165 +347,25 @@ func (s *Service) CheckAppUpdates(ctx context.Context) ([]AppUpdate, error) {
 	return out, nil
 }
 
-// InstallPRG writes a Connect IQ binary to the app folder.
-// The watch registers it after the USB session ends.
+// AppFolder preserves the app-owned binary folder path during migration.
+const AppFolder = apps.AppFolder
+
+// InstallPRG delegates validation/staging and shares this Session's feature cache.
 func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
-	if len(data) < 16 || data[0] != 0 || data[1] != 0 || data[2] != 0 {
-		return "", errors.New("this does not look like a Connect IQ .PRG file")
-	}
-
-	var b [4]byte
-
-	_, _ = rand.Read(b[:])
-	name := strings.ToUpper(hex.EncodeToString(b[:])) + ".PRG"
-
-	p, err := s.WriteAppFile(ctx, name, data)
-	if err != nil {
-		return "", err
-	}
-
-	s.invalidate(PathAppsConfig)
-
-	return p, nil
+	return apps.NewInstallPRGAction(&s.schemas).Run(ctx, s.session, data)
 }
 
-// AppFolder stores Connect IQ binaries and may be hidden from ordinary MTP
-// listings; see WriteAppFile.
-const AppFolder = "GARMIN/APPS/MEDIA"
-
-// WriteAppFile puts a Connect IQ binary (or STM store message) into the app
-// folder and returns the watch path. When the folder is hidden from the
-// ordinary listing it goes through the device's raw PTP path; the watch
-// registers the app when the USB session ends.
+// WriteAppFile delegates named queue/binary delivery through the same Session.
 func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (string, error) {
-	target := AppFolder + "/" + name
-	if _, err := s.Stat(ctx, AppFolder); err == nil {
-		if err := s.WriteFile(ctx, target, data); err != nil {
-			return "", fmt.Errorf("write %s: %w", target, err)
-		}
-
-		return target, nil
-	}
-
-	if err := s.WriteHidden(ctx, AppFolder, name, data); errors.Is(err, ErrCapabilityUnavailable) {
-		return "", errors.New("this watch does not expose its app folder (GARMIN/APPS/MEDIA) over USB, so apps can only be installed through Garmin Connect on the phone")
-	} else if err != nil {
-		return "", err
-	}
-
-	return target, nil
+	return (apps.WriteFileAction{}).Run(ctx, s.session, name, data)
 }
 
-// RemoveApp deletes a Connect IQ app's binary, settings and data files. The
-// watch drops the app from its registry when the USB session ends. ref is the
-// app's file id, name or store id; built-in apps and the Connect IQ Store app
-// are refused.
+// RemoveApp delegates app-file removal with the existing shared schema cache.
 func (s *Service) RemoveApp(ctx context.Context, ref string) ([]string, error) {
-	apps, err := s.Apps(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	ref = strings.TrimSuffix(strings.TrimSuffix(ref, ".PRG"), ".prg")
-
-	app := installedApp(apps, ref)
-	if app == nil {
-		return nil, fmt.Errorf("%q is not an installed Connect IQ app", ref)
-	}
-
-	if app.Native {
-		return nil, fmt.Errorf("%s is built into the watch and cannot be removed", app.Name)
-	}
-
-	if strings.EqualFold(app.FileName, "Toystore") {
-		return nil, errors.New("the Connect IQ Store app cannot be removed")
-	}
-
-	var removed []string
-
-	binary, err := s.removeAppBinary(ctx, app.FileName+".PRG")
-	if err != nil {
-		return removed, err
-	}
-
-	if binary != "" {
-		removed = append(removed, binary)
-	}
-
-	removed, err = s.removeAppSidecars(ctx, app.FileName, removed)
-	if err != nil {
-		return removed, err
-	}
-
-	s.invalidate(PathAppsConfig)
-
-	return removed, nil
+	return apps.NewRemoveAction(&s.schemas).Run(ctx, s.session, ref)
 }
 
-// installedApp finds a store app by file id, name or store id.
-func installedApp(apps []App, ref string) *App {
-	for i := range apps {
-		a := &apps[i]
-		if a.FileName != "" && matchesApp(*a, ref) {
-			return a
-		}
-	}
-
-	return nil
-}
-
-// removeAppBinary deletes the .PRG from the visible or hidden app folder and
-// returns the deleted path, or "" when it was not there.
-func (s *Service) removeAppBinary(ctx context.Context, prg string) (string, error) {
-	target := AppFolder + "/" + prg
-
-	if _, err := s.Stat(ctx, target); err == nil {
-		if err := s.DeleteFile(ctx, target); err != nil {
-			return "", err
-		}
-
-		return target, nil
-	}
-
-	switch err := s.DeleteHidden(ctx, AppFolder, prg); {
-	case errors.Is(err, ErrCapabilityUnavailable):
-		return "", errors.New("this watch does not expose its app folder over USB from here")
-	case err == nil:
-		return target, nil
-	case errors.Is(err, device.ErrNotFound):
-		return "", nil
-	default:
-		return "", err
-	}
-}
-
-// removeAppSidecars deletes the settings and data files of an app.
-func (s *Service) removeAppSidecars(ctx context.Context, fileName string, removed []string) ([]string, error) {
-	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + fileName + ".SET", "GARMIN/Apps/DATA/" + fileName + ".DAT", "GARMIN/Apps/DATA/" + fileName + ".IDX", "GARMIN/Apps/DATA/" + fileName + ".IMT"} {
-		if _, err := s.Stat(ctx, p); err != nil {
-			continue
-		}
-
-		if err := s.DeleteFile(ctx, p); err != nil {
-			return removed, err
-		}
-
-		removed = append(removed, p)
-	}
-
-	return removed, nil
-}
-
-// AppFiles lists the app folder, hidden or not.
+// AppFiles delegates listing through the visible/hidden capability policy.
 func (s *Service) AppFiles(ctx context.Context) ([]device.Entry, error) {
-	if entries, err := s.List(ctx, AppFolder); err == nil {
-		return entries, nil
-	}
-
-	entries, err := s.ListHidden(ctx, AppFolder)
-	if errors.Is(err, ErrCapabilityUnavailable) {
-		return nil, device.ErrNotFound
-	}
-
-	return entries, err
+	return (apps.FilesAction{}).Run(ctx, s.session)
 }

@@ -64,8 +64,10 @@ See CLAUDE.md for the working rules. Module map:
   belong to apps; legacy names are aliases/delegates and the old JSON is only a
   compatibility test fixture. Find/SET/schema Actions and SchemaCache logic are
   apps-owned; the legacy per-Session facade still holds one cache value and
-  delegates, including Refresh/reset. Adapters and PRG operations remain legacy
-  until their separate steps; app supplies watch's count from apps.
+  delegates, including Refresh/reset. PRG staging/named delivery/list/removal
+  Actions are apps-owned and use the same Session/cache; updates.go retains
+  delegates alongside its watch-firmware/update-check logic. Transport adapters
+  remain legacy until their steps; app supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing
