@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -40,14 +41,14 @@ func TestWatchCLIReadContracts(t *testing.T) {
 			t.Parallel()
 
 			dev, _ := testdump.Watch(t)
-			svc := garmin.New(dev)
+			sess := watchsession.New(dev)
 
-			t.Cleanup(func() { _ = svc.Close() })
+			t.Cleanup(func() { _ = sess.Close() })
 
 			var out, diagnostics bytes.Buffer
 
 			c := &cli{asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
-			if err := c.deviceCommands()[test.cmd](t.Context(), svc, test.args); err != nil || diagnostics.Len() != 0 {
+			if err := c.sessionCommands()[test.cmd](t.Context(), sess, test.args); err != nil || diagnostics.Len() != 0 {
 				t.Fatalf("command error=%v diagnostics=%s", err, &diagnostics)
 			}
 
@@ -110,9 +111,9 @@ func TestWatchCLIMutationsAndExportPreserveBytes(t *testing.T) {
 	t.Parallel()
 
 	dev, _ := testdump.Watch(t)
-	svc := garmin.New(dev)
+	sess := watchsession.New(dev)
 
-	t.Cleanup(func() { _ = svc.Close() })
+	t.Cleanup(func() { _ = sess.Close() })
 
 	var out, diagnostics bytes.Buffer
 
@@ -133,7 +134,7 @@ func TestWatchCLIMutationsAndExportPreserveBytes(t *testing.T) {
 		{cmd: watchCatCommand, args: []string{"-o", exported, "GARMIN/export/file.bin"}},
 		{cmd: "rm", args: []string{"GARMIN/export/file.bin"}},
 	} {
-		if err := c.deviceCommands()[test.cmd](context.Background(), svc, test.args); err != nil {
+		if err := c.sessionCommands()[test.cmd](context.Background(), sess, test.args); err != nil {
 			t.Fatalf("%s: %v", test.cmd, err)
 		}
 	}

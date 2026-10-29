@@ -228,15 +228,6 @@ func (c *cli) version(_ context.Context, _ []string) error {
 
 func (c *cli) deviceCommands() map[string]deviceCommand {
 	return map[string]deviceCommand{
-		"info":         c.info,
-		"ls":           c.ls,
-		"cat":          c.cat,
-		"put":          c.put,
-		"rm":           c.rm,
-		"mkdir":        c.mkdir,
-		"hidden":       c.hidden,
-		"mtp":          c.mtp,
-		"decode":       c.decode,
 		"apps":         c.apps,
 		"app-hide":     c.appHide,
 		"app-show":     c.appShow,

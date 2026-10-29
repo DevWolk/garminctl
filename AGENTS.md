@@ -5,7 +5,8 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (extracted settings) and `deviceCommands` (legacy features).
+  `sessionCommands` (settings and bounded watch commands) and `deviceCommands`
+  (legacy features, including backup until its job workflow moves).
   Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
@@ -58,8 +59,10 @@ See CLAUDE.md for the working rules. Module map:
   runtime owners. `garmin` retains model aliases/Service delegates.
 - `internal/containers/watch` owns Summary and FIT Decode Actions over Session.
   Summary receives an AppCount capability from its caller; registry parsing
-  stays with its existing owner. Legacy Service delegates and aliases keep
-  current adapters stable until their extraction.
+  stays with its existing owner. `ui/cli` owns discovery, ordinary file commands,
+  summary/decode formatting and CLI-only scoped diagnostics. App supplies the
+  temporary registry-count adapter without device ownership. Legacy Service
+  delegates and aliases keep HTTP/MCP stable; backup still uses its legacy job.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

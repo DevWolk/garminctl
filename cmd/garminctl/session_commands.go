@@ -12,7 +12,18 @@ import (
 type sessionCommand func(context.Context, *watchsession.Session, []string) error
 
 func (c *cli) sessionCommands() map[string]sessionCommand {
-	return map[string]sessionCommand{"settings": c.settings}
+	return map[string]sessionCommand{
+		"settings": c.settings,
+		"info":     c.info,
+		"ls":       c.ls,
+		"cat":      c.cat,
+		"put":      c.put,
+		"rm":       c.rm,
+		"mkdir":    c.mkdir,
+		"hidden":   c.hidden,
+		"mtp":      c.mtp,
+		"decode":   c.decode,
+	}
 }
 
 // runSession uses the runtime's existing Manager without a legacy Service facade.
