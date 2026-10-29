@@ -56,6 +56,10 @@ See CLAUDE.md for the working rules. Module map:
   Manager. `ui/mcp` registers the three typed settings tools through mcpx.
   App supplies route/tool registrars to HTTP and stdio shells with the same
   runtime owners. `garmin` retains model aliases/Service delegates.
+- `internal/containers/watch` owns Summary and FIT Decode Actions over Session.
+  Summary receives an AppCount capability from its caller; registry parsing
+  stays with its existing owner. Legacy Service delegates and aliases keep
+  current adapters stable until their extraction.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

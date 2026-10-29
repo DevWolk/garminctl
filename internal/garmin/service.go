@@ -12,6 +12,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/ciq"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/settings"
+	"github.com/DevWolk/garminctl/internal/containers/watch"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
@@ -65,40 +66,15 @@ func (s *Service) DeviceXML(ctx context.Context) (*DeviceXML, error) {
 	return s.session.DeviceXML(ctx)
 }
 
-// Summary describes the connected watch.
-type Summary struct {
-	Device      device.Info     `json:"device"`
-	Model       string          `json:"model"`
-	PartNumber  string          `json:"partNumber"`
-	UnitID      uint64          `json:"unitId"`
-	Software    string          `json:"software"`
-	AppCount    int             `json:"appCount"`
-	NewFiles    int             `json:"pendingNewFiles"`
-	ProfileVers string          `json:"fitProfile"`
-	Storage     *device.Storage `json:"storage,omitempty"`
-}
+// Summary preserves the watch summary model during facade migration.
+type Summary = watch.Summary
 
 // Summary gathers the headline facts about the watch.
 func (s *Service) Summary(ctx context.Context) (*Summary, error) {
-	dx, err := s.DeviceXML(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	sum := &Summary{Device: s.Info(), Model: dx.Description, PartNumber: dx.PartNumber, UnitID: dx.UnitID, Software: dx.SoftwareVersionString(), ProfileVers: s.profile.Version}
-	if apps, err := s.Apps(ctx); err == nil {
-		sum.AppCount = len(apps)
-	}
-
-	if entries, err := s.List(ctx, PathNewFiles); err == nil {
-		sum.NewFiles = len(entries)
-	}
-
-	if st, err := s.StorageInfo(ctx); err == nil && st.CapacityBytes > 0 {
-		sum.Storage = st
-	}
-
-	return sum, nil
+	return watch.NewSummaryAction(s.profile, func(ctx context.Context, _ *watchsession.Session) (int, error) {
+		apps, err := s.Apps(ctx)
+		return len(apps), err
+	}).Run(ctx, s.session)
 }
 
 // Apps lists installed applications.
@@ -118,17 +94,7 @@ func (s *Service) Settings(ctx context.Context) (*SettingsView, error) {
 
 // DecodeFIT decodes any FIT file on the watch through the profile.
 func (s *Service) DecodeFIT(ctx context.Context, p string) ([]fit.NamedMessage, error) {
-	b, err := s.read(ctx, p, false)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := fit.Decode(b)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", p, err)
-	}
-
-	return s.profile.Describe(f), nil
+	return watch.NewDecodeAction(s.profile).Run(ctx, s.session, p)
 }
 
 // AppSettings is the settings of one Connect IQ app.
