@@ -78,7 +78,13 @@ func newClient(t *testing.T) *mcp.ClientSession {
 func newClientForRoot(t *testing.T, root string) *mcp.ClientSession {
 	t.Helper()
 
-	runtime := garmin.NewRuntime(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) })
+	return newClientWithOpener(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
+}
+
+func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
+	t.Helper()
+
+	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")),
 		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext})
