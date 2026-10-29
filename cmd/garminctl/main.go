@@ -228,24 +228,16 @@ func (c *cli) version(_ context.Context, _ []string) error {
 
 func (c *cli) deviceCommands() map[string]deviceCommand {
 	return map[string]deviceCommand{
-		"apps":         c.apps,
-		"app-hide":     c.appHide,
-		"app-show":     c.appShow,
-		"app-restore":  c.appRestore,
-		"app-pending":  c.appPending,
-		"app-rm":       c.appRm,
-		"app-settings": c.appSettings,
-		"app-schema":   c.appSchema,
-		"updates":      c.updates,
-		"software":     c.software,
-		"cloud":        c.cloud,
-		"store":        c.store,
-		"activities":   c.activities,
-		"activity":     c.activity,
-		"health":       c.health,
-		"workouts":     c.workouts,
-		"music":        c.music,
-		"backup":       c.backup,
+		"updates":    c.updates,
+		"software":   c.software,
+		"cloud":      c.cloud,
+		"store":      c.store,
+		"activities": c.activities,
+		"activity":   c.activity,
+		"health":     c.health,
+		"workouts":   c.workouts,
+		"music":      c.music,
+		"backup":     c.backup,
 	}
 }
 

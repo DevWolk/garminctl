@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -31,15 +30,22 @@ func TestAppsCLIContracts(t *testing.T) { //nolint:paralleltest // isolates proc
 		{name: "set JSON", cmd: appsSettingsCommand, args: []string{"set", testdump.AppRef, "Mode=Night"}, json: true, hash: "424037d3339e9372188b5ab87b8781d36aaccb09344d784b927d4e831850e831"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			dev, _ := testdump.Apps(t)
-			svc := garmin.New(dev)
-
-			t.Cleanup(func() { _ = svc.Close() })
+			dev, root := testdump.Apps(t)
+			if err := dev.Close(); err != nil {
+				t.Fatal(err)
+			}
 
 			var out, diagnostics bytes.Buffer
 
-			c := &cli{asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
-			if err := c.deviceCommands()[test.cmd](t.Context(), svc, test.args); err != nil || diagnostics.Len() != 0 {
+			argv := []string{"-root", root}
+			if test.json {
+				argv = append(argv, "-json")
+			}
+
+			argv = append(argv, test.cmd)
+
+			argv = append(argv, test.args...)
+			if err := run(argv, &out, &diagnostics); err != nil || diagnostics.Len() != 0 {
 				t.Fatalf("command error=%v diagnostics=%s", err, &diagnostics)
 			}
 

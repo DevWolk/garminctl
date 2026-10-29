@@ -13,20 +13,28 @@ type sessionCommand func(context.Context, *watchsession.Session, []string) error
 
 func (c *cli) sessionCommands() map[string]sessionCommand {
 	return map[string]sessionCommand{
-		"settings": c.settings,
-		"info":     c.info,
-		"ls":       c.ls,
-		"cat":      c.cat,
-		"put":      c.put,
-		"rm":       c.rm,
-		"mkdir":    c.mkdir,
-		"hidden":   c.hidden,
-		"mtp":      c.mtp,
-		"decode":   c.decode,
+		"settings":     c.settings,
+		"apps":         c.apps,
+		"app-hide":     c.appHide,
+		"app-show":     c.appShow,
+		"app-restore":  c.appRestore,
+		"app-pending":  c.appPending,
+		"app-rm":       c.appRm,
+		"app-settings": c.appSettings,
+		"app-schema":   c.appSchema,
+		"info":         c.info,
+		"ls":           c.ls,
+		"cat":          c.cat,
+		"put":          c.put,
+		"rm":           c.rm,
+		"mkdir":        c.mkdir,
+		"hidden":       c.hidden,
+		"mtp":          c.mtp,
+		"decode":       c.decode,
 	}
 }
 
-// runSession uses the runtime's existing Manager without a legacy Service facade.
+// runSession uses the runtime's existing Manager for extracted adapters.
 // runDevice owns runtime shutdown for both extracted and legacy commands.
 func (c *cli) runSession(ctx context.Context, command sessionCommand, args []string) error {
 	return c.withSessionAt(ctx, 0, func(ctx context.Context, sess *watchsession.Session) error {

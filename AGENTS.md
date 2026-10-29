@@ -5,13 +5,13 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings and bounded watch commands) and `deviceCommands`
+  `sessionCommands` (settings, apps and bounded watch commands) and `deviceCommands`
   (legacy features and the backup job compatibility entry).
   Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
-  `serve.go`, `autostart.go`.
+  `serve.go`, `autostart.go`; extracted app CLI wrappers live in `apps_cli.go`.
 - `cmd/garmin-desktop`, `internal/desktop`: Wails v2 native window (build tag
   `desktop`), owned/reused loopback backend, private-origin proxy, native Save
   dialog and lifecycle/edit protection. `internal/devicehost` selects DirFS,
@@ -66,8 +66,11 @@ See CLAUDE.md for the working rules. Module map:
   apps-owned; the legacy per-Session facade still holds one cache value and
   delegates, including Refresh/reset. PRG staging/named delivery/list/removal
   Actions are apps-owned and use the same Session/cache; updates.go retains
-  delegates alongside its watch-firmware/update-check logic. Transport adapters
-  remain legacy until their steps; app supplies watch's count from apps.
+  delegates alongside its watch-firmware/update-check logic. `ui/cli` owns eight
+  app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
+  supplies canonical current-epoch state without acquiring/opening again; this
+  temporary bridge is removed with the facade. HTTP/MCP adapters remain legacy
+  until their steps; app supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing

@@ -107,6 +107,63 @@ func TestLegacyAndSessionLeasesShareAdmissionAndMutationCache(t *testing.T) {
 	requireLegacyLeaseFile(t, next, "new")
 }
 
+func TestExtractedAdaptersShareOneEpochSchemaCache(t *testing.T) {
+	t.Parallel()
+
+	l := NewLazy(func(context.Context) (device.Device, error) { return &leaseDevice{}, nil })
+
+	t.Cleanup(func() { closeOwner(t, l) })
+
+	core, err := l.Manager().Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstSession, firstEpoch := core.Session(), core.Epoch()
+
+	cache := l.AppSchemaCacheFor(firstSession)
+	if cache != l.AppSchemaCacheFor(firstSession) || cache != &l.Current().schemas {
+		t.Fatal("extracted adapter did not use the canonical current-epoch cache")
+	}
+
+	if err := core.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := acquireLease(t, l)
+	if cache != &legacy.Service().schemas {
+		t.Fatal("legacy and extracted adapters acquired separate caches")
+	}
+
+	if err := legacy.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := l.DropAt(firstEpoch); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := l.Manager().Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := next.Release(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	fresh := l.AppSchemaCacheFor(next.Session())
+	if fresh == cache || fresh != &l.Current().schemas {
+		t.Fatal("new Session reused the previous epoch's schema cache")
+	}
+
+	_ = l.AppSchemaCacheFor(firstSession)
+	if fresh != &l.Current().schemas {
+		t.Fatal("late state lookup displaced the current epoch's cache")
+	}
+}
+
 func requireLegacyLeaseFile(t *testing.T, lease *Lease, want string) {
 	t.Helper()
 

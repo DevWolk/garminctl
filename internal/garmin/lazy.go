@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
@@ -50,6 +51,18 @@ func (l *Lazy) CurrentEpoch() ConnectionEpoch { return l.manager.CurrentEpoch() 
 func (l *Lazy) Current() *Service {
 	session, epoch := l.manager.Snapshot()
 	return l.facade(session, epoch)
+}
+
+// AppSchemaCacheFor is a temporary feature-state bridge for extracted adapters.
+// The caller must hold a Manager lease for the supplied non-nil Session. It
+// borrows the canonical facade's cache without acquiring again or exposing I/O.
+func (l *Lazy) AppSchemaCacheFor(session *watchsession.Session) *apps.SchemaCache {
+	current, epoch := l.manager.Snapshot()
+	if current != session {
+		epoch = 0 // a retiring Session must not replace a newer facade
+	}
+
+	return &l.facade(session, epoch).schemas
 }
 
 // facade retains only the newest observed connection. A delayed unleased
