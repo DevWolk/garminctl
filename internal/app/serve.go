@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 
+	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
@@ -28,7 +30,8 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return web.ServeRuntime(listener, runtime, account, autoSync, version)
+	return web.ServeRuntime(listener, runtime, account, autoSync, version,
+		&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()})
 }
 
 // ServeMCP assembles a standalone stdio backend, with its own process owners.

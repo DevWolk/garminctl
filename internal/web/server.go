@@ -23,6 +23,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
 	"github.com/DevWolk/garminctl/internal/notify"
+	"github.com/DevWolk/garminctl/internal/ship/httpx"
 )
 
 //go:embed ui
@@ -36,6 +37,7 @@ const (
 
 // Server holds the lazily connected device service.
 type Server struct {
+	registrars []httpx.RouteRegistrar
 	svc        *garmin.Lazy
 	cloud      *gc.Client
 	runtime    *garmin.Runtime
@@ -67,11 +69,11 @@ type statusResponse struct {
 
 // ServeRuntime serves an already-bound listener with owners supplied by the
 // composition root. It owns the listener and closes the runtime on every exit.
-func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string) error {
+func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string, registrars ...httpx.RouteRegistrar) error {
 	ctx, cancel := context.WithCancel(runtime.Context())
 	defer cancel()
 
-	s := serverWithRuntime(runtime, account, autoSync)
+	s := serverWithRuntime(runtime, account, autoSync, registrars...)
 
 	s.version = version
 	addr := listener.Addr().String()
@@ -141,8 +143,8 @@ func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Cl
 	return shutdownErr
 }
 
-func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool) *Server {
-	s := &Server{svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
+func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool, registrars ...httpx.RouteRegistrar) *Server {
+	s := &Server{registrars: registrars, svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s
@@ -193,6 +195,10 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 var uiTab = regexp.MustCompile(`data-tab="([a-z]+)"`)
 
 func (s *Server) routes(mux *http.ServeMux) {
+	for _, registrar := range s.registrars {
+		registrar.RegisterRoutes(mux)
+	}
+
 	s.mcp = mcpserver.NewHTTPServer(s.runtime, s.cloud, s.version)
 	mux.Handle("GET /mcp", s.mcp)
 	mux.Handle("POST /mcp", s.mcp)
@@ -238,9 +244,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/file", s.admittedOperation(s.filePut))
 	mux.HandleFunc("DELETE /api/file", s.admittedOperation(s.fileDelete))
 	mux.HandleFunc("GET /api/decode", s.decode)
-	mux.HandleFunc("GET /api/settings", s.settings)
-	mux.HandleFunc("POST /api/settings/apply", s.admittedOperation(s.settingsApply))
-	mux.HandleFunc("GET /api/schema", s.schema)
 	mux.HandleFunc("GET /api/apps", s.apps)
 	mux.HandleFunc("GET /api/apps/{ref}/settings", s.appSettings)
 	mux.HandleFunc("PUT /api/apps/{ref}/settings", s.admittedOperation(s.appSettingsPut))
@@ -271,25 +274,9 @@ func logRequests(h http.Handler) http.Handler {
 // withService runs fn with a connected service; a bridge failure drops the
 // connection so the next call reconnects.
 func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(context.Context, *garmin.Service) (any, error)) {
-	lease, err := s.svc.Acquire(r.Context())
-	if err != nil {
-		writeJSON(w, deviceErrorStatus(err, http.StatusServiceUnavailable), statusResponse{Error: err.Error()})
-		return
-	}
-
-	v, err := fn(lease.Context(), lease.Service())
-	if errors.Is(err, device.ErrDisconnected) {
-		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
-	}
-
-	err = errors.Join(err, lease.Release())
-	if err != nil {
-		writeErr(w, err)
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, v)
+	httpx.WithWatch(w, r, s.svc, func(ctx context.Context, lease *garmin.Lease) (any, error) {
+		return fn(ctx, lease.Service())
+	})
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
@@ -398,37 +385,6 @@ func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) decode(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		return svc.DecodeFIT(ctx, r.URL.Query().Get("path"))
-	})
-}
-
-func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		view, err := svc.Settings(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"rows": view.Rows()}, nil
-	})
-}
-
-func (s *Server) settingsApply(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Changes []garmin.Change `json:"changes"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.ApplyChanges(ctx, body.Changes)
-	})
-}
-
-func (s *Server) schema(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
-		return svc.Schema(r.URL.Query().Get("mesg"))
 	})
 }
 
@@ -564,16 +520,7 @@ func (s *Server) appSettingsPut(w http.ResponseWriter, r *http.Request) {
 // admittedOperation admits mutating requests before body reads or account-store
 // work, without acquiring a watch or serializing the network through USB.
 func (s *Server) admittedOperation(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		release, err := s.svc.Gate().Enter(r.Context())
-		if err != nil {
-			writeErr(w, err)
-			return
-		}
-		defer release()
-
-		next(w, r)
-	}
+	return httpx.Admit(s.svc.Gate(), next)
 }
 
 // ---------- Garmin Connect ----------

@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -107,7 +109,10 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 // newServer retains the test fixture's constructor while production wiring
 // supplies process owners through ServeRuntime.
 func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
-	return serverWithRuntime(garmin.NewRuntime(ctx, open), gc.New(gc.DefaultStorePath()), autoSync)
+	runtime := garmin.NewRuntime(ctx, open)
+
+	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync,
+		&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()})
 }
 
 func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, string) {

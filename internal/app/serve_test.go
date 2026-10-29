@@ -116,6 +116,15 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	rootGetJSON(ctx, t, base, "/api/files?path=GARMIN", &entries)
 	checkRootMCPEntries(ctx, t, base, entries)
 
+	var settingsRows struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	rootGetJSON(ctx, t, base, "/api/settings", &settingsRows)
+
+	if len(settingsRows.Rows) == 0 {
+		t.Fatal("composition root did not register the settings HTTP adapter")
+	}
+
 	if opens.Load() != 1 || closes.Load() != 0 {
 		t.Fatalf("HTTP/MCP ownership: opens=%d closes=%d", opens.Load(), closes.Load())
 	}

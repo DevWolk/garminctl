@@ -36,7 +36,8 @@ See CLAUDE.md for the working rules. Module map:
   them to HTTP/MCP shells. `internal/ship/clix` owns CLI printing, errors and
   parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
-  and shared status mapping. `internal/web/httpx_compat.go` temporarily delegates
+  and shared status mapping, watch lease responses, mutating admission and the
+  route registrar contract. `internal/web/httpx_compat.go` temporarily delegates
   existing routes; Wails-specific private-origin validation stays in desktop.
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
   watch lease handlers and annotation helpers. Its narrow owner/lease contracts
@@ -51,8 +52,9 @@ See CLAUDE.md for the working rules. Module map:
   private resolver/read tasks, FIT patch encoding and immutable settings Knowledge.
   Actions use watchsession directly and import no legacy/transport package.
   `ui/cli` owns CLI settings flags/output and uses the entry point's leased
-  Session. `garmin` retains model aliases/Service delegates; HTTP/MCP settings
-  adapters still await migration.
+  Session. `ui/http` registers the settings/schema/apply API through the shared
+  Manager. App supplies that registrar to the web shell. `garmin` retains model
+  aliases/Service delegates; the MCP settings adapter still awaits migration.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
