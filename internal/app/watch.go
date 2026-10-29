@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 
+	"github.com/DevWolk/garminctl/internal/containers/watch"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
@@ -12,4 +14,9 @@ import (
 func WatchAppCount(ctx context.Context, sess *watchsession.Session) (int, error) {
 	apps, err := garmin.NewFromSession(sess).Apps(ctx)
 	return len(apps), err
+}
+
+// WatchSummary supplies the shell's connection-state view without a feature import.
+func WatchSummary(ctx context.Context, sess *watchsession.Session) (any, error) {
+	return watch.NewSummaryAction(fit.MustProfile(), WatchAppCount).Run(ctx, sess)
 }

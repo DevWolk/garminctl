@@ -17,12 +17,15 @@ import (
 
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/watch"
+	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -115,8 +118,14 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 	runtime := garmin.NewRuntime(ctx, open)
 
 	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
-		HTTP: []httpx.RouteRegistrar{&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}},
+		HTTP: []httpx.RouteRegistrar{&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}},
 		MCP:  []mcpx.ToolRegistrar{&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext}},
+		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
+			return watch.NewSummaryAction(fit.MustProfile(), func(ctx context.Context, sess *watchsession.Session) (int, error) {
+				apps, err := garmin.NewFromSession(sess).Apps(ctx)
+				return len(apps), err
+			}).Run(ctx, sess)
+		},
 	})
 }
 

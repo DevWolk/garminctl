@@ -66,6 +66,9 @@ See CLAUDE.md for the working rules. Module map:
   delegates and aliases keep HTTP/MCP stable. Backup CLI flags/output live in
   `ui/cli`; the existing CLI job wrapper owns admission/epoch binding, with each
   source call leasing Session separately and host writes outside that lease.
+  `ui/http` owns file/list/decode/download handlers. App injects their registrar
+  and a Session-based Summary reader into web's connection-state aggregation.
+  Watcher/auto/disconnect and aggregate feature-cache refresh remain shell-owned.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

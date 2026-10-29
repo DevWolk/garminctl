@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -65,11 +66,13 @@ func TestFilePutFailureInvalidatesSharedServiceCache(t *testing.T) {
 		t.Fatal("fixture description was not replaced")
 	}
 
-	s := &Server{svc: lazy}
+	mux := http.NewServeMux()
+	(&watchhttp.Handler{Manager: lazy.Manager()}).RegisterRoutes(mux)
+
 	w := httptest.NewRecorder()
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
 		"/api/file?path=GARMIN/GarminDevice.xml", bytes.NewReader(modified))
-	s.filePut(w, r)
+	mux.ServeHTTP(w, r)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("failed verification status=%d body=%s", w.Code, w.Body)

@@ -6,7 +6,6 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -25,6 +24,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/notify"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 //go:embed ui
@@ -41,6 +41,8 @@ const (
 type Features struct {
 	HTTP []httpx.RouteRegistrar
 	MCP  []mcpx.ToolRegistrar
+	// WatchSummary borrows the already leased Session only for this call.
+	WatchSummary func(context.Context, *watchsession.Session) (any, error)
 }
 
 // Server holds the lazily connected device service.
@@ -247,11 +249,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
 	mux.HandleFunc("POST /api/disconnect", s.admittedOperation(s.disconnectHandler))
 	mux.HandleFunc("POST /api/refresh", s.admittedOperation(s.refresh))
-	mux.HandleFunc("GET /api/files", s.files)
-	mux.HandleFunc("GET /api/file", s.fileGet)
-	mux.HandleFunc("POST /api/file", s.admittedOperation(s.filePut))
-	mux.HandleFunc("DELETE /api/file", s.admittedOperation(s.fileDelete))
-	mux.HandleFunc("GET /api/decode", s.decode)
 	mux.HandleFunc("GET /api/apps", s.apps)
 	mux.HandleFunc("GET /api/apps/{ref}/settings", s.appSettings)
 	mux.HandleFunc("PUT /api/apps/{ref}/settings", s.admittedOperation(s.appSettingsPut))
@@ -288,13 +285,13 @@ func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(con
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	if s.svc.Current() == nil && r.URL.Query().Get("connect") == "" {
+	if s.svc.Manager().Current() == nil && r.URL.Query().Get("connect") == "" {
 		writeJSON(w, http.StatusOK, statusResponse{Auto: s.autoSnapshot()})
 		return
 	}
 
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		sum, err := svc.Summary(ctx)
+	httpx.WithWatch(w, r, s.svc.Manager(), func(ctx context.Context, lease *watchsession.Lease) (any, error) {
+		sum, err := s.features.WatchSummary(ctx, lease.Session())
 		if err != nil {
 			return nil, err
 		}
@@ -304,8 +301,8 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		sum, err := svc.Summary(ctx)
+	httpx.WithWatch(w, r, s.svc.Manager(), func(ctx context.Context, lease *watchsession.Lease) (any, error) {
+		sum, err := s.features.WatchSummary(ctx, lease.Session())
 		if err != nil {
 			return nil, err
 		}
@@ -323,76 +320,6 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
 		svc.Refresh()
 		return map[string]any{"ok": true}, nil
-	})
-}
-
-func (s *Server) files(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.List(ctx, r.URL.Query().Get("path"))
-	})
-}
-
-func (s *Server) fileGet(w http.ResponseWriter, r *http.Request) {
-	lease, err := s.svc.Acquire(r.Context())
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	p := r.URL.Query().Get("path")
-
-	data, err := lease.Service().ReadFile(lease.Context(), p)
-	if errors.Is(err, device.ErrDisconnected) {
-		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
-	}
-
-	err = errors.Join(err, lease.Release())
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	name := p
-	if _, after, ok := strings.CutLast(p, "/"); ok {
-		name = after
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
-	_, _ = w.Write(data) //nolint:gosec // a download of a watch file: fixed binary content type, nosniff, attachment
-}
-
-func (s *Server) filePut(w http.ResponseWriter, r *http.Request) {
-	data, ok := readBody(w, r, maxUploadBytes)
-	if !ok {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		p := r.URL.Query().Get("path")
-		if err := svc.WriteFile(ctx, p, data); err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"ok": true, "path": p, "bytes": len(data)}, nil
-	})
-}
-
-func (s *Server) fileDelete(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		p := r.URL.Query().Get("path")
-		if err := svc.DeleteFile(ctx, p); err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"ok": true}, nil
-	})
-}
-
-func (s *Server) decode(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.DecodeFIT(ctx, r.URL.Query().Get("path"))
 	})
 }
 
