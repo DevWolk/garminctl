@@ -5,6 +5,7 @@ import (
 	"net"
 
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
+	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
@@ -42,7 +43,7 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 			&watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
 		},
-		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime)},
+		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime)},
 		WatchSummary: WatchSummary,
 	})
 }
@@ -52,7 +53,7 @@ func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime))
+	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime))
 }
 
 func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
@@ -61,4 +62,8 @@ func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
 
 func watchTools(runtime *garmin.Runtime) *watchmcp.Tools {
 	return &watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: WatchAppCount, BindContext: runtime.RequestContext}
+}
+
+func appsTools(runtime *garmin.Runtime) *appsmcp.Tools {
+	return &appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext}
 }

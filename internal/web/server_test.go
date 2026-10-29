@@ -16,6 +16,7 @@ import (
 	"time"
 
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
+	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
@@ -132,6 +133,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 		MCP: []mcpx.ToolRegistrar{
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
+			&appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
 		},
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)

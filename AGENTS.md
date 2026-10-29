@@ -69,9 +69,9 @@ See CLAUDE.md for the working rules. Module map:
   delegates alongside its watch-firmware/update-check logic. `ui/cli` owns eight
   app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
   supplies canonical current-epoch state without acquiring/opening again; this
-  temporary bridge is removed with the facade. `ui/http` registers the nine app
-  routes with that same Manager/cache provider; MCP tools remain legacy until
-  their step. App supplies watch's count from apps.
+  temporary bridge is removed with the facade. `ui/http` registers nine app
+  routes and `ui/mcp` registers six typed app tools with that same Manager/cache
+  provider. App supplies both registrars and watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing
@@ -117,7 +117,7 @@ See CLAUDE.md for the working rules. Module map:
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
-  (`addAppTools`, `addCloudTools`, ...). Extracted settings and watch
+  (`addUpdateTools`, `addCloudTools`, ...). Extracted settings, watch and apps
   tools arrive through injected registrars. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`
