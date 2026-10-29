@@ -60,7 +60,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/containers/apps` owns App/AppChange, registry parsing/rewriting,
   verified private registry backups and ReadRegistry/Visibility/Pending Actions
   over the caller's Session. Legacy App/AppChange aliases and Service delegates
-  preserve existing callers. SET/schema/Knowledge and PRG operations remain
+  preserve existing callers. SET/item/hint DTOs and immutable CIQ Knowledge also
+  belong to apps; legacy names are aliases/delegates and the old JSON is only a
+  compatibility test fixture. SET/schema Actions/cache and PRG operations remain
   legacy until their separate steps; app supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.

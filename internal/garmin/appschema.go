@@ -9,18 +9,11 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/ciq"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/apps"
 )
 
-// AppSettingItem is one setting with its label and current value.
-type AppSettingItem struct {
-	Key        string `json:"key"`
-	Label      string `json:"label,omitempty"`
-	Type       string `json:"type"` // select, toggle, text, number, or the raw Go type when no schema
-	Value      any    `json:"value"`
-	ValueLabel string `json:"valueLabel,omitempty"`
-	ReadOnly   bool   `json:"readOnly,omitempty"`
-	Options    int    `json:"options,omitempty"` // number of dropdown options (see schema)
-}
+// AppSettingItem preserves the app settings item model during migration.
+type AppSettingItem = apps.AppSettingItem
 
 // appSchema loads the settings definition for an app, trying the installed
 // version first and the store's latest version second.

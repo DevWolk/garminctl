@@ -93,18 +93,8 @@ func (s *Service) DecodeFIT(ctx context.Context, p string) ([]fit.NamedMessage, 
 	return watch.NewDecodeAction(s.profile).Run(ctx, s.session, p)
 }
 
-// AppSettings is the settings of one Connect IQ app.
-type AppSettings struct {
-	App          App              `json:"app"`
-	Path         string           `json:"path"`
-	Settings     ciq.Dict         `json:"-"`
-	Values       map[string]any   `json:"values"`
-	Order        []string         `json:"order"`
-	Items        []AppSettingItem `json:"items"`
-	SchemaSource string           `json:"schemaSource,omitempty"`
-	SchemaError  string           `json:"schemaError,omitempty"`
-	Hints        *AppHints        `json:"hints,omitempty"`
-}
+// AppSettings preserves the app settings response during facade migration.
+type AppSettings = apps.AppSettings
 
 // FindApp resolves an app by file name (G5RG4154), store id, or name
 // (case-insensitive, "Easy+" or "easy").

@@ -1,0 +1,30 @@
+{
+  "_comment": "Fallback Connect IQ setting hints keyed by store app id. The store settings form supplies labels and available options when accessible.",
+  "7c993e2b-70b3-459a-bbe0-db48a89af5a8": {
+    "name": "Easy+",
+    "valueHints": {
+      "-2": "None",
+      "-11": "Custom color 1 (cust_color1)",
+      "-12": "Custom color 2 (cust_color2)",
+      "-13": "Custom color 3 (cust_color3)"
+    },
+    "keyHints": {
+      "cust_color1": "hex RRGGBB without #; referenced by palette value -11",
+      "cust_color2": "hex RRGGBB without #; referenced by palette value -12",
+      "cust_color3": "hex RRGGBB without #; referenced by palette value -13",
+      "bg_color": "background color as 24-bit RGB integer (0 = black)",
+      "hour_color": "hours color; hour_color2 is the second gradient color (same value = no gradient)",
+      "min_color": "minutes color; min_color2 is the second gradient color",
+      "bar1a": "screen 1 left progress bar type; bar1b = right bar; bar2a/bar2b = screen 2",
+      "layout_type": "layout selection; use the app schema for available values",
+      "seconds": "show seconds",
+      "leading0": "leading zero for hours",
+      "metrics_scale": "metrics font size scale (1.0 = default)",
+      "t_font": "time font style index",
+      "m_font": "metrics font index (chosen on the watch)",
+      "screen2_settings": "marker key, not a setting",
+      "screen2_settings_end": "marker key, not a setting",
+      "other_units": "marker key, not a setting"
+    }
+  }
+}

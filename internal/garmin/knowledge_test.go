@@ -17,6 +17,9 @@ import (
 //go:embed knowledge/device_settings.json
 var deviceSettingsKnowledge []byte
 
+//go:embed knowledge/ciq_apps.json
+var ciqAppsKnowledge []byte
+
 func knowledgeJSON(t *testing.T, value any) string {
 	t.Helper()
 
