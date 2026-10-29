@@ -268,6 +268,10 @@ type ReadRegistryAction struct{}
 
 // Run retains the existing cached raw read policy.
 func (ReadRegistryAction) Run(ctx context.Context, sess *watchsession.Session) ([]App, error) {
+	return readRegistry(ctx, sess)
+}
+
+func readRegistry(ctx context.Context, sess *watchsession.Session) ([]App, error) {
 	b, err := sess.ReadThrough(ctx, PathAppsConfig, true)
 	if err != nil {
 		return nil, err

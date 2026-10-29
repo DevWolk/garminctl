@@ -62,8 +62,10 @@ See CLAUDE.md for the working rules. Module map:
   over the caller's Session. Legacy App/AppChange aliases and Service delegates
   preserve existing callers. SET/item/hint DTOs and immutable CIQ Knowledge also
   belong to apps; legacy names are aliases/delegates and the old JSON is only a
-  compatibility test fixture. SET/schema Actions/cache and PRG operations remain
-  legacy until their separate steps; app supplies watch's count from apps.
+  compatibility test fixture. Find/SET/schema Actions and SchemaCache logic are
+  apps-owned; the legacy per-Session facade still holds one cache value and
+  delegates, including Refresh/reset. Adapters and PRG operations remain legacy
+  until their separate steps; app supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing

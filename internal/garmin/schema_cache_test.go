@@ -1,6 +1,7 @@
 package garmin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -223,85 +224,6 @@ func TestLateSchemaFetchCannotReplaceNewGeneration(t *testing.T) { //nolint:para
 	}
 }
 
-func TestAppSchemaFallbackRemainsCachedForRequestedVersion(t *testing.T) { //nolint:paralleltest // replaces the shared schema HTTP client and cache environment
-	var latest, forms atomic.Int32
-
-	schemaCacheHTTP(t, func(req *http.Request) (*http.Response, error) {
-		if !strings.Contains(req.URL.Path, "/appSettings2/") {
-			latest.Add(1)
-			return syncResponse(req, []byte(`{"latestInternalVersion":2}`)), nil
-		}
-
-		forms.Add(1)
-
-		resp := schemaFormResponse(req, "fallback-schema")
-		if strings.Contains(req.URL.Path, "/versions/1/") {
-			resp.StatusCode = http.StatusNotFound
-		}
-
-		return resp, nil
-	})
-
-	d := &cacheTestDevice{data: []byte(schemaXML("PART-A"))}
-	svc := New(d)
-	d.onCount = func() {
-		if !svc.schemas.mu.TryLock() {
-			t.Error("schema cache sampled transport while holding cache mutex")
-			return
-		}
-		svc.schemas.mu.Unlock()
-	}
-
-	for range 2 {
-		if got := requireAppSchema(t, svc, schemaApp()); got.Version != 2 {
-			t.Fatalf("fallback version=%d", got.Version)
-		}
-	}
-
-	if latest.Load() != 1 || forms.Load() != 2 {
-		t.Fatalf("cache hit retried fallback: latest=%d forms=%d", latest.Load(), forms.Load())
-	}
-}
-
-func TestSchemaCacheLatePublicationKeepsNewerGeneration(t *testing.T) {
-	t.Parallel()
-
-	for _, late := range []string{"lookup", "publish", "reset", "same-generation reset"} {
-		t.Run(late, func(t *testing.T) {
-			t.Parallel()
-
-			var cache appSchemaCache
-
-			key := appSchemaKey{appID: "app"}
-			newer := &ciqstore.Schema{Version: 2}
-			cache.store(key, 2, newer)
-
-			// A caller sampled generation 1 before another caller published 2.
-			// Complete its remaining in-memory operation after that publication.
-			switch late {
-			case "lookup":
-				if got := cache.load(key, 1); got != nil {
-					t.Fatalf("old lookup returned newer entry: %+v", got)
-				}
-			case "publish":
-				cache.store(key, 1, &ciqstore.Schema{Version: 1})
-			case "reset":
-				cache.reset(1)
-			case "same-generation reset":
-				cache.reset(2)
-			}
-
-			if got := cache.load(key, 2); got != newer {
-				t.Fatalf("late %s replaced/cleared current schema: %+v", late, got)
-			}
-
-			if got := cache.load(key, 3); got != nil {
-				t.Fatalf("new generation reused old schema: %+v", got)
-			}
-		})
-	}
-}
-
 func TestSessionMutationInvalidatesFeatureSchemaCache(t *testing.T) { //nolint:paralleltest // replaces the shared schema HTTP client and cache environment
 	for _, raw := range []bool{false, true} { //nolint:paralleltest // cases share the schema client and environment
 		t.Run(fmt.Sprintf("raw=%v", raw), func(t *testing.T) {
@@ -345,4 +267,9 @@ func TestSessionMutationInvalidatesFeatureSchemaCache(t *testing.T) { //nolint:p
 			}
 		})
 	}
+}
+
+// Keep these tests on the legacy facade while the actual schema owner is apps.
+func (s *Service) appSchema(ctx context.Context, app *App) (*ciqstore.Schema, error) {
+	return s.schemas.Load(ctx, s.session, app)
 }
