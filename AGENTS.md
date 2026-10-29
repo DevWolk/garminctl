@@ -57,12 +57,17 @@ See CLAUDE.md for the working rules. Module map:
   Manager. `ui/mcp` registers the three typed settings tools through mcpx.
   App supplies route/tool registrars to HTTP and stdio shells with the same
   runtime owners. `garmin` retains model aliases/Service delegates.
+- `internal/containers/apps` owns App/AppChange, registry parsing/rewriting,
+  verified private registry backups and ReadRegistry/Visibility/Pending Actions
+  over the caller's Session. Legacy App/AppChange aliases and Service delegates
+  preserve existing callers. SET/schema/Knowledge and PRG operations remain
+  legacy until their separate steps; app supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing
   stays with its existing owner. `ui/cli` owns discovery, ordinary file commands,
   summary/decode formatting and CLI-only scoped diagnostics. App supplies the
-  temporary registry-count adapter without device ownership. Legacy Service
+  registry-count adapter without device ownership. Legacy Service
   delegates and aliases keep HTTP/MCP stable. Backup CLI flags/output live in
   `ui/cli`; the existing CLI job wrapper owns admission/epoch binding, with each
   source call leasing Session separately and host writes outside that lease.

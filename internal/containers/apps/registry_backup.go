@@ -1,4 +1,4 @@
-package garmin
+package apps
 
 import (
 	"bytes"

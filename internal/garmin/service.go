@@ -11,6 +11,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/ciq"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/containers/settings"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
 	"github.com/DevWolk/garminctl/internal/device"
@@ -79,12 +80,7 @@ func (s *Service) Summary(ctx context.Context) (*Summary, error) {
 
 // Apps lists installed applications.
 func (s *Service) Apps(ctx context.Context) ([]App, error) {
-	b, err := s.read(ctx, PathAppsConfig, true)
-	if err != nil {
-		return nil, err
-	}
-
-	return ParseAppsConfig(b)
+	return (apps.ReadRegistryAction{}).Run(ctx, s.session)
 }
 
 // Settings reads Settings.fit.

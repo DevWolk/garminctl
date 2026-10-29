@@ -1,4 +1,4 @@
-package garmin
+package apps
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -98,7 +99,7 @@ func assertRegistryBytes(t *testing.T, path string, want []byte) {
 func TestSetAppHiddenBacksUpBeforeEachQueuedChange(t *testing.T) { //nolint:paralleltest // registryCache changes process cache-directory environment
 	cache := registryCache(t)
 	d, out, targets := registryFixture(t)
-	svc := New(d)
+	sess := watchsession.New(d)
 
 	d.before = func() error {
 		copies, err := filepath.Glob(filepath.Join(cache, "OUT.BIN-*", "OUT.BIN"))
@@ -116,7 +117,7 @@ func TestSetAppHiddenBacksUpBeforeEachQueuedChange(t *testing.T) { //nolint:para
 	var previous string
 
 	for _, app := range targets {
-		backup, err := svc.SetAppHidden(t.Context(), app.Name, !app.Hidden)
+		backup, err := (VisibilityAction{}).Run(t.Context(), sess, app.Name, !app.Hidden)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +142,7 @@ func assertQueuedRegistryChanges(t *testing.T, d device.Device, out []byte, targ
 		t.Fatal(err)
 	}
 
-	changes, err := New(d).PendingAppChanges(t.Context())
+	changes, err := (PendingRegistryAction{}).Run(t.Context(), watchsession.New(d))
 	if err != nil || len(changes) != len(targets) {
 		t.Fatalf("queued changes = %+v, error = %v", changes, err)
 	}
@@ -181,7 +182,7 @@ func TestSetAppHiddenBackupFailureDoesNotWrite(t *testing.T) { //nolint:parallel
 		t.Fatal(err)
 	}
 
-	backup, err := New(d).SetAppHidden(t.Context(), targets[0].Name, !targets[0].Hidden)
+	backup, err := (VisibilityAction{}).Run(t.Context(), watchsession.New(d), targets[0].Name, !targets[0].Hidden)
 	if err == nil || backup != "" || d.writes != 0 {
 		t.Fatalf("backup failure: path=%q err=%v writes=%d", backup, err, d.writes)
 	}
@@ -199,7 +200,7 @@ func TestSetAppHiddenWriteFailureRetainsBackup(t *testing.T) { //nolint:parallel
 	d, out, targets := registryFixture(t)
 	d.fail = errors.New("synthetic device write failure")
 
-	backup, err := New(d).SetAppHidden(t.Context(), targets[0].Name, !targets[0].Hidden)
+	backup, err := (VisibilityAction{}).Run(t.Context(), watchsession.New(d), targets[0].Name, !targets[0].Hidden)
 	if !errors.Is(err, d.fail) || backup == "" {
 		t.Fatalf("write failure lost its backup: %q, %v", backup, err)
 	}
