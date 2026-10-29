@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -25,6 +26,16 @@ type trackedRootDevice struct {
 	device.Device
 	closes        *atomic.Int32
 	settingsReads *atomic.Int32
+}
+
+type rootStoreTransport struct {
+	delegate http.RoundTripper
+	requests *atomic.Int32
+}
+
+func (t rootStoreTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.requests.Add(1)
+	return t.delegate.RoundTrip(req)
 }
 
 func (d trackedRootDevice) Close() error {
@@ -67,9 +78,19 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	config := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", config)
 	t.Setenv("APPDATA", config)
-	root := testdump.Root(t)
+	testdump.AppEnvironment(t)
 
-	var opens, closes, settingsReads atomic.Int32
+	fixture, root := testdump.Apps(t)
+	if err := fixture.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var opens, closes, settingsReads, storeRequests atomic.Int32
+
+	previous := ciqstore.HTTPClient
+	ciqstore.HTTPClient = &http.Client{Transport: rootStoreTransport{delegate: previous.Transport, requests: &storeRequests}}
+
+	t.Cleanup(func() { ciqstore.HTTPClient = previous })
 
 	open := func(context.Context) (device.Device, error) {
 		opens.Add(1)
@@ -133,7 +154,18 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 		t.Fatal("composition root did not register the settings HTTP adapter")
 	}
 
-	checkRootMCPReads(ctx, t, base, entries, settingsRows.Rows)
+	var appSettings map[string]any
+	rootGetJSON(ctx, t, base, "/api/apps/G5RG4154/settings", &appSettings)
+
+	if appSettings["schemaSource"] != "fixture:app-schema" {
+		t.Fatalf("composition root did not load the fixture app schema: %v", appSettings)
+	}
+
+	checkRootMCPReads(ctx, t, base, entries, settingsRows.Rows, appSettings)
+
+	if storeRequests.Load() != 1 {
+		t.Fatalf("HTTP/MCP did not share the app schema cache: metadata requests=%d", storeRequests.Load())
+	}
 
 	if settingsReads.Load() != 1 {
 		t.Fatalf("HTTP/MCP did not share the settings raw cache: reads=%d", settingsReads.Load())
@@ -150,7 +182,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	}
 }
 
-func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected []device.Entry, settingsRows []map[string]any) {
+func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected []device.Entry, settingsRows []map[string]any, appSettings map[string]any) {
 	t.Helper()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "root-test", Version: "1"}, nil)
@@ -202,6 +234,31 @@ func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected 
 
 	if !reflect.DeepEqual(rows.Rows, settingsRows) {
 		t.Fatal("MCP includeUnknown and HTTP settings rows differ")
+	}
+
+	checkRootMCPAppSettings(ctx, t, session, appSettings)
+}
+
+func checkRootMCPAppSettings(ctx context.Context, t *testing.T, session *mcp.ClientSession, expected map[string]any) {
+	t.Helper()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "watch_app_settings", Arguments: map[string]any{"app": testdump.AppRef}})
+	if err != nil || result.IsError {
+		t.Fatalf("MCP app settings=%+v error=%v", result, err)
+	}
+
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var actual map[string]any
+	if err := json.Unmarshal(data, &actual); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("MCP and HTTP app settings differ")
 	}
 }
 

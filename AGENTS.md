@@ -69,8 +69,9 @@ See CLAUDE.md for the working rules. Module map:
   delegates alongside its watch-firmware/update-check logic. `ui/cli` owns eight
   app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
   supplies canonical current-epoch state without acquiring/opening again; this
-  temporary bridge is removed with the facade. HTTP/MCP adapters remain legacy
-  until their steps; app supplies watch's count from apps.
+  temporary bridge is removed with the facade. `ui/http` registers the nine app
+  routes with that same Manager/cache provider; MCP tools remain legacy until
+  their step. App supplies watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
   BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing

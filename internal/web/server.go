@@ -249,19 +249,10 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
 	mux.HandleFunc("POST /api/disconnect", s.admittedOperation(s.disconnectHandler))
 	mux.HandleFunc("POST /api/refresh", s.admittedOperation(s.refresh))
-	mux.HandleFunc("GET /api/apps", s.apps)
-	mux.HandleFunc("GET /api/apps/{ref}/settings", s.appSettings)
-	mux.HandleFunc("PUT /api/apps/{ref}/settings", s.admittedOperation(s.appSettingsPut))
-	mux.HandleFunc("GET /api/apps/{ref}/schema", s.appSchema)
 	mux.HandleFunc("GET /api/updates/software", s.updatesSoftware)
 	mux.HandleFunc("POST /api/updates/software/install", s.admittedOperation(s.updatesInstall))
 	mux.HandleFunc("GET /api/updates/apps", s.updatesApps)
 	mux.HandleFunc("GET /api/software", s.software)
-	mux.HandleFunc("POST /api/apps/install", s.admittedOperation(s.appsInstall))
-	mux.HandleFunc("DELETE /api/apps/{ref}", s.admittedOperation(s.appRemove))
-	mux.HandleFunc("PUT /api/apps/{ref}/hidden", s.admittedOperation(s.appHidden))
-	mux.HandleFunc("GET /api/apps/pending", s.appPending)
-	mux.HandleFunc("DELETE /api/apps/pending", s.admittedOperation(s.appPendingCancel))
 }
 
 func logRequests(h http.Handler) http.Handler {
@@ -323,24 +314,6 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.Apps(ctx)
-	})
-}
-
-func (s *Server) appSettings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.AppSettings(ctx, r.PathValue("ref"))
-	})
-}
-
-func (s *Server) appSchema(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.AppSchema(ctx, r.PathValue("ref"))
-	})
-}
-
 func (s *Server) updatesSoftware(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		return svc.CheckSoftwareUpdates(ctx)
@@ -375,80 +348,6 @@ func (s *Server) updatesApps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) software(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		return svc.SoftwareInventory(ctx)
-	})
-}
-
-func (s *Server) appHidden(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Hidden bool `json:"hidden"`
-	}
-
-	if !decodeBody(w, r, &in) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		backup, err := svc.SetAppHidden(ctx, r.PathValue("ref"), in.Hidden)
-		if err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"hidden": in.Hidden, "backup": backup, noteKey: "Applied when the USB session ends; unplug the watch."}, nil
-	})
-}
-
-func (s *Server) appPending(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) { return svc.PendingAppChanges(ctx) })
-}
-
-func (s *Server) appPendingCancel(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		if err := svc.CancelAppChanges(ctx); err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"ok": true}, nil
-	})
-}
-
-func (s *Server) appRemove(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		removed, err := svc.RemoveApp(ctx, r.PathValue("ref"))
-		if err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"removed": removed, noteKey: "The watch drops the app from its list when the USB session ends; unplug it."}, nil
-	})
-}
-
-func (s *Server) appsInstall(w http.ResponseWriter, r *http.Request) {
-	data, ok := readBody(w, r, maxUploadBytes)
-	if !ok {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		p, err := svc.InstallPRG(ctx, data)
-		if err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"path": p, "bytes": len(data), noteKey: "The watch registers the app when the USB session ends; unplug it."}, nil
-	})
-}
-
-func (s *Server) appSettingsPut(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Values map[string]any `json:"values"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.SetAppSettings(ctx, r.PathValue("ref"), body.Values)
 	})
 }
 

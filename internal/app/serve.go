@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
@@ -39,6 +40,7 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 		HTTP: []httpx.RouteRegistrar{
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
+			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
 		},
 		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime)},
 		WatchSummary: WatchSummary,

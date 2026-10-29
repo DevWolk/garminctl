@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
@@ -124,7 +125,10 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 	}
 
 	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
-		HTTP: []httpx.RouteRegistrar{&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}},
+		HTTP: []httpx.RouteRegistrar{
+			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
+			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
+		},
 		MCP: []mcpx.ToolRegistrar{
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
