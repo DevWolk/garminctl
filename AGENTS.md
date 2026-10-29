@@ -6,7 +6,7 @@ See CLAUDE.md for the working rules. Module map:
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
   `sessionCommands` (settings and bounded watch commands) and `deviceCommands`
-  (legacy features, including backup until its job workflow moves).
+  (legacy features and the backup job compatibility entry).
   Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
@@ -57,12 +57,15 @@ See CLAUDE.md for the working rules. Module map:
   Manager. `ui/mcp` registers the three typed settings tools through mcpx.
   App supplies route/tool registrars to HTTP and stdio shells with the same
   runtime owners. `garmin` retains model aliases/Service delegates.
-- `internal/containers/watch` owns Summary and FIT Decode Actions over Session.
+- `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
+  BackupAction over a caller-supplied file source.
   Summary receives an AppCount capability from its caller; registry parsing
   stays with its existing owner. `ui/cli` owns discovery, ordinary file commands,
   summary/decode formatting and CLI-only scoped diagnostics. App supplies the
   temporary registry-count adapter without device ownership. Legacy Service
-  delegates and aliases keep HTTP/MCP stable; backup still uses its legacy job.
+  delegates and aliases keep HTTP/MCP stable. Backup CLI flags/output live in
+  `ui/cli`; the existing CLI job wrapper owns admission/epoch binding, with each
+  source call leasing Session separately and host writes outside that lease.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

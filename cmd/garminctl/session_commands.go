@@ -29,14 +29,21 @@ func (c *cli) sessionCommands() map[string]sessionCommand {
 // runSession uses the runtime's existing Manager without a legacy Service facade.
 // runDevice owns runtime shutdown for both extracted and legacy commands.
 func (c *cli) runSession(ctx context.Context, command sessionCommand, args []string) error {
+	return c.withSessionAt(ctx, 0, func(ctx context.Context, sess *watchsession.Session) error {
+		return command(ctx, sess, args)
+	})
+}
+
+// withSessionAt scopes one bounded group to the existing Manager and epoch.
+func (c *cli) withSessionAt(ctx context.Context, epoch watchsession.ConnectionEpoch, body func(context.Context, *watchsession.Session) error) error {
 	manager := c.runtime.Watch.Manager()
 
-	lease, err := manager.Acquire(ctx)
+	lease, err := manager.AcquireAt(ctx, epoch)
 	if err != nil {
 		return err
 	}
 
-	err = command(lease.Context(), lease.Session(), args)
+	err = body(lease.Context(), lease.Session())
 	if errors.Is(err, device.ErrDisconnected) {
 		err = errors.Join(err, manager.DropAt(lease.Epoch()))
 	}
