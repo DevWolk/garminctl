@@ -70,7 +70,11 @@ func TestWithWatchDropsOnlyDisconnectedSessions(t *testing.T) {
 func newClient(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 
-	root := testdump.Root(t)
+	return newClientForRoot(t, testdump.Root(t))
+}
+
+func newClientForRoot(t *testing.T, root string) *mcp.ClientSession {
+	t.Helper()
 
 	runtime := garmin.NewRuntime(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) })
 	s := &server{svc: runtime.Watch, runtime: runtime}
