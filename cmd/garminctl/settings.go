@@ -7,95 +7,15 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	settingscli "github.com/DevWolk/garminctl/internal/containers/settings/ui/cli"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
-func (c *cli) settings(ctx context.Context, svc *garmin.Service, args []string) error {
-	if len(args) > 0 && args[0] == "set" {
-		return c.settingsSet(ctx, svc, args[1:])
-	}
-
-	fs := c.flagSet("settings")
-	all := fs.Bool("all", false, "include undocumented fields")
-
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-
-	view, err := svc.Settings(ctx)
-	if err != nil {
-		return err
-	}
-
-	rows := view.Rows()
-	if c.asJSON {
-		return c.printJSON(rows)
-	}
-
-	tw := tabwriter.NewWriter(c.out, 0, 4, 2, ' ', 0)
-	last := ""
-
-	for _, r := range rows {
-		if !*all && !r.Known && r.Note == "" {
-			continue
-		}
-
-		head := fmt.Sprintf("%s[%d]", r.Mesg, r.Index)
-		if head != last {
-			fmt.Fprintf(tw, "%s\t\t\t\n", head)
-			last = head
-		}
-
-		val := fmt.Sprint(r.Value)
-		if r.Value == nil {
-			val = "-"
-		}
-
-		note := r.Note
-		if r.Units != "" {
-			note = strings.TrimSpace(r.Units + " " + note)
-		}
-
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n", r.Field, val, r.Type, note)
-	}
-
-	return tw.Flush()
-}
-
-func (c *cli) settingsSet(ctx context.Context, svc *garmin.Service, specs []string) error {
-	changes := make([]garmin.Change, 0, len(specs))
-
-	for _, spec := range specs {
-		ch, err := garmin.ParseChangeSpec(spec)
-		if err != nil {
-			return err
-		}
-
-		changes = append(changes, ch)
-	}
-
-	res, err := svc.ApplyChanges(ctx, changes)
-	if err != nil {
-		return err
-	}
-
-	if c.asJSON {
-		return c.printJSON(res)
-	}
-
-	for _, ch := range res.Changes {
-		c.out.Printf("%s.%s", ch.Mesg, ch.Field)
-
-		if ch.ArrayIndex != nil {
-			c.out.Printf("[%d]", *ch.ArrayIndex)
-		}
-
-		c.out.Printf(": %v -> %v (raw %d)\n", ch.Previous, ch.Value, ch.Raw)
-	}
-
-	c.out.Printf("wrote %s (%d bytes)\n%s\n", res.Path, res.Bytes, res.Note)
-
-	return nil
+func (c *cli) settings(ctx context.Context, sess *watchsession.Session, args []string) error {
+	command := &settingscli.Command{Profile: fit.MustProfile(), Out: c.out, ErrOut: c.errOut, JSON: c.asJSON}
+	return command.Run(ctx, sess, args)
 }
 
 func (c *cli) apps(ctx context.Context, svc *garmin.Service, _ []string) error {

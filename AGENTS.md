@@ -5,8 +5,9 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  the `deviceCommands` table (everything else opens the device via
-  `openDevice`, MTP bridge or `-root` directory, and closes it afterwards).
+  `sessionCommands` (extracted settings) and `deviceCommands` (legacy features).
+  Both watch paths use the same runtime/Manager lifecycle; extracted commands
+  receive a scoped Session directly, and legacy commands receive Service.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
   `serve.go`, `autostart.go`.
@@ -49,7 +50,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/containers/settings` owns settings models, read/apply/schema Actions,
   private resolver/read tasks, FIT patch encoding and immutable settings Knowledge.
   Actions use watchsession directly and import no legacy/transport package.
-  `garmin` retains model aliases/Service delegates; adapters still await migration.
+  `ui/cli` owns CLI settings flags/output and uses the entry point's leased
+  Session. `garmin` retains model aliases/Service delegates; HTTP/MCP settings
+  adapters still await migration.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

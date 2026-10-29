@@ -164,7 +164,7 @@ func (c *cli) run(args []string) error {
 	}
 
 	fn, ok := c.deviceCommands()[cmd]
-	if !ok {
+	if !ok && c.sessionCommands()[cmd] == nil {
 		fs.Usage()
 		return usageErrorf("unknown command %q", cmd)
 	}
@@ -182,6 +182,10 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args 
 
 		err = errors.Join(err, runtime.Close(closeCtx))
 	}()
+
+	if command := c.sessionCommands()[cmd]; command != nil {
+		return c.runSession(runtime.Context(), command, args)
+	}
 
 	lease, err := runtime.Watch.Acquire(runtime.Context())
 	if err != nil {
@@ -233,7 +237,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 		"hidden":       c.hidden,
 		"mtp":          c.mtp,
 		"decode":       c.decode,
-		"settings":     c.settings,
 		"apps":         c.apps,
 		"app-hide":     c.appHide,
 		"app-show":     c.appShow,
