@@ -34,7 +34,7 @@ func TestSettingsMCPContracts(t *testing.T) {
 		{name: "numeric message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "2"}, hash: "7e5a71e3c202787cce36e28a4bc8641aa2077be0dd8ae56821f33396980ced99"},
 		{name: "message case", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "DEVICESETTINGS"}, hash: "498f1e8b975f4ae9496188a40a34a7088467f1458d55572cea4faf2a9717d516"},
 		{name: "schema", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "fcf4dbf35ce94bca4aae499a365b1448705bf7708fd1781872c280bece33d032"},
-		{name: "schema error", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: "missing"}, hash: "deb119063faeefac3af4d5f9a51c291777de3a271f056c37c4f577b2e1518eb4"},
+		{name: "schema error", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: contractMissing}, hash: "deb119063faeefac3af4d5f9a51c291777de3a271f056c37c4f577b2e1518eb4"},
 		{name: "empty apply", tool: settingsApplyTool, args: map[string]any{"changes": []any{}}, hash: "24a17f542817b9155900f527cac1f51d544818b179d03c77f195469f6a448fc8"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
