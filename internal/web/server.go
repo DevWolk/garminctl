@@ -4,9 +4,7 @@ package web
 import (
 	"context"
 	"embed"
-	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -35,8 +33,9 @@ const (
 // Features contains adapters assembled by the composition root. HTTP and MCP
 // shells receive registrations, never import the feature implementations.
 type Features struct {
-	HTTP []httpx.RouteRegistrar
-	MCP  []mcpx.ToolRegistrar
+	HTTP       []httpx.RouteRegistrar
+	MCP        []mcpx.ToolRegistrar
+	SyncRunner func(watchsession.ConnectionEpoch, bool, bool) garmin.SyncRunner
 	// WatchSummary borrows the already leased Session only for this call.
 	WatchSummary func(context.Context, *watchsession.Session) (any, error)
 }
@@ -54,15 +53,6 @@ type Server struct {
 	probeQuiet time.Duration
 	watchEvery time.Duration
 	notify     func(context.Context, string, string)
-}
-
-func (s *Server) syncSnapshot() map[string]any {
-	state := s.runtime.Sync.Snapshot()
-
-	return map[string]any{
-		"running": state.Running, "startedAt": state.StartedAt, "endedAt": state.EndedAt,
-		"log": state.Log, "result": state.Result, "error": state.Error,
-	}
 }
 
 // statusResponse is the connection state the UI polls.
@@ -215,15 +205,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/server", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
 	})
-	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
-	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
-	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
-	mux.HandleFunc("POST /api/cloud/logout", s.admittedOperation(s.cloudLogout))
-	mux.HandleFunc("POST /api/cloud/sync", s.admittedOperation(s.cloudSyncStart))
-	mux.HandleFunc("GET /api/cloud/sync", s.cloudSyncState)
-	mux.HandleFunc("GET /api/cloud/messages", s.cloudMessages)
-	mux.HandleFunc("GET /api/cloud/settings", s.cloudSettings)
-	mux.HandleFunc("PUT /api/cloud/settings", s.admittedOperation(s.cloudSettingsPut))
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
 	mux.HandleFunc("POST /api/disconnect", s.admittedOperation(s.disconnectHandler))
@@ -296,162 +277,6 @@ func (s *Server) admittedOperation(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // ---------- Garmin Connect ----------
-
-func (s *Server) cloudStatus(w http.ResponseWriter, r *http.Request) {
-	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Status(ctx), nil
-	})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) cloudLogin(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	if body.Email == "" || body.Password == "" {
-		writeError(w, http.StatusBadRequest, "email and password required")
-		return
-	}
-
-	res, err := s.cloud.Login(r.Context(), strings.TrimSpace(body.Email), body.Password)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, res)
-}
-
-func (s *Server) cloudMFA(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Code string `json:"code"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	if body.Code == "" {
-		writeError(w, http.StatusBadRequest, "code required")
-		return
-	}
-
-	if err := s.cloud.ResumeMFA(r.Context(), body.Code); err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) cloudLogout(w http.ResponseWriter, _ *http.Request) {
-	if err := s.cloud.Logout(); err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) cloudSyncStart(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Upload   *bool `json:"upload"`
-		Download *bool `json:"download"`
-	}
-
-	// An empty body means both directions; anything else must be valid JSON.
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
-	if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	up := body.Upload == nil || *body.Upload
-	down := body.Download == nil || *body.Download
-
-	if s.cloud.LoggedIn() && s.runtime.Sync.Snapshot().Running {
-		writeError(w, http.StatusConflict, "a sync is already running")
-		return
-	}
-
-	lease, err := s.svc.Acquire(r.Context())
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
-
-	if !s.cloud.LoggedIn() {
-		_ = lease.Release()
-
-		writeError(w, http.StatusUnauthorized, gc.ErrNotLoggedIn.Error())
-
-		return
-	}
-
-	epoch := lease.Epoch()
-	if err := lease.Release(); err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	if _, _, err := s.startSync(r.Context(), epoch, up, down); err != nil {
-		if errors.Is(err, garmin.ErrSyncBusy) {
-			writeError(w, http.StatusConflict, "a sync is already running")
-		} else {
-			writeErr(w, err)
-		}
-
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, s.syncSnapshot())
-}
-
-func (s *Server) cloudSyncState(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.syncSnapshot())
-}
-
-func (s *Server) cloudMessages(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Messages(ctx)
-	})
-}
-
-func (s *Server) cloudSettings(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Settings(ctx)
-	})
-}
-
-func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Changes map[string]any `json:"changes"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	if len(body.Changes) == 0 {
-		writeError(w, http.StatusBadRequest, "changes required")
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).SetSettings(ctx, body.Changes)
-	})
-}
 
 // ---------- Connect IQ store ----------
 

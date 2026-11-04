@@ -89,25 +89,27 @@ See CLAUDE.md for the working rules. Module map:
   400-message decode cap; app supplies the same registrar for HTTP and stdio.
 - `internal/containers/workouts` owns WorkoutSpec/StepSpec/CloudWorkout, pure
   FIT/Connect encoding and local/list/create/send/delete Actions. Account and
-  workout-only Delivery ports are supplied by callers; legacy Cloud delegates
-  preserve already-leased and job-bound queue access until INV-18. Connect owns
-  PulledFile in its early models leaf; garmin and workouts retain aliases.
-  ui/cli owns list/create/send output over the entry point's scoped Session;
-  ui/http owns five existing routes and ui/mcp three typed tools. App injects
-  the same Manager/account and a temporary WorkoutDeliveryFor bridge borrowing
-  the canonical legacy facade/cache without acquiring again. HTTP note and MCP
-  sendError partial-success policies remain adapter-specific.
+  workout-only Delivery ports are supplied by callers. Connect owns PulledFile;
+  garmin and workouts retain aliases. ui/cli owns list/create/send output over
+  the entry point's scoped Session; ui/http owns five routes and ui/mcp three
+  typed tools. App supplies a Connect-backed filtered queue port without a
+  nested lease. HTTP note and MCP sendError policies remain adapter-specific.
 - `internal/containers/health` owns activity models/FIT decoding/cache, the shared
   ActivityCoordinator over Manager, and daily/history/day/extras/weight Actions.
-  AccountAccess borrows protocol, caller-owned identity/metadata and cache path;
-  Cloud retains per-instance profile/error/Forget policy until INV-18. Legacy
-  types and coordinator constructors are aliases/delegates; no second runtime
-  decoder or watch owner is created. Private barrier regressions moved with health.
-  ui/cli owns health/activity output and the daily-vs-history cutoff; activities
-  retains only the initial connect/release compatibility dispatch. ui/http owns
-  six routes and ui/mcp seven typed tools over the same runtime coordinator.
-  App supplies scoped HealthAccessFor callbacks, retaining per-operation identity
-  and canonical facade/cache without acquiring another lease.
+  AccountAccess borrows protocol, caller-owned Connect identity/metadata and cache
+  path. Legacy types/coordinator constructors are aliases/delegates; no second
+  decoder or watch owner is created. ui/cli owns health/activity output and the
+  daily/history cutoff; activities keeps its initial connect/release dispatch.
+  ui/http owns six routes and ui/mcp seven typed tools over the shared decoder.
+- `internal/containers/connect` owns Cloud status/profile cache/Forget policy,
+  cloud settings, message queue routing/delivery/ack, uploads/ledger and the
+  existing SyncCoordinator. Bounded Actions borrow Session; job Actions use the
+  same Manager and epoch with per-group leases. Named PRG delivery uses apps;
+  app supplies canonical schema invalidation and health/workout consumer ports.
+  ui/cli owns account/raw/status/settings/messages/sync formatting. ui/http owns
+  nine routes and ui/mcp four typed tools; app injects the same account and
+  coordinator into HTTP/MCP/auto. HTTP keeps 202/409; compatible MCP waiters join
+  the runtime job. Legacy Cloud/Sync aliases/delegates remain for facade removal.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -115,16 +117,11 @@ See CLAUDE.md for the working rules. Module map:
   service), `CheckAppUpdates`, `InstallPRG`, `SoftwareInventory`,
   `containers/settings/knowledge/device_settings.json` owns settings notes;
   the old JSON remains a compatibility test fixture until facade removal.
-- `internal/gc`: Garmin Connect session (SSO sign-in with MFA, OAuth1 →
-  OAuth2, token file, bearer helpers). `internal/garmin/cloud.go` builds the
-  sync on it: `Status`, `Settings`/`SetSettings`, `Messages`/`Pull`,
-  `Upload`, `Sync`. `gc.CloudProfile`/`Client.SocialProfile` own the profile
-  protocol and label mapping; caller-scoped profile caching and health/status
-  error policy remain in Cloud while feature consumers are extracted.
-- `internal/garmin/health.go` retains health model aliases/Service/Cloud delegates
-  and caller-scoped identity policy; `workouts.go` retains aliases
-  and delegates plus the temporary filtered queue provider;
-  `music.go` delegates tracks, ID3 tags and playlists to the music container.
+- `internal/gc`: Garmin Connect protocol session (SSO/MFA, OAuth1 to OAuth2,
+  protected token state, bearer helpers). CloudProfile/SocialProfile own the
+  profile protocol and label mapping. Caller-scoped identity cache/error policy
+  and queue/upload workflows belong to containers/connect. Legacy health/workout
+  methods delegate to their feature Actions through the compatibility Cloud.
 - `internal/containers/music` owns library/track/playlist/provider DTOs, four
   stateless Actions, ID3 codecs and media path/name helpers over Session.
   It reads provider metadata from device XML, with no apps registry dependency.
@@ -162,10 +159,9 @@ See CLAUDE.md for the working rules. Module map:
   the URL path, so `handler` serves `index.html` for every first segment
   that `index.html` declares as a `data-tab`. `auto.go` is the USB watcher
   and the background sync job; `server_test.go` drives the API over a dump.
-- `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
-  through `withWatch[In, Out]`; registration is grouped by area
-  (`addCloudTools`). Extracted settings, watch, apps, store, updates, music,
-  workouts and health tools arrive through injected registrars. Every tool has
+- `internal/mcpserver`: MCP instructions and stdio/HTTP shells receive all
+  feature tool registrars from app. Temporary withWatch/Service compatibility
+  helpers remain for regression tests until facade removal. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`
   and friends) and recursive inputs are flattened (`workoutIn`: one level of

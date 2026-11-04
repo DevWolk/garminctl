@@ -13,6 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/connect"
+	connectmcp "github.com/DevWolk/garminctl/internal/containers/connect/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	healthmcp "github.com/DevWolk/garminctl/internal/containers/health/ui/mcp"
 	musicmcp "github.com/DevWolk/garminctl/internal/containers/music/ui/mcp"
@@ -104,7 +106,11 @@ func newClientWithAccount(t *testing.T, open garmin.Opener, account *gc.Client) 
 
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
+	cfg := connect.Config{Invalidated: func(sess *watchsession.Session, gen uint64) { runtime.Watch.AppSchemaCacheFor(sess).Reset(gen) }}
 	srv := newServer(s, "test", account,
+		&connectmcp.Tools{Manager: runtime.Watch.Manager(), Coordinator: runtime.Sync, CloudFor: func(sess *watchsession.Session) *connect.Cloud { return connect.NewCloud(sess, account, cfg) }, JobFor: func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
+			return connect.NewJobCloud(runtime.Watch.Manager(), epoch, account, cfg)
+		}, BindContext: runtime.RequestContext},
 		&healthmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: func(sess *watchsession.Session) health.AccountAccess {
 			return runtime.Watch.HealthAccessFor(sess, account)
 		}, BindContext: runtime.RequestContext},

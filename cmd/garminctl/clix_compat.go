@@ -19,5 +19,3 @@ func usageErrorf(format string, args ...any) error        { return clix.UsageErr
 func exitCode(err error) int                              { return clix.ExitCode(err) }
 func parseFlags(fs *flag.FlagSet, args []string) error    { return clix.ParseFlags(fs, args) }
 func flagsFirst(fs *flag.FlagSet, args []string) []string { return clix.FlagsFirst(fs, args) }
-func parseScalar(value string) any                        { return clix.ParseScalar(value) }
-func (c *cli) printJSON(value any) error                  { return clix.PrintJSON(c.out, value) }

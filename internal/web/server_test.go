@@ -17,6 +17,9 @@ import (
 
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/connect"
+	connecthttp "github.com/DevWolk/garminctl/internal/containers/connect/ui/http"
+	connectmcp "github.com/DevWolk/garminctl/internal/containers/connect/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	healthhttp "github.com/DevWolk/garminctl/internal/containers/health/ui/http"
 	healthmcp "github.com/DevWolk/garminctl/internal/containers/health/ui/mcp"
@@ -166,8 +169,15 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 	}
 	invalidateFor := func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset }
 
+	config := connect.Config{Invalidated: func(sess *watchsession.Session, gen uint64) { runtime.Watch.AppSchemaCacheFor(sess).Reset(gen) }}
+	cloudFor := func(sess *watchsession.Session) *connect.Cloud { return connect.NewCloud(sess, account, config) }
+	jobFor := func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
+		return connect.NewJobCloud(runtime.Watch.Manager(), epoch, account, config)
+	}
+
 	return serverWithRuntime(runtime, account, autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
+			&connecthttp.Handler{Manager: runtime.Watch.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor},
 			&healthhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access},
 			&workoutshttp.Handler{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery},
 			&musichttp.Handler{Manager: runtime.Watch.Manager()},
@@ -177,6 +187,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
 		},
 		MCP: []mcpx.ToolRegistrar{
+			&connectmcp.Tools{Manager: runtime.Watch.Manager(), Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor, BindContext: runtime.RequestContext},
 			&healthmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access, BindContext: runtime.RequestContext},
 			&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery, BindContext: runtime.RequestContext},
 			&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
@@ -185,6 +196,13 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 			&appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
 			&storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
 			&updatesmcp.Tools{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor, BindContext: runtime.RequestContext},
+		},
+		SyncRunner: func(epoch watchsession.ConnectionEpoch, up, down bool) connect.SyncRunner {
+			cloud := jobFor(epoch)
+
+			return func(ctx context.Context, progress connect.Progress) (*connect.SyncResult, error) {
+				return (connect.SyncAction{Cloud: cloud}).Run(ctx, up, down, progress)
+			}
 		},
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)

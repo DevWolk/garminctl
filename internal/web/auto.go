@@ -184,11 +184,9 @@ func (s *Server) autoActions(ctx context.Context, epoch garmin.ConnectionEpoch, 
 	var parts []string
 
 	if s.cloud.LoggedIn() {
-		cloud := garmin.NewJobCloud(s.svc, epoch, s.cloud)
+		runner := s.features.SyncRunner(epoch, true, true)
 
-		job, _, err := s.runtime.Sync.JoinOrStart(ctx, garmin.SyncOptions{Upload: true, Download: true, Epoch: epoch}, func(ctx context.Context, progress garmin.Progress) (*garmin.SyncResult, error) {
-			return cloud.Sync(ctx, true, true, progress)
-		})
+		job, _, err := s.runtime.Sync.JoinOrStart(ctx, garmin.SyncOptions{Upload: true, Download: true, Epoch: epoch}, runner)
 		if err == nil {
 			select {
 			case <-job.Done():
@@ -261,13 +259,4 @@ func (s *Server) updateNotes(ctx context.Context, epoch garmin.ConnectionEpoch) 
 	}
 
 	return []string{"update available: " + strings.Join(names, ", ")}
-}
-
-// startSync starts runtime-owned work after its initial lease is released.
-func (s *Server) startSync(ctx context.Context, epoch garmin.ConnectionEpoch, up, down bool) (*garmin.SyncJob, bool, error) {
-	cloud := garmin.NewJobCloud(s.svc, epoch, s.cloud)
-
-	return s.runtime.Sync.Start(ctx, garmin.SyncOptions{Upload: up, Download: down, Epoch: epoch}, func(ctx context.Context, progress garmin.Progress) (*garmin.SyncResult, error) {
-		return cloud.Sync(ctx, up, down, progress)
-	})
 }
