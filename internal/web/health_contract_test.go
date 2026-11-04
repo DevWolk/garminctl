@@ -41,7 +41,7 @@ func TestHealthHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isol
 		{name: "partial extras", method: http.MethodGet, path: "/api/health/extras", mode: "partial extras", status: 200, hash: "8e4b47e71d825566fce1266b468ffadb0198c625c61aadc6dfae5c912251ec3e"},
 		{name: "log weight", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":70.5}`, status: 200, hash: "0be5db28e3e9d802f2b7d1b995c5e33b74ad2f0855307b7d944705ab24d47cd8"},
 		{name: "invalid weight", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":19}`, status: 500, hash: "a40a21987eac1147b5babfe9b22c115eecfb391299d2b73ae6dfc8ea09a0b422"},
-		{name: "trailing weight JSON", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":70} {}`, status: 400, hash: "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"},
+		{name: "trailing weight JSON", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":70} {}`, status: 400, hash: contractTrailingJSONHash},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testdump.HealthEnvironment(t)

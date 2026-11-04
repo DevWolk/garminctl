@@ -22,12 +22,12 @@ func TestMusicHTTPContracts(t *testing.T) {
 	}{
 		{name: "list", method: http.MethodGet, path: "/api/music", status: http.StatusOK, hash: "9ae6f398410f94cff3778d0126df3dabea9a64fab94b2a4fdbb202387b3e2258"},
 		{name: "add", method: http.MethodPost, path: "/api/music?folder=pODCASTS&name=Fixture.MP3", body: testdump.MusicPayload(), status: http.StatusOK, hash: "e83ca3b7b445bd892758856d6454c48c9a50ad3e42f846b3d4c98885a5647896"},
-		{name: "remove", method: http.MethodDelete, path: "/api/music?path=" + testdump.MusicTrack, status: http.StatusOK, hash: "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"},
+		{name: "remove", method: http.MethodDelete, path: "/api/music?path=" + testdump.MusicTrack, status: http.StatusOK, hash: contractOKHash},
 		{name: "playlist", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":["Music/Artist/Album/Local.mp3","Podcasts/episode.aac"]}`), status: http.StatusOK, hash: "072b09ff682df5a1995436f2712903a3cb7ae8f8d88875dd8b77e2347febee0b"},
 		{name: "invalid format", method: http.MethodPost, path: "/api/music?name=file.txt", body: []byte("not audio"), status: http.StatusInternalServerError, hash: "1698fb8a8e88d88f352c66cb81a4c961ca5421d00f5857e614d4543459c25181"},
 		{name: "invalid remove", method: http.MethodDelete, path: "/api/music?path=GARMIN/file.fit", status: http.StatusInternalServerError, hash: "7db627e7de8e2c7c980eb07c4a17f89e00b6117ee0a407d6672ea3ee3a2bec7a"},
 		{name: "empty playlist", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":[]}`), status: http.StatusInternalServerError, hash: "b4fa3b4392f052744ee76d34d8079a59714c9c76e7221cb097af0084e65c76d6"},
-		{name: "trailing JSON", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":[]} {}`), status: http.StatusBadRequest, hash: "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"},
+		{name: "trailing JSON", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":[]} {}`), status: http.StatusBadRequest, hash: contractTrailingJSONHash},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

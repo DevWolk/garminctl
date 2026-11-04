@@ -181,22 +181,7 @@ func HealthClient(tb testing.TB, mode string) *gc.Client {
 // Tests using this helper must not run in parallel.
 func HealthCLIEnvironment(t *testing.T, mode string) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
-
-	store := gc.DefaultStorePath()
-	if err := os.MkdirAll(filepath.Dir(store), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	client := workoutClient(t, store, "")
-	client.HTTP.Transport = healthTransport{mode: mode}
-	previous := http.DefaultTransport
-	http.DefaultTransport = client.HTTP.Transport
-
-	t.Cleanup(func() { http.DefaultTransport = previous })
+	accountCLIEnvironment(t, healthTransport{mode: mode})
 }
 
 type healthTransport struct{ mode string }

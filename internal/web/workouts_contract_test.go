@@ -26,7 +26,7 @@ func TestWorkoutsHTTPContracts(t *testing.T) {
 		{name: "empty", method: http.MethodGet, path: workoutsAPI, mode: "empty", status: 200, hash: "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"},
 		{name: "preview", method: http.MethodPost, path: "/api/workouts/preview", body: `{"spec":` + testdump.WorkoutSpecJSON + `}`, status: 200, hash: "17d2a575c4eddece7fe98974a0d7cd018cd4ed840f18d9a9cc06826b4a510d11"},
 		{name: "invalid preview", method: http.MethodPost, path: "/api/workouts/preview", body: `{"spec":{}}`, status: 400, hash: "af00d8cc85b9a2bc18b49de20d31d98d3dc37d9bdb9f6ad6c511d1656c32d937"},
-		{name: "trailing JSON", method: http.MethodPost, path: "/api/workouts/preview", body: `{} {}`, status: 400, hash: "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"},
+		{name: "trailing JSON", method: http.MethodPost, path: "/api/workouts/preview", body: `{} {}`, status: 400, hash: contractTrailingJSONHash},
 		{name: "create", method: http.MethodPost, path: workoutsAPI, body: `{"spec":` + testdump.WorkoutSpecJSON + `}`, status: 200, hash: "955d52395dbd444594f65e836e450971f7c39b376bffd5b2da983c793aeb3aa5"},
 		{name: "local overrides send", method: http.MethodPost, path: workoutsAPI, body: `{"spec":` + testdump.WorkoutSpecJSON + `,"local":true,"send":true}`, status: 200, normalize: true, hash: "6e58a7d67ad6b2f01a66568d3fa03a61d4b745bf3b1426c39cc6876347aa97ac"},
 		{name: "create and send", method: http.MethodPost, path: workoutsAPI, body: `{"spec":` + testdump.WorkoutSpecJSON + `,"send":true}`, status: 200, normalize: true, hash: "8d0dcf9a6e9d7fdd89811ac49d4c8e3651c42736a997b9c56d844e268aa18574"},

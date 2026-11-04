@@ -62,9 +62,9 @@ func TestWatchHTTPContracts(t *testing.T) {
 		{name: "connect", method: http.MethodPost, path: "/api/connect", status: http.StatusOK, hash: "3f077a08c442671570f47d4dfdc7e84f851f0d1245bf38b80d0cbf3efdda1259"},
 		{name: "status idle", method: http.MethodGet, path: "/api/status", status: http.StatusOK, hash: "96be9bd16c393690286bf3382b7f5f22aacdfa584078ce6f812abdb43b520ebd"},
 		{name: "status connect", method: http.MethodGet, path: "/api/status?connect=1", status: http.StatusOK, hash: "7e410e5ae696f8f9d78de6aea3b548c0a3ce62784cb4b9e5ff9d0c1798e58845"},
-		{name: "refresh", method: http.MethodPost, path: "/api/refresh", status: http.StatusOK, hash: "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"},
+		{name: "refresh", method: http.MethodPost, path: "/api/refresh", status: http.StatusOK, hash: contractOKHash},
 		{name: "put", method: http.MethodPost, path: "/api/file?path=GARMIN/new.bin", body: "new data", status: http.StatusOK, hash: "4473d6c9c3762acd55da7c78b079af9869bc17658f5bd5212ae124126b56f859"},
-		{name: "delete", method: http.MethodDelete, path: "/api/file?path=GARMIN/notes.txt", status: http.StatusOK, hash: "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"},
+		{name: "delete", method: http.MethodDelete, path: "/api/file?path=GARMIN/notes.txt", status: http.StatusOK, hash: contractOKHash},
 		{name: "missing download", method: http.MethodGet, path: "/api/file?path=GARMIN/missing", status: http.StatusNotFound, hash: "038a1831b21c559420ce87cf7478c6581b7cdc07d9249ad46431c2bb9b860914"},
 		{name: "invalid delete", method: http.MethodDelete, path: "/api/file?path=../outside", status: http.StatusBadRequest, hash: "bd81575f7f5a970b099a407c54ca27a7aad3bb1690319a6542ad8f0d8c8cb86c"},
 	} {

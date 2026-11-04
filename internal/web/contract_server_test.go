@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	contractOKHash           = "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"
+	contractTrailingJSONHash = "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"
+)
+
 func serveContractServer(t *testing.T, s *Server) *httptest.Server {
 	t.Helper()
 
