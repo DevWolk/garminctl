@@ -90,9 +90,11 @@ func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Cl
 	}
 
 	// No read or write timeout on purpose: track uploads and syncs run for minutes.
+	connections := new(serverConnections)
 	srv := &http.Server{
 		Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
+		ConnState:   connections.state,
 	}
 
 	var shutdownErr error
@@ -107,6 +109,7 @@ func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Cl
 		defer cancel()
 
 		s.runtime.Stop()
+		connections.closeUnread()
 
 		if s.watchDone != nil {
 			select {
