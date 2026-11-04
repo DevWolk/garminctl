@@ -4,8 +4,6 @@ package garmin
 
 import (
 	"context"
-	"strings"
-	"unicode"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/containers/settings"
@@ -108,28 +106,3 @@ func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[st
 }
 
 func newUUID() string { return watchsession.NewFileID() }
-
-// titleCase upper-cases the first letter of every word and lower-cases the
-// rest; underscores count as word breaks ("trail_running" -> "Trail Running").
-func titleCase(s string) string {
-	var b strings.Builder
-
-	startWord := true
-
-	for _, r := range strings.ReplaceAll(s, "_", " ") {
-		switch {
-		case unicode.IsSpace(r):
-			startWord = true
-
-			b.WriteRune(r)
-		case startWord:
-			startWord = false
-
-			b.WriteRune(unicode.ToUpper(r))
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
-	}
-
-	return b.String()
-}

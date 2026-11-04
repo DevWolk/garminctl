@@ -97,6 +97,12 @@ See CLAUDE.md for the working rules. Module map:
   the same Manager/account and a temporary WorkoutDeliveryFor bridge borrowing
   the canonical legacy facade/cache without acquiring again. HTTP note and MCP
   sendError partial-success policies remain adapter-specific.
+- `internal/containers/health` owns activity models/FIT decoding/cache, the shared
+  ActivityCoordinator over Manager, and daily/history/day/extras/weight Actions.
+  AccountAccess borrows protocol, caller-owned identity/metadata and cache path;
+  Cloud retains per-instance profile/error/Forget policy until INV-18. Legacy
+  types and coordinator constructors are aliases/delegates; no second runtime
+  decoder or watch owner is created. Private barrier regressions moved with health.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

@@ -1,4 +1,4 @@
-package garmin
+package health
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 func managedActivityTest(t *testing.T, count int) (*ActivityCoordinator, *activityBarrierDevice, []device.Entry) {
@@ -14,8 +16,8 @@ func managedActivityTest(t *testing.T, count int) (*ActivityCoordinator, *activi
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	dev, entries := activityTestDevice(t, count)
-	watch := NewLazy(func(context.Context) (device.Device, error) { return dev, nil })
-	decoder := NewActivityCoordinator(t.Context(), watch)
+	watch := watchsession.NewManager(func(context.Context) (device.Device, error) { return dev, nil })
+	decoder := NewActivityCoordinator(t.Context(), watch, fit.MustProfile())
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
@@ -114,7 +116,7 @@ func TestManagedActivitiesYieldBetweenFiles(t *testing.T) { //nolint:paralleltes
 	}
 }
 
-func waitActivityOperations(t *testing.T, watch *Lazy, want int) {
+func waitActivityOperations(t *testing.T, watch *watchsession.Manager, want int) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -172,7 +174,7 @@ func TestManagedActivitiesStopOnEpochChange(t *testing.T) { //nolint:paralleltes
 	job := blockedActivityJob(t, c, dev, entries[0], gate)
 	c.mu.Lock()
 
-	var epoch ConnectionEpoch
+	var epoch watchsession.ConnectionEpoch
 	for key := range c.jobs {
 		epoch = key.epoch
 	}
@@ -183,7 +185,7 @@ func TestManagedActivitiesStopOnEpochChange(t *testing.T) { //nolint:paralleltes
 	}
 
 	err := activityJobError(t, job)
-	if !errors.Is(err, ErrSessionChanged) || !errors.Is(err, device.ErrDisconnected) {
+	if !errors.Is(err, watchsession.ErrSessionChanged) || !errors.Is(err, device.ErrDisconnected) {
 		t.Fatalf("changed epoch was not reported: %v", err)
 	}
 
