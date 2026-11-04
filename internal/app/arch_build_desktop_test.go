@@ -2,4 +2,4 @@
 
 package app
 
-const architectureBuildTags = "desktop,production,webkit2_41"
+const architectureBuildTags = "desktop,production,gtk3"

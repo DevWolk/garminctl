@@ -24,7 +24,7 @@ and caches in `bin/`, `dist/` and `.cache/`. Optional
 For development without Docker, use the Go version in [go.mod](go.mod).
 Native Linux USB builds need `pkg-config` and libusb development headers.
 Linux desktop builds also need GTK 3 and WebKitGTK 4.1 development headers
-and the tags `desktop,production,webkit2_41`.
+and the tags `desktop,production,gtk3`.
 
 Unit tests use repository fixtures without a watch. Use `-root DIR` for offline
 commands, where `DIR` contains a copy of `GARMIN/`. See [file formats](docs/formats.md)

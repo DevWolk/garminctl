@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+const (
+	windowsDesktopHost   = "wails.localhost"
+	windowsDesktopOrigin = "http://wails.localhost"
+	linuxDesktopHost     = "localhost"
+	linuxDesktopOrigin   = "wails://localhost"
+)
+
 func TestProxy(t *testing.T) {
 	t.Parallel()
 
@@ -32,10 +39,10 @@ func TestProxy(t *testing.T) {
 		name, host, origin string
 		status             int
 	}{
-		{"Windows WebView", "wails.localhost", "http://wails.localhost", http.StatusOK},
+		{"Windows WebView", windowsDesktopHost, windowsDesktopOrigin, http.StatusOK},
 		{"Linux WebView", "wails", "wails://wails", http.StatusOK},
 		{"foreign host", "example.com", "", http.StatusForbidden},
-		{"foreign origin", "wails.localhost", "https://example.com", http.StatusForbidden},
+		{"foreign origin", windowsDesktopHost, "https://example.com", http.StatusForbidden},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -49,7 +56,7 @@ func TestProxy(t *testing.T) {
 				t.Fatalf("status %d, want %d", response.Code, test.status)
 			}
 
-			if test.status == http.StatusOK && !strings.Contains(response.Body.String(), `<script src="/desktop.js"></script>`) {
+			if test.status == http.StatusOK && !strings.Contains(response.Body.String(), `<script type="module" src="/desktop.js"></script>`) {
 				t.Fatal("native bridge was not injected")
 			}
 		})

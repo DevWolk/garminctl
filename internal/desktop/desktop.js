@@ -1,5 +1,16 @@
+import { Call, Clipboard, Events } from '/wails/runtime.js';
+
+window.runtime ??= {};
+window.runtime.ClipboardSetText = Clipboard.SetText;
+
 (() => {
-  const native = window.go.desktop.App;
+  const invoke = (name, ...args) => Call.ByName('github.com/DevWolk/garminctl/internal/desktop.App.' + name, ...args);
+  const native = {
+    Ready: () => invoke('Ready'),
+    FinishClose: () => invoke('FinishClose'),
+    OpenExternal: (raw) => invoke('OpenExternal', raw),
+    Download: (relative, name) => invoke('Download', relative, name),
+  };
   let confirming = false;
   async function action(name) {
     if (name === 'back') { history.back(); return; }
@@ -14,7 +25,7 @@
       if (name === 'reload') { state.pending.clear(); state.appPending.clear(); state.cloudPending.clear(); location.reload(); }
     } finally { confirming = false; }
   }
-  window.runtime.EventsOn('desktop:action', action);
+  Events.On('desktop:action', event => action(event.data));
   document.addEventListener('keydown', (event) => {
     if (event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')) {
       event.preventDefault(); action('reload');

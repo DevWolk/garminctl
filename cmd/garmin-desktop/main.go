@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -44,12 +43,5 @@ func run() error {
 		return app.ServeListener(ctx, listener, open, *root == "", version)
 	}
 
-	backend, err := desktop.StartBackend(ctx, *addr, serve)
-	if err != nil {
-		return errors.Join(err, desktop.ShowError(err))
-	}
-
-	err = desktop.Run(backend)
-
-	return errors.Join(err, backend.Close())
+	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) })
 }

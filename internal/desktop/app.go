@@ -7,18 +7,8 @@ import (
 	_ "embed"
 	"errors"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync/atomic"
-
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/menu"
-	"github.com/wailsapp/wails/v2/pkg/menu/keys"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed desktop.js
@@ -30,7 +20,6 @@ var appIcon []byte
 // App is the small native bridge: lifecycle, browser links and file dialogs.
 // Watch operations remain in the shared local API and MCP server.
 type App struct {
-	ctx       context.Context //nolint:containedctx // Wails supplies a window-lifetime context once; its native runtime methods require it.
 	backend   *Backend
 	host      windowHost
 	ready     atomic.Bool
@@ -38,51 +27,7 @@ type App struct {
 	downloads nativeDownloads
 }
 
-// Run opens the single native window using an already-started backend.
-func Run(backend *Backend) error {
-	app := &App{backend: backend}
-	app.host = v2WindowHost{app: app}
-
-	dataDir, err := os.UserConfigDir()
-	if err != nil {
-		return err
-	}
-
-	appMenu := menu.NewMenu()
-	view := appMenu.AddSubmenu("View")
-	view.AddText("Back", keys.OptionOrAlt("Left"), func(_ *menu.CallbackData) { app.emit("back") })
-	view.AddText("Reload", keys.Key("F5"), func(_ *menu.CallbackData) { app.emit("reload") })
-	view.AddText("AI & MCP", nil, func(_ *menu.CallbackData) { app.emit("mcp") })
-	view.AddSeparator()
-	view.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) { wailsruntime.Quit(app.ctx) })
-
-	help := appMenu.AddSubmenu("Help")
-	help.AddText("Download updates…", nil, func(_ *menu.CallbackData) {
-		wailsruntime.BrowserOpenURL(app.ctx, "https://github.com/DevWolk/garminctl/releases/latest")
-	})
-
-	return wails.Run(&options.App{
-		Title: "garminctl", Width: 1280, Height: 850, MinWidth: 720, MinHeight: 540,
-		AssetServer:   &assetserver.Options{Handler: Proxy(backend.URL, desktopScript)},
-		Menu:          appMenu,
-		OnStartup:     app.startup,
-		OnShutdown:    func(context.Context) { app.downloads.close() },
-		OnBeforeClose: app.beforeClose,
-		Bind:          []any{app},
-		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "b89eb2b5-b293-455c-b89d-f903a72ae681",
-			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
-				wailsruntime.WindowUnminimise(app.ctx)
-				wailsruntime.WindowShow(app.ctx)
-			},
-		},
-		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dataDir, "garminctl", "desktop"), Theme: windows.SystemDefault},
-		Linux:   &linux.Options{ProgramName: "garminctl", Icon: appIcon},
-	})
-}
-
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
 	a.downloads.startup(ctx)
 }
 
@@ -143,4 +88,16 @@ func (a *App) Download(relative, name string) error {
 	}
 
 	return a.downloads.save(u, path)
+}
+
+// shutdown joins downloads and only the backend this process owns. It also runs
+// from the native hook, before framework exit paths can bypass Run's caller.
+func (a *App) shutdown() error {
+	a.downloads.close()
+
+	if a.backend == nil {
+		return nil
+	}
+
+	return a.backend.Close()
 }

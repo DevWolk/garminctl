@@ -10,6 +10,6 @@ while IFS='|' read -r package path; do
   [[ -n $package ]] || continue
   relative=${path#"$PWD/"}
   binary="$directory/${relative//\//_}.test.exe"
-  GOOS=windows CGO_ENABLED=0 go test -c -o "$binary" "$package"
+  GOOS=windows CGO_ENABLED=0 go test -tags desktop,production -c -o "$binary" "$package"
   printf '%s\t%s\n' "$relative" "$binary" >> "$manifest"
-done < <(GOOS=windows CGO_ENABLED=0 go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}|{{.Dir}}{{end}}' ./...)
+done < <(GOOS=windows CGO_ENABLED=0 go list -tags desktop,production -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}|{{.Dir}}{{end}}' ./...)

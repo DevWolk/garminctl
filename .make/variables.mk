@@ -2,7 +2,7 @@ COMPOSE_FILE := docker/docker-compose.yml
 GO_SERVICE := go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
-DESKTOP_TAGS := desktop,production,webkit2_41
+DESKTOP_TAGS := desktop,production,gtk3
 export WINDOWS_SIGNING_MODE ?= none
 export WINDOWS_SIGNING_DIR
 export WINDOWS_SIGNING_PFX_BASE64

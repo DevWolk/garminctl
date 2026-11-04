@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const applicationName = "garminctl"
+
 // Backend is either an existing local server or one owned by this application.
 type Backend struct {
 	URL       *url.URL
@@ -74,7 +76,7 @@ func existingBackend(ctx context.Context, addr string, listenErr error) (*Backen
 		Application string `json:"application"`
 		DesktopAPI  string `json:"desktopAPI"`
 	}
-	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&info) != nil || info.Application != "garminctl" || info.DesktopAPI != "1" {
+	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&info) != nil || info.Application != applicationName || info.DesktopAPI != "1" {
 		return nil, fmt.Errorf("%s is occupied by another program or an older garminctl; stop it before opening the desktop app: %w", addr, listenErr)
 	}
 

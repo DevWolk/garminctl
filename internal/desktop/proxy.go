@@ -49,6 +49,8 @@ func desktopOrigin(r *http.Request) bool {
 		origin = "http://wails.localhost"
 	case "wails":
 		origin = "wails://wails"
+	case "localhost":
+		origin = "wails://localhost"
 	default:
 		return false
 	}
@@ -68,7 +70,7 @@ func injectDesktopScript(response *http.Response) error {
 		return fmt.Errorf("read desktop page: %w", err)
 	}
 
-	body = bytes.Replace(body, []byte("</body>"), []byte("<script src=\"/desktop.js\"></script></body>"), 1)
+	body = bytes.Replace(body, []byte("</body>"), []byte("<script type=\"module\" src=\"/desktop.js\"></script></body>"), 1)
 	response.Body = io.NopCloser(bytes.NewReader(body))
 	response.ContentLength = int64(len(body))
 	response.Header.Set("Content-Length", strconv.Itoa(len(body)))

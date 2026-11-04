@@ -32,7 +32,7 @@ func TestArchitectureImportRules(t *testing.T) {
 		{name: "legacy facade may delegate to core", from: architectureModule + "/internal/garmin", to: architectureSettings},
 		{name: "HTTP clients allowed", from: architectureSettings, to: "net/http"},
 		{name: "MCP SDK forbidden in core", from: architectureSettings, to: "github.com/modelcontextprotocol/go-sdk/mcp", forbidden: true},
-		{name: "Wails forbidden in core", from: architectureSettings, to: "github.com/wailsapp/wails/v2", forbidden: true},
+		{name: "Wails forbidden in core", from: architectureSettings, to: "github.com/wailsapp/wails/v3/pkg/application", forbidden: true},
 		{name: "MCP helper allowed", from: architectureModule + "/internal/ship/mcpx", to: "github.com/modelcontextprotocol/go-sdk/mcp"},
 		{name: "reviewed HTML parser", from: architectureModule + "/internal/ciqstore", to: "golang.org/x/net/html"},
 		{name: "reviewed USB library", from: architectureModule + "/internal/device/mtp", to: "github.com/google/gousb"},

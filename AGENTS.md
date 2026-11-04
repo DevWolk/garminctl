@@ -13,9 +13,12 @@ See CLAUDE.md for the working rules. Module map:
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
   `serve.go`, `autostart.go`; extracted app CLI wrappers live in `apps_cli.go`.
-- `cmd/garmin-desktop`, `internal/desktop`: Wails v2 native window (build tag
+- `cmd/garmin-desktop`, `internal/desktop`: pinned Wails v3 native window (build tag
   `desktop`), owned/reused loopback backend, private-origin proxy, native Save
-  dialog and lifecycle/edit protection. `internal/devicehost` selects DirFS,
+  dialog and lifecycle/edit protection. A private windowHost isolates bridge calls;
+  native initialization precedes backend startup and shutdown joins owned work.
+  Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
+  acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden

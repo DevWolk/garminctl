@@ -86,14 +86,14 @@ func TestArchitecture(t *testing.T) {
 
 	for _, view := range []architectureView{
 		{name: "linux portable", env: []string{"GOOS=linux", "CGO_ENABLED=0"}},
-		{name: "linux desktop", tags: "desktop,production,webkit2_41", env: []string{"GOOS=linux", "CGO_ENABLED=1"}},
+		{name: "linux desktop", tags: "desktop,production,gtk3", env: []string{"GOOS=linux", "CGO_ENABLED=1"}},
 		{name: "windows desktop", tags: "desktop,production", env: []string{"GOOS=windows", "CGO_ENABLED=0"}},
 	} {
 		t.Run(view.name, func(t *testing.T) {
 			t.Parallel()
-			// Import metadata does not compile cgo or execute another OS's code.
+			// Import metadata excludes generated cgo files and never executes another OS.
 			// Typed checks use the active build above; native CI repeats them there.
-			for _, pkg := range loadArchitecture(ctx, t, view, packages.LoadImports, patterns...) {
+			for _, pkg := range loadArchitecture(ctx, t, view, packages.NeedName|packages.NeedFiles|packages.NeedImports, patterns...) {
 				checkArchitecturePackage(t, pkg, false)
 			}
 		})

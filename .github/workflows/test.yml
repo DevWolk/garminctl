@@ -26,9 +26,9 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Install native USB build headers
+      - name: Install native desktop and USB build headers
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Verify dependencies
         run: |
@@ -46,11 +46,11 @@ jobs:
 
       - name: Test (race)
         if: runner.os == 'Linux'
-        run: go test -race -shuffle=on ./...
+        run: go test -race -shuffle=on -tags desktop,production,gtk3 ./...
 
       - name: Test
         if: runner.os == 'Windows'
-        run: go test -shuffle=on ./...
+        run: go test -shuffle=on -tags desktop,production ./...
 
   desktop:
     name: Native packages
