@@ -92,3 +92,45 @@ func TestLeaseGroupDeadlineDoesNotCancelParentOrDropUnusedSession(t *testing.T) 
 		t.Fatal("unused group deadline replaced connection")
 	}
 }
+
+func TestCancelledAcquisitionClosesSessionRetiredMeanwhile(t *testing.T) {
+	t.Parallel()
+
+	dev := &deadlineDevice{}
+	manager := NewManager(func(context.Context) (device.Device, error) { return dev, nil })
+
+	t.Cleanup(func() { closeManager(t, manager) })
+
+	lease, err := manager.Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	epoch := lease.Epoch()
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	// A request holds the slot but has not become the active group yet when
+	// the connection is dropped, so DropAt leaves the retired transport to it.
+	manager.slot <- struct{}{}
+
+	if err := manager.DropAt(epoch); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := manager.acquireReserved(ctx, 0, func() {}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("acquireReserved error = %v, want context.Canceled", err)
+	}
+
+	if closes := dev.closes.Load(); closes != 1 {
+		t.Fatalf("retired transport closed %d times after the cancelled request left, want 1", closes)
+	}
+
+	if manager.Current() != nil {
+		t.Fatal("a retired session is still current")
+	}
+}
