@@ -2,13 +2,10 @@ package web
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -36,7 +33,7 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 			t.Cleanup(func() { garmin.HTTPClient = previous })
 			root := testdump.UpdateRoot(t)
 			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-			ts := serveUpdatesContract(t, s)
+			ts := serveContractServer(t, s)
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, strings.NewReader(test.body))
 			if err != nil {
@@ -57,30 +54,4 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 			testdump.CheckDigest(t, data, test.hash)
 		})
 	}
-}
-
-func serveUpdatesContract(t *testing.T, s *Server) *httptest.Server {
-	t.Helper()
-
-	ts := httptest.NewUnstartedServer(nil)
-
-	handler, err := s.handler(ts.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ts.Config.Handler = handler
-	ts.Start()
-	t.Cleanup(func() {
-		ts.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		if err := errors.Join(s.mcp.Close(ctx), s.runtime.Close(ctx)); err != nil {
-			t.Error(err)
-		}
-	})
-
-	return ts
 }
