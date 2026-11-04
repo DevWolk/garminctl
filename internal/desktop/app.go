@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 )
@@ -85,6 +86,13 @@ func (a *App) Download(relative, name string) error {
 	path, err := a.host.SaveFile(ctx, filepath.Base(name))
 	if err != nil || path == "" {
 		return err
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		replace, err := a.host.ConfirmReplace(ctx, path)
+		if err != nil || !replace {
+			return err
+		}
 	}
 
 	return a.downloads.save(u, path)

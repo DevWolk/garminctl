@@ -11,4 +11,7 @@ type windowHost interface {
 	Quit()
 	OpenExternal(string) error
 	SaveFile(context.Context, string) (string, error)
+	// ConfirmReplace asks before an existing file chosen in SaveFile is replaced,
+	// unless the native Save dialog already did.
+	ConfirmReplace(context.Context, string) (bool, error)
 }

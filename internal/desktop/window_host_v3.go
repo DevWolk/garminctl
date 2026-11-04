@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -64,6 +65,9 @@ func newV3WindowHost(service *App, dataDir string, assets http.Handler) *v3Windo
 		Assets:     application.AssetOptions{Handler: assets},
 		Services:   []application.Service{application.NewService(service)},
 		ShouldQuit: func() bool { return !service.beforeClose(context.Background()) },
+		// The production logger discards output, so a fatal host error (for
+		// example no session bus for the single-instance check) is reported here.
+		ErrorHandler: func(err error) { slog.Error("desktop host error", "error", err) },
 		OnShutdown: func() {
 			if err := service.shutdown(); err != nil {
 				slog.Error("desktop backend shutdown failed", "error", err)
@@ -141,4 +145,35 @@ func (a *nativeAssets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page.handler.ServeHTTP(w, r)
+}
+
+// ConfirmReplace asks on Linux, where the GTK Save dialog does not; the
+// Windows Save dialog already confirmed the replacement. Closing the question
+// without an answer leaves the download pending until the window closes.
+func (h *v3WindowHost) ConfirmReplace(ctx context.Context, target string) (bool, error) {
+	if runtime.GOOS != "linux" {
+		return true, nil
+	}
+
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	answer := make(chan bool, 1)
+
+	dialog := h.app.Dialog.Question().SetTitle("Replace file?").SetMessage(filepath.Base(target) + " already exists. Replace it?")
+	if window := h.window.Load(); window != nil {
+		dialog.AttachToWindow(window)
+	}
+
+	dialog.AddButton("Cancel").SetAsCancel().OnClick(func() { answer <- false })
+	dialog.AddButton("Replace").SetAsDefault().OnClick(func() { answer <- true })
+	dialog.Show()
+
+	select {
+	case replace := <-answer:
+		return replace, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }

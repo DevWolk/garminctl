@@ -18,6 +18,9 @@ type fakeWindowHost struct {
 	dialogPath string
 	dialogErr  error
 	quit       func()
+
+	replace      bool
+	replaceAsked []string
 }
 
 func (h *fakeWindowHost) Emit(action string) { h.actions = append(h.actions, action) }
@@ -36,6 +39,11 @@ func (h *fakeWindowHost) OpenExternal(raw string) error {
 func (h *fakeWindowHost) SaveFile(_ context.Context, name string) (string, error) {
 	h.names = append(h.names, name)
 	return h.dialogPath, h.dialogErr
+}
+
+func (h *fakeWindowHost) ConfirmReplace(_ context.Context, path string) (bool, error) {
+	h.replaceAsked = append(h.replaceAsked, path)
+	return h.replace, nil
 }
 
 func TestWindowCloseWaitsForReadyAndFrontendConsent(t *testing.T) {
