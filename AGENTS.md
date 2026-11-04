@@ -5,7 +5,7 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings, apps, store and bounded watch commands) and `deviceCommands`
+  `sessionCommands` (settings, apps, store, updates/software and bounded watch commands) and `deviceCommands`
   (legacy features and the backup job compatibility entry).
   Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
@@ -108,6 +108,10 @@ See CLAUDE.md for the working rules. Module map:
   supplies the existing endpoint/client; a scoped registry reader supplies apps.
   Successful staging reports its invalidation generation to the shared feature
   cache. Service aliases/delegates retain legacy URL/client injection and callers.
+  ui/cli owns check/install/inventory output and partial-error exit rules;
+  ui/http registers four guarded routes and ui/mcp two typed tools. App injects
+  the shared client, Session-scoped registry and canonical cache Reset callback.
+  The legacy client variable remains a temporary composition bridge.
 - `internal/containers/store` owns catalog View/App/Detail, Browse/Detail Actions,
   installed-version decoration and the process device-type cache. A scoped
   InstalledApps callback supplies the apps registry; nil/error leaves records

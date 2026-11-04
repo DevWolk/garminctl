@@ -92,7 +92,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 		registrar.RegisterTools(srv)
 	}
 
-	addUpdateTools(srv, s)
 	addCloudTools(srv, s, cloudClient)
 	addHealthTools(srv, s, cloudClient)
 	addWorkoutTools(srv, s, cloudClient)
@@ -102,47 +101,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 }
 
 type empty struct{}
-
-type installIn struct {
-	PartNumber string `json:"partNumber" jsonschema:"part number returned by watch_check_updates"`
-}
-
-type updatesResult struct {
-	Software      []garmin.SoftwareUpdate `json:"software"`
-	Apps          []garmin.AppUpdate      `json:"apps"`
-	SoftwareError string                  `json:"softwareError,omitempty"`
-	AppsError     string                  `json:"appsError,omitempty"`
-}
-
-func addUpdateTools(srv *mcp.Server, s *server) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_check_updates",
-		Description: "Check for watch software and Connect IQ app updates. Installs nothing. Use a software result's partNumber with watch_install_update.",
-		Annotations: readOnly("Check for updates", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (updatesResult, error) {
-		sw, swErr := svc.CheckSoftwareUpdates(ctx)
-		apps, appErr := svc.CheckAppUpdates(ctx)
-
-		out := updatesResult{Software: sw, Apps: apps}
-		if swErr != nil {
-			out.SoftwareError = swErr.Error()
-		}
-
-		if appErr != nil {
-			out.AppsError = appErr.Error()
-		}
-
-		return out, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "watch_install_update",
-		Description: "Download and verify one software update, then write it to the watch. Unplug to install. Primary firmware restarts the watch; ask the user before installing it.",
-		Annotations: writes("Install update", false, true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in installIn) (*garmin.InstallResult, error) {
-		return svc.InstallSoftwareUpdate(ctx, in.PartNumber)
-	}))
-}
 
 type syncIn struct {
 	Upload   *bool `json:"upload,omitempty" jsonschema:"upload new activities and health files (default true)"`

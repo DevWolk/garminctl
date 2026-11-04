@@ -245,10 +245,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
 	mux.HandleFunc("POST /api/disconnect", s.admittedOperation(s.disconnectHandler))
 	mux.HandleFunc("POST /api/refresh", s.admittedOperation(s.refresh))
-	mux.HandleFunc("GET /api/updates/software", s.updatesSoftware)
-	mux.HandleFunc("POST /api/updates/software/install", s.admittedOperation(s.updatesInstall))
-	mux.HandleFunc("GET /api/updates/apps", s.updatesApps)
-	mux.HandleFunc("GET /api/software", s.software)
 }
 
 func logRequests(h http.Handler) http.Handler {
@@ -307,43 +303,6 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
 		svc.Refresh()
 		return map[string]any{"ok": true}, nil
-	})
-}
-
-func (s *Server) updatesSoftware(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.CheckSoftwareUpdates(ctx)
-	})
-}
-
-func (s *Server) updatesInstall(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		PartNumber string `json:"partNumber"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	if body.PartNumber == "" {
-		writeError(w, http.StatusBadRequest, "partNumber required")
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.InstallSoftwareUpdate(ctx, body.PartNumber)
-	})
-}
-
-func (s *Server) updatesApps(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.CheckAppUpdates(ctx)
-	})
-}
-
-func (s *Server) software(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.SoftwareInventory(ctx)
 	})
 }
 

@@ -15,6 +15,8 @@ func (c *cli) sessionCommands() map[string]sessionCommand {
 	return map[string]sessionCommand{
 		"settings":     c.settings,
 		"store":        c.store,
+		"updates":      c.updates,
+		"software":     c.software,
 		"apps":         c.apps,
 		"app-hide":     c.appHide,
 		"app-show":     c.appShow,

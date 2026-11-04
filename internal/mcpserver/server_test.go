@@ -16,6 +16,8 @@ import (
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/store"
 	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/updates"
+	updatesmcp "github.com/DevWolk/garminctl/internal/containers/updates/ui/mcp"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
@@ -103,7 +105,13 @@ func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
 			}
 
 			return garmin.NewFromSession(sess).Apps
-		}})
+		}}, &updatesmcp.Tools{
+			Manager:       runtime.Watch.Manager(),
+			Config:        func() updates.Config { return updates.Config{URL: updates.DefaultURL, Client: garmin.HTTPClient} },
+			Registry:      func(sess *watchsession.Session) updates.InstalledApps { return garmin.NewFromSession(sess).Apps },
+			InvalidateFor: func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset },
+			BindContext:   runtime.RequestContext,
+		})
 
 	ct, st := mcp.NewInMemoryTransports()
 

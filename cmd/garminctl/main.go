@@ -228,8 +228,6 @@ func (c *cli) version(_ context.Context, _ []string) error {
 
 func (c *cli) deviceCommands() map[string]deviceCommand {
 	return map[string]deviceCommand{
-		"updates":    c.updates,
-		"software":   c.software,
 		"cloud":      c.cloud,
 		"activities": c.activities,
 		"activity":   c.activity,
@@ -259,14 +257,6 @@ func trunc(s string, n int) string {
 	}
 
 	return string(r[:n-1]) + "…"
-}
-
-func onOff(b bool, yes, no string) string {
-	if b {
-		return yes
-	}
-
-	return no
 }
 
 func deviceJob(cmd string, args []string) bool {

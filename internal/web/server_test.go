@@ -22,6 +22,9 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/store"
 	storehttp "github.com/DevWolk/garminctl/internal/containers/store/ui/http"
 	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/updates"
+	updateshttp "github.com/DevWolk/garminctl/internal/containers/updates/ui/http"
+	updatesmcp "github.com/DevWolk/garminctl/internal/containers/updates/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
@@ -136,17 +139,25 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 		return garmin.NewFromSession(sess).Apps
 	}
 
+	updateConfig := func() updates.Config { return updates.Config{URL: updates.DefaultURL, Client: garmin.HTTPClient} }
+	updateRegistry := func(sess *watchsession.Session) updates.InstalledApps {
+		return updates.InstalledApps(storeRegistry(sess))
+	}
+	invalidateFor := func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset }
+
 	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
 			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: storeRegistry},
+			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
 		},
 		MCP: []mcpx.ToolRegistrar{
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
 			&appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
 			&storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
+			&updatesmcp.Tools{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor, BindContext: runtime.RequestContext},
 		},
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)

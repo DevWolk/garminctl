@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -12,8 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -24,7 +27,7 @@ type updatesReadDevice struct {
 }
 
 func (d updatesReadDevice) Read(ctx context.Context, path string) ([]byte, error) {
-	if path == garmin.PathAppsConfig {
+	if path == watchsession.PathAppsConfig {
 		if d.onAppsRead != nil {
 			d.onAppsRead()
 		}
@@ -77,7 +80,7 @@ func TestUpdatesReportsPartialCheckFailures(t *testing.T) {
 					readDevice.onAppsRead = cancel
 				}
 
-				svc := garmin.New(readDevice)
+				sess := watchsession.New(readDevice)
 
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					if tt.softwareFail {
@@ -89,12 +92,12 @@ func TestUpdatesReportsPartialCheckFailures(t *testing.T) {
 				}))
 				defer server.Close()
 
-				svc.UpdatesURL = server.URL
+				config := updates.Config{URL: server.URL, Client: http.DefaultClient}
 
 				var output bytes.Buffer
 
-				cli := &cli{asJSON: asJSON, out: newPrinter(&output)}
-				err = cli.updates(ctx, svc, nil)
+				cli := &Command{Config: config, Installed: func(ctx context.Context) ([]apps.App, error) { return (apps.ReadRegistryAction{}).Run(ctx, sess) }, JSON: asJSON, Out: clix.NewPrinter(&output)}
+				err = cli.Updates(ctx, sess, nil)
 
 				wantExit := 0
 				if tt.softwareFail || tt.appsFail {
@@ -105,8 +108,8 @@ func TestUpdatesReportsPartialCheckFailures(t *testing.T) {
 					wantExit = 130
 				}
 
-				if exitCode(err) != wantExit {
-					t.Fatalf("exit=%d, want %d; error=%v", exitCode(err), wantExit, err)
+				if clix.ExitCode(err) != wantExit {
+					t.Fatalf("exit=%d, want %d; error=%v", clix.ExitCode(err), wantExit, err)
 				}
 
 				checkUpdatesOutput(t, &output, asJSON, tt.softwareFail, tt.appsFail)
@@ -127,9 +130,9 @@ func checkUpdatesOutput(t *testing.T, output *bytes.Buffer, asJSON, softwareFail
 	}
 
 	var result struct {
-		Software []garmin.SoftwareUpdate `json:"software"`
-		Apps     []garmin.AppUpdate      `json:"apps"`
-		Errors   map[string]string       `json:"errors"`
+		Software []updates.SoftwareUpdate `json:"software"`
+		Apps     []updates.AppUpdate      `json:"apps"`
+		Errors   map[string]string        `json:"errors"`
 	}
 	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatal(err)
@@ -151,12 +154,12 @@ func checkUpdatesOutput(t *testing.T, output *bytes.Buffer, asJSON, softwareFail
 func TestUpdatesPerAppFailureAndOutputFailureRemainErrors(t *testing.T) {
 	t.Parallel()
 
-	app := garmin.AppUpdate{App: garmin.App{ID: "synthetic-app"}, Error: "synthetic store unavailable"}
+	app := updates.AppUpdate{App: apps.App{ID: "synthetic-app"}, Error: "synthetic store unavailable"}
 
 	var output bytes.Buffer
 
-	cli := &cli{asJSON: true, out: newPrinter(&output)}
-	if err := cli.reportUpdates(nil, nil, []garmin.AppUpdate{app}, nil); exitCode(err) != 1 {
+	cli := &Command{JSON: true, Out: clix.NewPrinter(&output)}
+	if err := cli.reportUpdates(nil, nil, []updates.AppUpdate{app}, nil); clix.ExitCode(err) != 1 {
 		t.Fatalf("per-app error ignored: %v", err)
 	}
 
@@ -165,7 +168,7 @@ func TestUpdatesPerAppFailureAndOutputFailureRemainErrors(t *testing.T) {
 	}
 
 	backendErr := errors.New("synthetic update error")
-	cli.out = newPrinter(updateFailedWriter{})
+	cli.Out = clix.NewPrinter(updateFailedWriter{})
 
 	err := cli.reportUpdates(nil, backendErr, nil, nil)
 	if !errors.Is(err, backendErr) || !errors.Is(err, io.ErrClosedPipe) {

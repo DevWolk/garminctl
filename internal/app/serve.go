@@ -10,6 +10,8 @@ import (
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	storehttp "github.com/DevWolk/garminctl/internal/containers/store/ui/http"
 	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
+	updateshttp "github.com/DevWolk/garminctl/internal/containers/updates/ui/http"
+	updatesmcp "github.com/DevWolk/garminctl/internal/containers/updates/ui/mcp"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/fit"
@@ -45,8 +47,9 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 			&watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
 			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: StoreRegistry},
+			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: WatchUpdateConfig, Registry: UpdatesRegistry, InvalidateFor: updateInvalidator(runtime)},
 		},
-		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime)},
+		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime)},
 		WatchSummary: WatchSummary,
 	})
 }
@@ -56,7 +59,7 @@ func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime))
+	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime))
 }
 
 func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
@@ -73,4 +76,14 @@ func appsTools(runtime *garmin.Runtime) *appsmcp.Tools {
 
 func storeTools(runtime *garmin.Runtime) *storemcp.Tools {
 	return &storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: StoreRegistry, BindContext: runtime.RequestContext}
+}
+
+func updatesTools(runtime *garmin.Runtime) *updatesmcp.Tools {
+	return &updatesmcp.Tools{
+		Manager:       runtime.Watch.Manager(),
+		Config:        WatchUpdateConfig,
+		Registry:      UpdatesRegistry,
+		InvalidateFor: updateInvalidator(runtime),
+		BindContext:   runtime.RequestContext,
+	}
 }
