@@ -87,6 +87,11 @@ See CLAUDE.md for the working rules. Module map:
   Watcher/auto/disconnect and aggregate feature-cache refresh remain shell-owned.
   `ui/mcp` owns the four watch tools, including object result schemas and the
   400-message decode cap; app supplies the same registrar for HTTP and stdio.
+- `internal/containers/workouts` owns WorkoutSpec/StepSpec/CloudWorkout, pure
+  FIT/Connect encoding and local/list/create/send/delete Actions. Account and
+  workout-only Delivery ports are supplied by callers; legacy Cloud delegates
+  preserve already-leased and job-bound queue access until INV-18. Connect owns
+  PulledFile in its early models leaf; garmin and workouts retain aliases.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,

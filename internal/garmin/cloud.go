@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/paths"
@@ -419,15 +420,8 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 	return r.Messages, nil
 }
 
-// PulledFile is one message delivered to the watch.
-type PulledFile struct {
-	MessageID int64  `json:"messageId"`
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Bytes     int    `json:"bytes"`
-	Error     string `json:"error,omitempty"`
-}
+// PulledFile preserves the Connect-owned delivery result.
+type PulledFile = connect.PulledFile
 
 // Pull downloads every queued message that matches (nil = all), writes it
 // where the watch expects it and tells Connect it was received.

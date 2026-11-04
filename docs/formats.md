@@ -169,7 +169,7 @@ an `IN.BIN` entry.
 
 ## Workout FIT
 
-[`WorkoutSpec.FIT`](../internal/garmin/workouts.go) writes type-5 FIT with
+[`WorkoutSpec.FIT`](../internal/containers/workouts/codec.go) writes type-5 FIT with
 `workout` (26) and `workout_step` (27) messages. The encoding uses:
 
 - Duration: time 0 in milliseconds, distance 1 in centimetres, calories 4,

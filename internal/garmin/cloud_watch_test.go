@@ -20,6 +20,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
+const deviceMessagesPath = "/device-service/devicemessage/messages"
+
 type syncTransport func(*http.Request) (*http.Response, error)
 
 func (f syncTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
@@ -89,7 +91,7 @@ func (tr *deliveryTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	switch req.URL.Path {
-	case "/device-service/devicemessage/messages":
+	case deviceMessagesPath:
 		return syncResponse(req, syncMessages()), nil
 	case "/synthetic.fit":
 		close(tr.entered)
@@ -206,7 +208,7 @@ func TestManagedSyncDropCancelsNetworkBeforeAnyDeliveryOrAck(t *testing.T) {
 
 	c, l, epoch := managedTestCloud(t, root, syncTransport(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
-		case "/device-service/devicemessage/messages":
+		case deviceMessagesPath:
 			return syncResponse(req, syncMessages()), nil
 		case "/synthetic.fit":
 			close(entered)
@@ -402,7 +404,7 @@ func TestManagedPullDoesNotAckFailedWrite(t *testing.T) {
 
 	client := syncTestClient(t, syncTransport(func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
-		case "/device-service/devicemessage/messages":
+		case deviceMessagesPath:
 			return syncResponse(req, syncMessages()), nil
 		case "/synthetic.fit":
 			return syncResponse(req, []byte("synthetic payload")), nil

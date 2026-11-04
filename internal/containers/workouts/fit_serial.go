@@ -1,4 +1,4 @@
-package garmin
+package workouts
 
 import "math"
 

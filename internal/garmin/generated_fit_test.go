@@ -87,7 +87,7 @@ func TestApplyChangesDoesNotWriteAfterEncodingFailure(t *testing.T) {
 func TestWorkoutFITRejectsUnencodableStepCount(t *testing.T) {
 	t.Parallel()
 
-	w := &WorkoutSpec{Name: "too many steps", Sport: sportRunning, Steps: make([]StepSpec, math.MaxUint16+1)}
+	w := &WorkoutSpec{Name: "too many steps", Sport: "running", Steps: make([]StepSpec, math.MaxUint16+1)}
 
 	data, err := w.FIT(1, time.Unix(1700000000, 0))
 	if err == nil || data != nil {
