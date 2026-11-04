@@ -103,6 +103,11 @@ See CLAUDE.md for the working rules. Module map:
   disk cache, daily/intraday health from Connect), `workouts.go`
   (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
   `music.go` (tracks, ID3 tags, playlists).
+- `internal/containers/updates` owns watch software manifest/staging/inventory
+  and app-version comparison Actions, DTOs and private HTTP helpers. Config
+  supplies the existing endpoint/client; a scoped registry reader supplies apps.
+  Successful staging reports its invalidation generation to the shared feature
+  cache. Service aliases/delegates retain legacy URL/client injection and callers.
 - `internal/containers/store` owns catalog View/App/Detail, Browse/Detail Actions,
   installed-version decoration and the process device-type cache. A scoped
   InstalledApps callback supplies the apps registry; nil/error leaves records

@@ -73,8 +73,11 @@ func (f updateTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	case req.URL.String() == "https://fixture.invalid/firmware" && req.Method == http.MethodGet:
 		body = UpdatePayload
-		if f.mode == "checksum" {
+		switch f.mode {
+		case "checksum":
 			body = strings.Repeat("x", len(UpdatePayload))
+		case "size":
+			body += "x"
 		}
 	case req.URL.Host == "apps.garmin.com" && strings.HasPrefix(req.URL.Path, "/api/appsLibraryExternalServices/api/asw/apps/") && req.Method == http.MethodGet:
 		body = `{"latestInternalVersion":24,"latestExternalVersion":"2.4","appLocalizations":[{"locale":"en-US","name":"Fixture app"}]}`
