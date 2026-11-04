@@ -42,6 +42,14 @@ func StoreEnvironment(tb testing.TB, failPath string) *StoreRequests {
 	return fixture
 }
 
+// Count reports requests sent to the synthetic transport.
+func (f *StoreRequests) Count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return len(f.requests)
+}
+
 // RoundTrip answers the exact endpoints used by the store contracts.
 func (f *StoreRequests) RoundTrip(req *http.Request) (*http.Response, error) {
 	f.mu.Lock()

@@ -231,7 +231,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 		"updates":    c.updates,
 		"software":   c.software,
 		"cloud":      c.cloud,
-		"store":      c.store,
 		"activities": c.activities,
 		"activity":   c.activity,
 		"health":     c.health,
@@ -251,14 +250,6 @@ func (c *cli) flagSet(name string) *flag.FlagSet {
 	fs.SetOutput(c.errOut)
 
 	return fs
-}
-
-func ifEmpty(s, d string) string {
-	if s == "" {
-		return d
-	}
-
-	return s
 }
 
 func trunc(s string, n int) string {

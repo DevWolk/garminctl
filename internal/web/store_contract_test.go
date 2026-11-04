@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/containers/store"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -65,6 +66,30 @@ func TestStoreHTTPContracts(t *testing.T) { //nolint:paralleltest // fixture rep
 
 			testdump.CheckDigest(t, data, test.hash)
 		})
+	}
+}
+
+func TestStoreHTTPIgnoresUnavailableXML(t *testing.T) { //nolint:paralleltest // fixture replaces the process store client
+	testdump.StoreEnvironment(t, "")
+	s, ts, opens := newStoreContractServer(t, true)
+
+	lease, err := s.svc.Manager().Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = lease.Session().DeleteFile(lease.Context(), "GARMIN/GarminDevice.xml")
+	if err := errors.Join(err, lease.Release()); err != nil {
+		t.Fatal(err)
+	}
+
+	var view store.View
+	if code := getJSON(t, ts, "/api/store", &view); code != http.StatusOK {
+		t.Fatalf("store without XML status=%d", code)
+	}
+
+	if len(view.Apps) != 2 || !view.Apps[0].Installed || view.Apps[0].HasSettings != nil || opens.Load() != 1 {
+		t.Fatalf("without XML: view=%+v opens=%d", view, opens.Load())
 	}
 }
 

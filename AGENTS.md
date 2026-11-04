@@ -5,7 +5,7 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings, apps and bounded watch commands) and `deviceCommands`
+  `sessionCommands` (settings, apps, store and bounded watch commands) and `deviceCommands`
   (legacy features and the backup job compatibility entry).
   Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
@@ -106,9 +106,11 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/containers/store` owns catalog View/App/Detail, Browse/Detail Actions,
   installed-version decoration and the process device-type cache. A scoped
   InstalledApps callback supplies the apps registry; nil/error leaves records
-  undecorated. Legacy store DTO aliases and Service delegates retain callers.
+  undecorated. Legacy store DTO aliases and Service delegates retain callers. Three ui adapters
+  use the same Actions; app supplies Registry over the existing leased Session.
+  HTTP borrows only a current watch, while CLI/MCP require its XML.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
-  `Detail`, `Reviews`, `DeviceTypeID`); `internal/garmin/store.go` merges it
+  `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
 - `internal/ciqstore`: `Fetch`/`Load`/`Parse` of the apps.garmin.com
   settings page; `Setting.OptionValue` resolves labels to values; `AppInfo`
@@ -121,7 +123,7 @@ See CLAUDE.md for the working rules. Module map:
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
-  (`addUpdateTools`, `addCloudTools`, ...). Extracted settings, watch and apps
+  (`addUpdateTools`, `addCloudTools`, ...). Extracted settings, watch, apps and store
   tools arrive through injected registrars. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`

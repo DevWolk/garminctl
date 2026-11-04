@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -40,6 +42,22 @@ func TestStoreMCPContracts(t *testing.T) { //nolint:paralleltest // fixture repl
 
 			testdump.CheckJSON(t, result, test.hash)
 		})
+	}
+}
+
+func TestStoreMCPRequiresDeviceXML(t *testing.T) { //nolint:paralleltest // fixture replaces the process store client
+	fixture := testdump.StoreEnvironment(t, "")
+
+	root := testdump.Root(t)
+	if err := os.Remove(filepath.Join(root, "GARMIN", "GarminDevice.xml")); err != nil {
+		t.Fatal(err)
+	}
+
+	client := newClientForRoot(t, root)
+
+	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: storeSearchTool, Arguments: map[string]any{}})
+	if err != nil || !result.IsError || fixture.Count() != 0 {
+		t.Fatalf("result=%+v error=%v requests=%d", result, err, fixture.Count())
 	}
 }
 

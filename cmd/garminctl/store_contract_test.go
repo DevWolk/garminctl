@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -53,5 +56,21 @@ func TestStoreCLIContracts(t *testing.T) { //nolint:paralleltest // fixture repl
 
 			testdump.CheckDigest(t, out.Bytes(), test.hash)
 		})
+	}
+}
+
+func TestStoreCLIRequiresDeviceXML(t *testing.T) { //nolint:paralleltest // fixture replaces the process store client
+	fixture := testdump.StoreEnvironment(t, "")
+
+	root := testdump.Root(t)
+	if err := os.Remove(filepath.Join(root, "GARMIN", "GarminDevice.xml")); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, diagnostics bytes.Buffer
+
+	err := run([]string{rootFlag, root, "store", "list"}, &out, &diagnostics)
+	if err == nil || !strings.Contains(err.Error(), "GarminDevice.xml") || out.Len() != 0 || fixture.Count() != 0 {
+		t.Fatalf("error=%v output=%s requests=%d", err, &out, fixture.Count())
 	}
 }

@@ -28,6 +28,46 @@ type WatchOwner[L WatchLease] interface {
 	DropAt(watchsession.ConnectionEpoch) error
 }
 
+// CurrentWatchOwner borrows an already open watch or admits watch-free work.
+type CurrentWatchOwner[L interface {
+	WatchLease
+	comparable
+}] interface {
+	AcquireCurrent(context.Context) (L, error)
+	DropAt(watchsession.ConnectionEpoch) error
+	Gate() *lifecycle.Gate
+}
+
+// WithCurrentWatch never opens a watch. A zero lease means no current Session;
+// body still holds an admission permit and must not retain or release its lease.
+func WithCurrentWatch[L interface {
+	WatchLease
+	comparable
+}](ctx context.Context, owner CurrentWatchOwner[L], body func(context.Context, L) (any, error)) (any, error) {
+	lease, err := owner.AcquireCurrent(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var empty L
+	if lease == empty {
+		release, err := owner.Gate().Enter(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+
+		return body(ctx, empty)
+	}
+
+	out, err := body(lease.Context(), lease)
+	if errors.Is(err, device.ErrDisconnected) {
+		err = errors.Join(err, owner.DropAt(lease.Epoch()))
+	}
+
+	return out, errors.Join(err, lease.Release())
+}
+
 // WithWatch scopes a JSON response to one watch lease. The initial acquisition
 // error retains the connection-state envelope; body/cleanup errors use WriteErr.
 // body must use its supplied context and must not retain or release the lease.

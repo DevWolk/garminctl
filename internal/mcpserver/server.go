@@ -9,7 +9,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
@@ -18,7 +17,6 @@ import (
 const (
 	defaultActivities = 30
 	defaultPoints     = 200
-	storePageSize     = 20
 )
 
 // server holds the lazily connected watch the tools share.
@@ -96,7 +94,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 
 	addUpdateTools(srv, s)
 	addCloudTools(srv, s, cloudClient)
-	addStoreTools(srv, s)
 	addHealthTools(srv, s, cloudClient)
 	addWorkoutTools(srv, s, cloudClient)
 	addMusicTools(srv, s)
@@ -206,47 +203,6 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 		Annotations: writes("Change Connect settings", false, true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in cloudSetIn) (*garmin.CloudApplyResult, error) {
 		return garmin.NewCloud(svc, cloudClient).SetSettings(ctx, in.Changes)
-	}))
-}
-
-type storeSearchIn struct {
-	Query string `json:"query,omitempty" jsonschema:"words to search for; empty lists by type"`
-	Type  string `json:"type,omitempty" jsonschema:"watchface, watch-app, widget, datafield or audio-content-provider-app"`
-	Sort  string `json:"sort,omitempty" jsonschema:"mostPopular, highestRated, mostRecent or trending (listing only)"`
-	Page  int    `json:"page,omitempty" jsonschema:"page number, 0 for the first"`
-}
-
-type storeAppIn struct {
-	ID string `json:"id" jsonschema:"store app id (UUID) from store_search or from watch_apps"`
-}
-
-func addStoreTools(srv *mcp.Server, s *server) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "store_search",
-		Description: "Find compatible Connect IQ apps with install and update status. No sign-in needed. Use a result's id with store_app.",
-		Annotations: readOnly("Search Connect IQ store", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in storeSearchIn) (*garmin.StoreView, error) {
-		dx, err := svc.DeviceXML(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		q := ciqstore.StoreQuery{Keywords: in.Query, Type: in.Type, Sort: in.Sort, Page: in.Page, PageSize: storePageSize}
-
-		return svc.BrowseStore(ctx, dx.PartNumber, q)
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "store_app",
-		Description: "Read app details, version, size, permissions, price, reviews and install status. Use the Connect IQ phone app to install; cloud_sync downloads queued files.",
-		Annotations: readOnly("Store app details", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in storeAppIn) (*garmin.StoreDetail, error) {
-		dx, err := svc.DeviceXML(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		return svc.StoreApp(ctx, dx.PartNumber, in.ID)
 	}))
 }
 

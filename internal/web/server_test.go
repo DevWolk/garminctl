@@ -19,6 +19,9 @@ import (
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/store"
+	storehttp "github.com/DevWolk/garminctl/internal/containers/store/ui/http"
+	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
@@ -125,15 +128,25 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 		return len(apps), err
 	}
 
+	storeRegistry := func(sess *watchsession.Session) store.InstalledApps {
+		if sess == nil {
+			return nil
+		}
+
+		return garmin.NewFromSession(sess).Apps
+	}
+
 	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
+			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: storeRegistry},
 		},
 		MCP: []mcpx.ToolRegistrar{
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
 			&appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
+			&storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
 		},
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)
@@ -599,4 +612,14 @@ func getUIAsset(t *testing.T, ts *httptest.Server, path, contentType string) []b
 	}
 
 	return body
+}
+
+func storePart(ctx context.Context, svc *garmin.Service) string {
+	if svc != nil {
+		if dx, err := svc.DeviceXML(ctx); err == nil {
+			return dx.PartNumber
+		}
+	}
+
+	return ""
 }

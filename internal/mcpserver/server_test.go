@@ -14,6 +14,8 @@ import (
 
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/store"
+	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
@@ -94,7 +96,14 @@ func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
 		&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext, AppCount: func(ctx context.Context, sess *watchsession.Session) (int, error) {
 			apps, err := garmin.NewFromSession(sess).Apps(ctx)
 			return len(apps), err
-		}}, &appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext})
+		}}, &appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
+		&storemcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext, Registry: func(sess *watchsession.Session) store.InstalledApps {
+			if sess == nil {
+				return nil
+			}
+
+			return garmin.NewFromSession(sess).Apps
+		}})
 
 	ct, st := mcp.NewInMemoryTransports()
 

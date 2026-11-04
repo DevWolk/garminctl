@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
-	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
@@ -234,8 +232,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/music", s.admittedOperation(s.musicAdd))
 	mux.HandleFunc("DELETE /api/music", s.admittedOperation(s.musicRemove))
 	mux.HandleFunc("PUT /api/music/playlists/{name}", s.admittedOperation(s.musicPlaylist))
-	mux.HandleFunc("GET /api/store", s.storeBrowse)
-	mux.HandleFunc("GET /api/store/apps/{id}", s.storeApp)
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
 	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
 	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
@@ -520,65 +516,14 @@ func (s *Server) cloudSettingsPut(w http.ResponseWriter, r *http.Request) {
 // withOptionalService keeps offline catalog/account behavior without exporting
 // an unleased Service or opening a watch solely to decorate a network response.
 func (s *Server) withOptionalService(ctx context.Context, body func(context.Context, *garmin.Service) (any, error)) (any, error) {
-	lease, err := s.svc.AcquireCurrent(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if lease == nil {
-		release, err := s.svc.Gate().Enter(ctx)
-		if err != nil {
-			return nil, err
+	return httpx.WithCurrentWatch(ctx, s.svc, func(ctx context.Context, lease *garmin.Lease) (any, error) {
+		var svc *garmin.Service
+		if lease != nil {
+			svc = lease.Service()
 		}
-		defer release()
 
-		return body(ctx, nil)
-	}
-
-	out, err := body(lease.Context(), lease.Service())
-	if errors.Is(err, device.ErrDisconnected) {
-		err = errors.Join(err, s.svc.DropAt(lease.Epoch()))
-	}
-
-	return out, errors.Join(err, lease.Release())
-}
-
-func storePart(ctx context.Context, svc *garmin.Service) string {
-	if svc != nil {
-		if dx, err := svc.DeviceXML(ctx); err == nil {
-			return dx.PartNumber
-		}
-	}
-
-	return ""
-}
-
-func (s *Server) storeBrowse(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	page, _ := strconv.Atoi(q.Get("page"))
-	query := ciqstore.StoreQuery{Keywords: q.Get("q"), Type: q.Get("type"), Sort: q.Get("sort"), Page: page, PageSize: 0}
-
-	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.BrowseStore(ctx, storePart(ctx, svc), query)
+		return body(ctx, svc)
 	})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) storeApp(w http.ResponseWriter, r *http.Request) {
-	out, err := s.withOptionalService(r.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.StoreApp(ctx, storePart(ctx, svc), r.PathValue("id"))
-	})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, out)
 }
 
 // ---------- health ----------

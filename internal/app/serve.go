@@ -8,6 +8,8 @@ import (
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
+	storehttp "github.com/DevWolk/garminctl/internal/containers/store/ui/http"
+	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/fit"
@@ -42,8 +44,9 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
+			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: StoreRegistry},
 		},
-		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime)},
+		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime)},
 		WatchSummary: WatchSummary,
 	})
 }
@@ -53,7 +56,7 @@ func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime))
+	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime))
 }
 
 func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
@@ -66,4 +69,8 @@ func watchTools(runtime *garmin.Runtime) *watchmcp.Tools {
 
 func appsTools(runtime *garmin.Runtime) *appsmcp.Tools {
 	return &appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext}
+}
+
+func storeTools(runtime *garmin.Runtime) *storemcp.Tools {
+	return &storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: StoreRegistry, BindContext: runtime.RequestContext}
 }

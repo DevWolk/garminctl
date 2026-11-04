@@ -167,6 +167,8 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 		t.Fatalf("HTTP/MCP did not share the app schema cache: metadata requests=%d", storeRequests.Load())
 	}
 
+	checkRootStore(ctx, t, base)
+
 	if settingsReads.Load() != 1 {
 		t.Fatalf("HTTP/MCP did not share the settings raw cache: reads=%d", settingsReads.Load())
 	}
@@ -289,5 +291,42 @@ func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
 
 	if runtime.Context().Err() == nil {
 		t.Fatal("listener error retained an active runtime")
+	}
+}
+
+func checkRootStore(ctx context.Context, t *testing.T, base string) {
+	t.Helper()
+	fixture := testdump.StoreEnvironment(t, "")
+
+	var expected map[string]any
+	rootGetJSON(ctx, t, base, "/api/store", &expected)
+	fixture.CheckPage(t, 24, 0)
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "root-store", Version: "1"}, nil)
+
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = session.Close() }()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "store_search", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("store tool=%+v error=%v", result, err)
+	}
+
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var actual map[string]any
+	if err := json.Unmarshal(data, &actual); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatal("HTTP/MCP store views differ")
 	}
 }

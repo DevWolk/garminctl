@@ -20,6 +20,7 @@ func (s *Service) storeRegistry() store.InstalledApps {
 	if s == nil {
 		return nil
 	}
+
 	return s.Apps
 }
 
