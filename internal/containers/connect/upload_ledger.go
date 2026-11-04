@@ -1,4 +1,4 @@
-package garmin
+package connect
 
 import (
 	"encoding/json"

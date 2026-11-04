@@ -104,5 +104,3 @@ func (s *Service) AppSettings(ctx context.Context, ref string) (*AppSettings, er
 func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[string]any) (*AppSettings, error) {
 	return apps.NewApplySettingsAction(&s.schemas).Run(ctx, s.session, ref, updates)
 }
-
-func newUUID() string { return watchsession.NewFileID() }

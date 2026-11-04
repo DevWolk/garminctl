@@ -1,4 +1,4 @@
-package garmin
+package connect
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 const socialProfilePath = "/userprofile-service/socialProfile"
@@ -24,7 +25,7 @@ type identityWatch struct {
 func (d *identityWatch) Read(_ context.Context, path string) ([]byte, error) {
 	d.reads++
 
-	if path != PathDeviceXML {
+	if path != watchsession.PathDeviceXML {
 		return nil, fmt.Errorf("unexpected identity read: %s", path)
 	}
 
@@ -49,9 +50,9 @@ func TestHealthIdentitySkipsWatchRegistrationButStatusRetainsIt(t *testing.T) {
 		}
 	})
 
-	cloud := NewCloud(New(watch), client)
+	cloud := NewCloud(watchsession.New(watch), client)
 	for range 2 {
-		name, err := cloud.displayName(t.Context())
+		name, err := cloud.DisplayName(t.Context())
 		if err != nil || name != "opaque-user-id" {
 			t.Fatalf("identity = %q, %v", name, err)
 		}
@@ -139,7 +140,7 @@ func TestCloudStatusRegistrationErrorsRemainDistinctFromIdentity(t *testing.T) {
 				return resp, nil
 			})
 
-			st := NewCloud(New(&identityWatch{}), client).Status(t.Context())
+			st := NewCloud(watchsession.New(&identityWatch{}), client).Status(t.Context())
 			if !st.LoggedIn || st.Profile == nil || st.Registered != (status == http.StatusOK) {
 				t.Fatalf("registration %d status=%+v", status, st)
 			}
@@ -185,14 +186,14 @@ func TestHealthIdentityRetainsExistingFailureContracts(t *testing.T) {
 
 				return resp, nil
 			})
-			cloud := NewCloud(New(watch), client)
+			cloud := NewCloud(watchsession.New(watch), client)
 
 			st := cloud.Status(t.Context())
 			if st.LoggedIn != tt.loggedIn || st.Profile != nil && st.Profile.DisplayName != "" {
 				t.Fatalf("failed-profile status=%+v", st)
 			}
 
-			_, err := cloud.displayName(t.Context())
+			_, err := cloud.DisplayName(t.Context())
 			if err == nil || err.Error() != tt.want {
 				t.Fatalf("identity error=%v, want %q", err, tt.want)
 			}
@@ -208,7 +209,7 @@ func TestCloudIdentityWithMissingOrInvalidAccountStore(t *testing.T) {
 			t.Parallel()
 
 			watch := &identityWatch{}
-			cloud := NewCloud(New(watch), gc.New(store))
+			cloud := NewCloud(watchsession.New(watch), gc.New(store))
 
 			st := cloud.Status(t.Context())
 			if st.LoggedIn || st.Profile != nil || watch.reads != 0 {
@@ -219,7 +220,7 @@ func TestCloudIdentityWithMissingOrInvalidAccountStore(t *testing.T) {
 				t.Fatalf("invalid store error=%q", st.Error)
 			}
 
-			_, err := cloud.displayName(t.Context())
+			_, err := cloud.DisplayName(t.Context())
 			if err == nil || err.Error() != gc.ErrNotLoggedIn.Error() {
 				t.Fatalf("missing account identity error=%v", err)
 			}

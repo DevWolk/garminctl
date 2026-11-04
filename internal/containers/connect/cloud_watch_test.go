@@ -1,4 +1,4 @@
-package garmin
+package connect
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -57,10 +58,10 @@ func syncTestClient(t *testing.T, transport syncTransport) *gc.Client {
 	return client
 }
 
-func managedTestCloud(t *testing.T, root string, transport syncTransport) (*Cloud, *Lazy, ConnectionEpoch) {
+func managedTestCloud(t *testing.T, root string, transport syncTransport) (*Cloud, *watchsession.Manager, watchsession.ConnectionEpoch) {
 	t.Helper()
 
-	l := NewLazy(func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
+	l := watchsession.NewManager(func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 	t.Cleanup(func() { closeOwner(t, l) })
 	lease := acquireLease(t, l)
@@ -77,7 +78,7 @@ func managedTestCloud(t *testing.T, root string, transport syncTransport) (*Clou
 }
 
 type deliveryTransport struct {
-	owner    *Lazy
+	owner    *watchsession.Manager
 	root     string
 	payload  []byte
 	entered  chan struct{}
@@ -149,7 +150,7 @@ func TestManagedSyncReleasesLeaseForNetworkAndWritesBeforeAck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := lease.Service().Stat(lease.Context(), "GARMIN"); err != nil {
+	if _, err := lease.Session().Stat(lease.Context(), "GARMIN"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -232,7 +233,7 @@ func TestManagedSyncDropCancelsNetworkBeforeAnyDeliveryOrAck(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if !errors.Is(err, ErrSessionChanged) || !errors.Is(err, device.ErrDisconnected) {
+		if !errors.Is(err, watchsession.ErrSessionChanged) || !errors.Is(err, device.ErrDisconnected) {
 			t.Fatalf("dropped job cause: %v", err)
 		}
 	case <-time.After(5 * time.Second):
@@ -254,7 +255,7 @@ func TestManagedSyncDropCancelsNetworkBeforeAnyDeliveryOrAck(t *testing.T) {
 }
 
 type uploadTransport struct {
-	owner    *Lazy
+	owner    *watchsession.Manager
 	payload  []byte
 	entered  chan struct{}
 	finish   chan struct{}
@@ -330,7 +331,7 @@ func TestManagedUploadReleasesReadLeaseBeforeNetwork(t *testing.T) {
 	}
 }
 
-func startManagedTestSync(t *testing.T, c *Cloud, l *Lazy, options SyncOptions) *SyncJob {
+func startManagedTestSync(t *testing.T, c *Cloud, l *watchsession.Manager, options SyncOptions) *SyncJob {
 	t.Helper()
 	coordinator := NewSyncCoordinator(t.Context(), l.Gate())
 	t.Cleanup(func() {
@@ -381,7 +382,7 @@ func TestManagedPullDoesNotAckFailedWrite(t *testing.T) {
 
 	var failed *deniedWriteDevice
 
-	l := NewLazy(func(context.Context) (device.Device, error) {
+	l := watchsession.NewManager(func(context.Context) (device.Device, error) {
 		dev, err := device.NewDirFS(root)
 		if err != nil {
 			return nil, err

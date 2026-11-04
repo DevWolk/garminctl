@@ -1,4 +1,4 @@
-package garmin
+package connect
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 const ledgerXML = `<Device><Id>42</Id><MassStorageMode><DataType><Name>FIT_TYPE_4</Name><File><Location><Path>GARMIN/Activity</Path><FileExtension>fit</FileExtension></Location><TransferDirection>OutputFromUnit</TransferDirection></File></DataType></MassStorageMode></Device>`
@@ -119,7 +120,7 @@ func TestUploadLedgerReplaceFailurePreservesPreviousFile(t *testing.T) {
 type ledgerWatch struct{ device.Device }
 
 func (*ledgerWatch) Read(_ context.Context, path string) ([]byte, error) {
-	if path == PathDeviceXML {
+	if path == watchsession.PathDeviceXML {
 		return []byte(ledgerXML), nil
 	}
 
@@ -154,7 +155,7 @@ func ledgerTestCloud(t *testing.T, response int, blockSave bool) (*Cloud, *atomi
 
 		return resp, nil
 	})
-	c := NewCloud(New(&ledgerWatch{}), client)
+	c := NewCloud(watchsession.New(&ledgerWatch{}), client)
 	c.cacheDir = cacheDir
 
 	return c, &requests

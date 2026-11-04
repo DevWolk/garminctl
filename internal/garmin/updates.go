@@ -52,10 +52,6 @@ func (s *Service) CheckAppUpdates(ctx context.Context) ([]AppUpdate, error) {
 	return updates.NewCheckAppsAction(s.Apps).Run(ctx)
 }
 
-func (s *Service) ensureDir(ctx context.Context, dir string) error {
-	return s.session.EnsureDir(ctx, dir)
-}
-
 // AppFolder preserves the app-owned binary folder path during migration.
 const AppFolder = apps.AppFolder
 

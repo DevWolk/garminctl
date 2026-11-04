@@ -23,22 +23,22 @@ func (s *Service) WriteWorkoutToWatch(ctx context.Context, spec *WorkoutSpec) (s
 
 // Workouts delegates account listing.
 func (c *Cloud) Workouts(ctx context.Context, limit int) ([]CloudWorkout, error) {
-	return (workouts.ListAction{Client: c.gc}).Run(ctx, limit)
+	return (workouts.ListAction{Client: c.Client()}).Run(ctx, limit)
 }
 
 // CreateWorkout delegates validation and Connect creation.
 func (c *Cloud) CreateWorkout(ctx context.Context, spec *WorkoutSpec) (*CloudWorkout, error) {
-	return (workouts.CreateAction{Client: c.gc}).Run(ctx, spec)
+	return (workouts.CreateAction{Client: c.Client()}).Run(ctx, spec)
 }
 
 // SendWorkout delegates queue submission and filtered delivery.
 func (c *Cloud) SendWorkout(ctx context.Context, id int64, name string) ([]PulledFile, error) {
-	return (workouts.SendAction{Client: c.gc, Queue: c.WorkoutDelivery()}).Run(ctx, id, name)
+	return (workouts.SendAction{Client: c.Client(), Queue: c.WorkoutDelivery()}).Run(ctx, id, name)
 }
 
 // DeleteWorkout delegates account deletion.
 func (c *Cloud) DeleteWorkout(ctx context.Context, id int64) error {
-	return (workouts.DeleteAction{Client: c.gc}).Run(ctx, id)
+	return (workouts.DeleteAction{Client: c.Client()}).Run(ctx, id)
 }
 
 // WorkoutDelivery is the temporary Connect queue bridge until INV-18.

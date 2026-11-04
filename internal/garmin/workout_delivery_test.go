@@ -171,7 +171,7 @@ func TestWorkoutDeliveryForBorrowsCanonicalFacade(t *testing.T) {
 	account := testdump.WorkoutClient(t, "")
 
 	provider, ok := watch.WorkoutDeliveryFor(lease.Session(), account).(workoutDelivery)
-	if !ok || provider.cloud.svc != watch.Current() || provider.cloud.gc != account {
+	if !ok || provider.cloud.svc != watch.Current() || provider.cloud.Client() != account {
 		t.Fatal("queue provider created separate facade/account")
 	}
 

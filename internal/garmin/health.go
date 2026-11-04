@@ -2,7 +2,6 @@ package garmin
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/health"
@@ -62,21 +61,10 @@ func (s *Service) Activity(ctx context.Context, name string, points int) (*Activ
 
 // HealthAccess temporarily supplies caller-scoped identity and metadata policy.
 func (c *Cloud) HealthAccess() health.AccountAccess {
-	return health.AccountAccess{Client: c.gc, DisplayName: c.displayName, DeviceXML: c.deviceXML, CacheDir: c.cacheDir}
+	return health.AccountAccess{Client: c.Client(), DisplayName: c.displayName, DeviceXML: c.deviceXML, CacheDir: c.CacheDirectory()}
 }
 
-func (c *Cloud) displayName(ctx context.Context) (string, error) {
-	st := c.identityStatus(ctx)
-	if !st.LoggedIn {
-		return "", errors.New("not signed in to Garmin Connect")
-	}
-
-	if st.Profile == nil || st.Profile.DisplayName == "" {
-		return "", errors.New("the Garmin Connect profile has no display name")
-	}
-
-	return st.Profile.DisplayName, nil
-}
+func (c *Cloud) displayName(ctx context.Context) (string, error) { return c.DisplayName(ctx) }
 
 // Daily delegates to the health owner with the existing policy.
 func (c *Cloud) Daily(ctx context.Context, days int) ([]DailyHealth, error) {
