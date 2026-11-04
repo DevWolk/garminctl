@@ -29,9 +29,7 @@ def check_package(desktop, cli, repo, version, work):
     model = ET.parse(dump / "GARMIN/GarminDevice.xml").findtext("{*}Model/{*}Description")
     cli_version = subprocess.check_output([str(cli), "version"], text=True, timeout=10).strip()
     assert version in cli_version, cli_version
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        port = listener.getsockname()[1]
+    port = free_port()
     base = f"http://127.0.0.1:{port}"
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
@@ -86,55 +84,127 @@ def check_package(desktop, cli, repo, version, work):
         request("/mcp", "DELETE")
         status, _ = request("/api/mcp")
         assert any(c["name"] == "installed-package-smoke" and not c["sessionActive"] for c in status["status"]["clients"]), status
-        if os.name == "nt":
-            from ctypes import wintypes
-
-            user32 = ctypes.windll.user32
-            user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-            user32.IsWindowVisible.argtypes = [wintypes.HWND]
-            user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-            windows = []
-            callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-            user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
-            user32.EnumWindows.restype = wintypes.BOOL
-            owned = []
-
-            @callback_type
-            def collect(hwnd, _):
-                pid = wintypes.DWORD()
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value == app.pid:
-                    owned.append(hwnd)
-                    if user32.IsWindowVisible(hwnd):
-                        windows.append(hwnd)
-                return True
-
-            # Frontend Ready can arrive before the native ShowWindow call.
-            window_deadline = time.monotonic() + 10
-            while True:
-                windows.clear()
-                owned.clear()
-                assert user32.EnumWindows(collect, 0), "EnumWindows failed"
-                if windows or time.monotonic() >= window_deadline:
-                    break
-                assert app.poll() is None, f"Desktop exited {app.returncode} before its window appeared"
-                time.sleep(0.1)
-            assert windows, f"No visible native application window for PID {app.pid}; owned handles: {owned}"
-            for hwnd in windows:
-                user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
-            assert app.wait(timeout=10) == 0, "Native close failed"
-            try:
-                request("/api/server")
-            except OSError:
-                pass
-            else:
-                raise AssertionError("App-owned server remained running after normal close")
-        return {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model}
+        check_second_launch(app, desktop, dump, env, work)
+        close_window(app)
+        try:
+            request("/api/server")
+        except OSError:
+            pass
+        else:
+            raise AssertionError("App-owned server remained running after normal close")
+        stop_app(app)
+        check_reused_backend(desktop, cli, dump, port, request, env, work)
+        return {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model, "nativeClose": True, "singleInstance": True, "reusedBackendRetained": True}
     finally:
         try:
             stop_app(app)
         finally:
             print(log_path.read_text(errors="replace"))
+
+
+def free_port():
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
+
+
+def check_second_launch(first, desktop, dump, env, work):
+    """A second instance must exit before starting a backend at a different port."""
+    port = free_port()
+    log_path = work / "second-instance.log"
+    with log_path.open("wb") as log:
+        second = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
+    try:
+        assert second.wait(timeout=10) == 0, "Second desktop instance failed"
+        assert first.poll() is None, "Second launch stopped the primary desktop"
+        with socket.socket() as connection:
+            connection.settimeout(2)
+            assert connection.connect_ex(("127.0.0.1", port)) != 0, "Second launch started another backend"
+    finally:
+        stop_app(second)
+        print(log_path.read_text(errors="replace"))
+
+
+def check_reused_backend(desktop, cli, dump, port, request, env, work):
+    """Closing the native window must leave an independently started server alive."""
+    server_log = work / "reused-server.log"
+    desktop_log = work / "reused-desktop.log"
+    with server_log.open("wb") as log:
+        server = subprocess.Popen([str(cli), "-root", str(dump), "serve", "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
+    app = None
+    try:
+        deadline = time.monotonic() + 45
+        while True:
+            assert server.poll() is None, f"Standalone server exited {server.returncode}"
+            try:
+                before, _ = request("/api/server")
+                break
+            except OSError:
+                assert time.monotonic() < deadline, "Standalone server did not become ready"
+                time.sleep(0.1)
+        with desktop_log.open("wb") as log:
+            app = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
+        deadline = time.monotonic() + 45
+        while "desktop window ready" not in desktop_log.read_text(errors="replace"):
+            assert app.poll() is None, f"Reusing desktop exited {app.returncode}"
+            assert time.monotonic() < deadline, "Reusing native window did not become ready"
+            time.sleep(0.1)
+        close_window(app)
+        assert server.poll() is None, "Closing the desktop stopped the separately owned server"
+        after, _ = request("/api/server")
+        assert after == before, (before, after)
+    finally:
+        try:
+            if app is not None:
+                stop_app(app)
+        finally:
+            stop_app(server)
+            for path in (desktop_log, server_log):
+                if path.exists():
+                    print(path.read_text(errors="replace"))
+
+
+def close_window(app):
+    if os.name != "nt":
+        # Wails handles SIGTERM through App.Quit, including the frontend veto.
+        app.send_signal(signal.SIGTERM)
+    else:
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        windows = []
+        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+        user32.EnumWindows.restype = wintypes.BOOL
+        owned = []
+
+        @callback_type
+        def collect(hwnd, _):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == app.pid:
+                owned.append(hwnd)
+                if user32.IsWindowVisible(hwnd):
+                    windows.append(hwnd)
+            return True
+
+        # Frontend Ready can arrive before the native ShowWindow call.
+        deadline = time.monotonic() + 10
+        while True:
+            windows.clear()
+            owned.clear()
+            assert user32.EnumWindows(collect, 0), "EnumWindows failed"
+            if windows or time.monotonic() >= deadline:
+                break
+            assert app.poll() is None, f"Desktop exited {app.returncode} before its window appeared"
+            time.sleep(0.1)
+        assert windows, f"No visible native application window for PID {app.pid}; owned handles: {owned}"
+        for hwnd in windows:
+            assert user32.PostMessageW(hwnd, 0x0010, 0, 0), "WM_CLOSE failed"
+    assert app.wait(timeout=10) == 0, "Native close failed"
 
 
 def stop_app(app):
