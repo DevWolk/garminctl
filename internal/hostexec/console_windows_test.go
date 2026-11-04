@@ -1,6 +1,7 @@
 package hostexec
 
 import (
+	"bytes"
 	"context"
 	"os/exec"
 	"strings"
@@ -29,9 +30,13 @@ $line = [Console]::In.ReadLine()
 
 	cmd.Stdin = strings.NewReader("bridge-test\n")
 
+	var stderr bytes.Buffer
+
+	cmd.Stderr = &stderr
+
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("hidden PowerShell: %v", err)
+		t.Fatalf("hidden PowerShell: %v; context: %v; stderr: %s", err, ctx.Err(), stderr.String())
 	}
 
 	if got := strings.TrimSpace(string(out)); got != "0|bridge-test" {

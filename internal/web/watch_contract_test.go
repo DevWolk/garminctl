@@ -19,8 +19,12 @@ import (
 func newWatchContractServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	dev, _ := testdump.Watch(t)
-	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return dev, nil }, false)
+	dev, root := testdump.Watch(t)
+	if err := dev.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return testdump.OpenWatch(root) }, false)
 	s.cloud = gc.New(filepath.Join(t.TempDir(), "account.json"))
 	ts := httptest.NewUnstartedServer(nil)
 

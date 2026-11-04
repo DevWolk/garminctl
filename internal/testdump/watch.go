@@ -37,12 +37,23 @@ func Watch(tb testing.TB) (device.Device, string) {
 		}
 	}
 
-	dir, err := device.NewDirFS(root)
+	dev, err := OpenWatch(root)
 	if err != nil {
 		tb.Fatal(err)
 	}
 
-	return &contractWatch{Device: dir}, root
+	return dev, root
+}
+
+// OpenWatch reopens an existing fixture with the same synthetic transport data.
+// The caller owns the returned handle, including when no managed lease opens it.
+func OpenWatch(root string) (device.Device, error) {
+	dir, err := device.NewDirFS(root)
+	if err != nil {
+		return nil, err
+	}
+
+	return &contractWatch{Device: dir}, nil
 }
 
 type contractWatch struct{ device.Device }
