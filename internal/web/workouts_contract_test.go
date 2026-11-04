@@ -67,7 +67,7 @@ func TestWorkoutsHTTPContracts(t *testing.T) {
 			}
 
 			if test.name == "delete" {
-				if string(data) != "{\n  \"ok\": true\n}\n" {
+				if string(data) != "{\n \"ok\": true\n}\n" {
 					t.Fatalf("delete response=%s", data)
 				}
 
