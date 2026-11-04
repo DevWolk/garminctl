@@ -63,25 +63,5 @@ func TestStoreMCPRequiresDeviceXML(t *testing.T) { //nolint:paralleltest // fixt
 
 func TestStoreMCPToolContracts(t *testing.T) {
 	t.Parallel()
-	client := newClient(t)
-
-	tools, err := client.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := map[string]string{storeSearchTool: "3015884807fda13eeb7da04f028b2af02217613a69356a303d88f17d6e9c83ab", "store_app": "9d86aede301630ac4ad4d2e3b5dbfd95bf9a61dbb49b1ff09849d6adeed784e2"}
-	seen := 0
-
-	for _, tool := range tools.Tools {
-		if hash, ok := want[tool.Name]; ok {
-			seen++
-
-			t.Run(tool.Name, func(t *testing.T) { t.Parallel(); testdump.CheckJSON(t, tool, hash) })
-		}
-	}
-
-	if seen != len(want) {
-		t.Fatalf("registered store tools=%d want=%d", seen, len(want))
-	}
+	checkToolContracts(t, map[string]string{storeSearchTool: "3015884807fda13eeb7da04f028b2af02217613a69356a303d88f17d6e9c83ab", "store_app": "9d86aede301630ac4ad4d2e3b5dbfd95bf9a61dbb49b1ff09849d6adeed784e2"})
 }
