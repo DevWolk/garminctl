@@ -73,6 +73,7 @@ func (f updateTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	case req.URL.String() == "https://fixture.invalid/firmware" && req.Method == http.MethodGet:
 		body = UpdatePayload
+
 		switch f.mode {
 		case "checksum":
 			body = strings.Repeat("x", len(UpdatePayload))
