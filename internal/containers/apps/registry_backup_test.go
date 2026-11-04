@@ -240,9 +240,76 @@ func TestRegistrySnapshotFailedReplacementDoesNotTouchExistingCopy(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if err := writeRegistrySnapshot(dir, []byte("new")); err == nil {
+	if err := writeSnapshotFile(dir, "OUT.BIN", []byte("new")); err == nil {
 		t.Fatal("replaced a directory with a registry file")
 	}
 
 	assertRegistryBytes(t, marker, []byte("previous"))
+}
+
+type registryReadDevice struct {
+	device.Device
+	path string
+	fail error
+}
+
+func (d *registryReadDevice) Read(ctx context.Context, path string) ([]byte, error) {
+	if path == d.path {
+		return nil, d.fail
+	}
+
+	return d.Device.Read(ctx, path)
+}
+
+func TestSetAppHiddenPendingReadErrorAborts(t *testing.T) { //nolint:paralleltest // registryCache changes process cache-directory environment
+	cache := registryCache(t)
+	d, out, targets := registryFixture(t)
+	busy := errors.New("synthetic transport failure")
+	sess := watchsession.New(&registryReadDevice{Device: d, path: PathAppsIn, fail: busy})
+
+	backup, err := (VisibilityAction{}).Run(t.Context(), sess, targets[0].Name, !targets[0].Hidden)
+	if !errors.Is(err, busy) || backup != "" || d.writes != 0 {
+		t.Fatalf("pending read failure: path=%q err=%v writes=%d", backup, err, d.writes)
+	}
+
+	if snapshots, _ := filepath.Glob(filepath.Join(cache, "OUT.BIN-*")); len(snapshots) != 0 {
+		t.Fatalf("backup written before the pending registry was read: %v", snapshots)
+	}
+
+	// A missing IN.BIN still means an empty queue.
+	sess = watchsession.New(&registryReadDevice{Device: d, path: PathAppsIn, fail: device.ErrNotFound})
+	if _, err := (VisibilityAction{}).Run(t.Context(), sess, targets[0].Name, !targets[0].Hidden); err != nil || d.writes != 1 {
+		t.Fatalf("missing pending registry: err=%v writes=%d", err, d.writes)
+	}
+
+	assertQueuedRegistryChanges(t, d, out, targets[:1])
+}
+
+func TestSetAppHiddenSnapshotsPendingRegistry(t *testing.T) { //nolint:paralleltest // registryCache changes process cache-directory environment
+	registryCache(t)
+	d, out, targets := registryFixture(t)
+	sess := watchsession.New(d)
+
+	first, err := (VisibilityAction{}).Run(t.Context(), sess, targets[0].Name, !targets[0].Hidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(filepath.Dir(first), "IN.BIN")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("first change had no pending registry, snapshot holds IN.BIN: %v", err)
+	}
+
+	queued, err := d.Read(t.Context(), PathAppsIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := (VisibilityAction{}).Run(t.Context(), sess, targets[1].Name, !targets[1].Hidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertRegistryBytes(t, second, out)
+	assertRegistryBytes(t, filepath.Join(filepath.Dir(second), "IN.BIN"), queued)
+	assertRegistryBackupProtection(t, filepath.Join(filepath.Dir(second), "IN.BIN"))
 }

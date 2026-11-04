@@ -163,9 +163,18 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 		return "", err
 	}
 
+	// Only a missing IN.BIN means an empty queue; any other read failure would
+	// silently drop the changes already queued there.
+	pending, err := sess.ReadFile(ctx, PathAppsIn)
+	if err != nil && !isNotFound(err) {
+		return "", fmt.Errorf("read pending %s: %w", PathAppsIn, err)
+	}
+
 	base := out
-	if pending, err := sess.ReadFile(ctx, PathAppsIn); err == nil && len(pending) > 0 {
+	if len(pending) > 0 {
 		base = pending
+	} else {
+		pending = nil
 	}
 
 	identity, err := rewriteApps(base, func(_ App, f []pbField) ([]pbField, error) { return f, nil })
@@ -204,7 +213,7 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 		return "", fmt.Errorf("%q matches %d registry entries (a glance and an app share the name); use the store id", ref, hits)
 	}
 
-	backup, err = backupRegistry(out)
+	backup, err = backupRegistry(out, pending)
 	if err != nil {
 		return "", fmt.Errorf("back up app registry before staging changes: %w", err)
 	}
@@ -216,6 +225,12 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 	return backup, nil
 }
 
+// isNotFound reports a missing path, including bridge errors that carry only
+// the message.
+func isNotFound(err error) bool {
+	return errors.Is(err, device.ErrNotFound) || strings.Contains(err.Error(), "not found")
+}
+
 // PendingRegistryAction lists what IN.BIN will change when the watch is unplugged.
 type PendingRegistryAction struct{}
 
@@ -223,7 +238,7 @@ type PendingRegistryAction struct{}
 func (PendingRegistryAction) Run(ctx context.Context, sess *watchsession.Session) ([]AppChange, error) {
 	pending, err := sess.ReadFile(ctx, PathAppsIn)
 	if err != nil {
-		if errors.Is(err, device.ErrNotFound) || strings.Contains(err.Error(), "not found") {
+		if isNotFound(err) {
 			return []AppChange{}, nil
 		}
 

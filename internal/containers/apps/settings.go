@@ -60,7 +60,7 @@ func readSettings(ctx context.Context, sess *watchsession.Session, cache *Schema
 		return nil, fmt.Errorf("%s: settings are a %T, not a dictionary", p, v)
 	}
 
-	as := &AppSettings{App: *app, Path: p, Settings: d, Values: map[string]any{}, Hints: AppHintsFor(app.ID)}
+	as := &AppSettings{App: *app, Path: p, Settings: d, Values: map[string]any{}, Hints: AppHintsFor(app.ID), raw: b}
 	for _, pair := range d {
 		k := fmt.Sprint(pair.Key)
 		as.Order = append(as.Order, k)
@@ -109,11 +109,20 @@ func applySettings(ctx context.Context, sess *watchsession.Session, cache *Schem
 		return nil, err
 	}
 
+	// The watch replaces the file in place, so a failed transfer can leave
+	// the app without settings; the private copy is the only recovery path.
+	backup, err := backupSettings(path.Base(as.Path), as.raw)
+	if err != nil {
+		return nil, fmt.Errorf("back up %s before writing: %w", as.Path, err)
+	}
+
 	if err := sess.WriteFile(ctx, as.Path, data); err != nil {
-		return nil, fmt.Errorf("write %s: %w", as.Path, err)
+		return nil, fmt.Errorf("write %s (backup %s): %w", as.Path, backup, err)
 	}
 
 	cache.Reset(sess.Invalidate(as.Path))
+	// The write changed the .SET file, not the app's schema.
+	cache.Retain(ctx, sess, &as.App, sc)
 
 	return readSettings(ctx, sess, cache, ref)
 }

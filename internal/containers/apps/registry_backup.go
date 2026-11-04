@@ -12,9 +12,44 @@ import (
 	"github.com/DevWolk/garminctl/internal/paths"
 )
 
-// backupRegistry publishes a verified private snapshot. Each snapshot owns a
-// unique directory, so rapid changes never replace a prior recovery copy.
-func backupRegistry(out []byte) (backup string, err error) {
+// backupRegistry publishes a verified private snapshot of OUT.BIN and of the
+// pending IN.BIN a change builds on, so a lost queue can be restored. Each
+// snapshot owns a unique directory, so rapid changes never replace a prior
+// recovery copy. It returns the OUT.BIN copy.
+func backupRegistry(out, pending []byte) (backup string, err error) {
+	files := map[string][]byte{"OUT.BIN": out}
+	if pending != nil {
+		files["IN.BIN"] = pending
+	}
+
+	dir, err := backupSnapshot("OUT.BIN", files)
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, "OUT.BIN"), nil
+}
+
+// backupSettings publishes a verified private snapshot of an app's .SET file
+// before it is rewritten, since the watch replaces the file in place.
+func backupSettings(name string, data []byte) (string, error) {
+	dir, err := backupSnapshot(name, map[string][]byte{name: data})
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dir, name), nil
+}
+
+// backupSnapshot writes the files into a new protected directory of the cache
+// and reads each one back. A failure removes only this snapshot.
+func backupSnapshot(prefix string, files map[string][]byte) (dir string, err error) {
+	for name := range files {
+		if name != filepath.Base(name) || name == "." || name == ".." {
+			return "", fmt.Errorf("invalid backup name %q", name)
+		}
+	}
+
 	parent := paths.Cache()
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return "", err
@@ -24,7 +59,7 @@ func backupRegistry(out []byte) (backup string, err error) {
 		return "", err
 	}
 
-	dir, err := os.MkdirTemp(parent, "OUT.BIN-"+time.Now().Format("20060102-150405")+"-*")
+	dir, err = os.MkdirTemp(parent, prefix+"-"+time.Now().Format("20060102-150405")+"-*")
 	if err != nil {
 		return "", err
 	}
@@ -40,22 +75,23 @@ func backupRegistry(out []byte) (backup string, err error) {
 		return "", err
 	}
 
-	if err := writeRegistrySnapshot(dir, out); err != nil {
-		return "", err
+	for name, data := range files {
+		if err := writeSnapshotFile(dir, name, data); err != nil {
+			return "", err
+		}
+
+		if err := verifyRegistryBackup(filepath.Join(dir, name), data); err != nil {
+			return "", err
+		}
 	}
 
-	backup = filepath.Join(dir, "OUT.BIN")
-	if err := verifyRegistryBackup(backup, out); err != nil {
-		return "", err
-	}
-
-	return backup, nil
+	return dir, nil
 }
 
-func writeRegistrySnapshot(dir string, out []byte) error {
-	temp := filepath.Join(dir, ".OUT.BIN.tmp")
+func writeSnapshotFile(dir, name string, data []byte) error {
+	temp := filepath.Join(dir, "."+name+".tmp")
 
-	f, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // fixed basename in our unique protected snapshot directory
+	f, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // validated basename in our unique protected snapshot directory
 	if err != nil {
 		return err
 	}
@@ -66,7 +102,7 @@ func writeRegistrySnapshot(dir string, out []byte) error {
 		return err
 	}
 
-	if _, err := f.Write(out); err != nil {
+	if _, err := f.Write(data); err != nil {
 		return err
 	}
 
@@ -78,21 +114,21 @@ func writeRegistrySnapshot(dir string, out []byte) error {
 		return err
 	}
 
-	return hostfile.Replace(temp, filepath.Join(dir, "OUT.BIN"))
+	return hostfile.Replace(temp, filepath.Join(dir, name))
 }
 
-func verifyRegistryBackup(path string, out []byte) error {
+func verifyRegistryBackup(path string, data []byte) error {
 	if err := hostfile.Protect(path, false); err != nil {
-		return fmt.Errorf("protect registry backup: %w", err)
+		return fmt.Errorf("protect backup: %w", err)
 	}
 
 	got, err := os.ReadFile(path) //nolint:gosec // locally generated protected backup path, never a device or request path
 	if err != nil {
-		return fmt.Errorf("read registry backup: %w", err)
+		return fmt.Errorf("read backup: %w", err)
 	}
 
-	if !bytes.Equal(got, out) {
-		return errors.New("registry backup readback differs from OUT.BIN")
+	if !bytes.Equal(got, data) {
+		return fmt.Errorf("backup readback differs from %s", filepath.Base(path))
 	}
 
 	return nil

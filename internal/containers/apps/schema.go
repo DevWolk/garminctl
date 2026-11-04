@@ -41,6 +41,26 @@ func (c *SchemaCache) Load(ctx context.Context, sess *watchsession.Session, app 
 	return sc, err
 }
 
+// Retain republishes a schema this process loaded before its own write under
+// the Session's current generation, so the readback does not fetch it again.
+func (c *SchemaCache) Retain(ctx context.Context, sess *watchsession.Session, app *App, sc *ciqstore.Schema) {
+	if sc == nil {
+		return
+	}
+
+	generation, cacheable := sess.CacheGeneration()
+	if !cacheable {
+		return
+	}
+
+	dx, err := sess.DeviceXML(ctx)
+	if err != nil {
+		return
+	}
+
+	c.remember(sess, appSchemaKey{appID: strings.ToLower(app.ID), version: app.Version, partNumber: dx.PartNumber, unit: dx.UnitID}, generation, sc)
+}
+
 func loadAppSchema(ctx context.Context, app *App, partNumber string) (*ciqstore.Schema, error) {
 	var firstErr error
 

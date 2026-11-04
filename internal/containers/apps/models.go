@@ -47,4 +47,6 @@ type AppSettings struct {
 	SchemaSource string           `json:"schemaSource,omitempty"`
 	SchemaError  string           `json:"schemaError,omitempty"`
 	Hints        *AppHints        `json:"hints,omitempty"`
+
+	raw []byte // the .SET bytes as read, kept for the backup before a rewrite
 }
