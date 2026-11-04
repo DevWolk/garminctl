@@ -103,6 +103,12 @@ See CLAUDE.md for the working rules. Module map:
   disk cache, daily/intraday health from Connect), `workouts.go`
   (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
   `music.go` (tracks, ID3 tags, playlists).
+- `internal/containers/music` owns library/track/playlist/provider DTOs, four
+  stateless Actions, ID3 codecs and media path/name helpers over Session.
+  It reads provider metadata from device XML, with no apps registry dependency.
+  Legacy DTO/Tags aliases, ReadTags and Service delegates preserve callers.
+  Title formatting is privately duplicated unchanged while health still uses
+  the legacy helper; no music-to-health import is introduced.
 - `internal/containers/updates` owns watch software manifest/staging/inventory
   and app-version comparison Actions, DTOs and private HTTP helpers. Config
   supplies the existing endpoint/client; a scoped registry reader supplies apps.
