@@ -105,3 +105,24 @@ func TestNativeStartupFailurePageEscapesError(t *testing.T) {
 		t.Fatal("startup error was not safely rendered")
 	}
 }
+
+func TestWindowOptionsUseApplicationMenu(t *testing.T) {
+	t.Parallel()
+
+	// Wails v3 attaches the application menu to a Windows window only on
+	// request; Linux falls back to it either way.
+	for _, startupErr := range []error{nil, errors.New("backend failed")} {
+		options := windowOptions(startupErr)
+		if !options.UseApplicationMenu {
+			t.Fatalf("startup error %v: window does not use the application menu", startupErr)
+		}
+	}
+
+	if options := windowOptions(nil); options.Width != 1280 || options.Height != 850 || options.URL != "/" {
+		t.Fatalf("main window options = %+v", options)
+	}
+
+	if options := windowOptions(errors.New("backend failed")); options.Width != 640 || options.MinWidth != 0 {
+		t.Fatalf("startup error window options = %+v", options)
+	}
+}

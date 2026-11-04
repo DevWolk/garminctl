@@ -36,22 +36,15 @@ func Run(start func() (*Backend, error)) (runErr error) {
 	defer func() { runErr = errors.Join(runErr, service.shutdown()) }()
 
 	service.backend, err = start()
-	startupErr := err
-	options := application.WebviewWindowOptions{Title: applicationName, Width: 1280, Height: 850, MinWidth: 720, MinHeight: 540, URL: "/"}
 
+	startupErr := err
 	if startupErr != nil {
 		assets.set(startupErrorHandler(startupErr))
-
-		options.Title = "garminctl — startup error"
-		options.Width = 640
-		options.Height = 360
-		options.MinWidth = 0
-		options.MinHeight = 0
 	} else {
 		assets.set(Proxy(service.backend.URL, desktopScript))
 	}
 
-	window := host.app.Window.NewWithOptions(options)
+	window := host.app.Window.NewWithOptions(windowOptions(startupErr))
 	host.window.Store(window)
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		if service.beforeClose(host.app.Context()) {
@@ -89,6 +82,21 @@ func newV3WindowHost(service *App, dataDir string, assets http.Handler) *v3Windo
 	host.menu(service)
 
 	return host
+}
+
+// windowOptions describes the main window, or the smaller startup error window.
+// Windows shows the application menu only when a window opts in.
+func windowOptions(startupErr error) application.WebviewWindowOptions {
+	options := application.WebviewWindowOptions{Title: applicationName, Width: 1280, Height: 850, MinWidth: 720, MinHeight: 540, URL: "/", UseApplicationMenu: true}
+	if startupErr != nil {
+		options.Title = "garminctl — startup error"
+		options.Width = 640
+		options.Height = 360
+		options.MinWidth = 0
+		options.MinHeight = 0
+	}
+
+	return options
 }
 
 func (h *v3WindowHost) menu(service *App) {
