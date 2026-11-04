@@ -32,6 +32,7 @@ var appIcon []byte
 type App struct {
 	ctx       context.Context //nolint:containedctx // Wails supplies a window-lifetime context once; its native runtime methods require it.
 	backend   *Backend
+	host      windowHost
 	ready     atomic.Bool
 	closing   atomic.Bool
 	downloads nativeDownloads
@@ -40,6 +41,7 @@ type App struct {
 // Run opens the single native window using an already-started backend.
 func Run(backend *Backend) error {
 	app := &App{backend: backend}
+	app.host = v2WindowHost{app: app}
 
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
@@ -84,7 +86,7 @@ func (a *App) startup(ctx context.Context) {
 	a.downloads.startup(ctx)
 }
 
-func (a *App) emit(action string) { wailsruntime.EventsEmit(a.ctx, "desktop:action", action) }
+func (a *App) emit(action string) { a.host.Emit(action) }
 
 func (a *App) beforeClose(_ context.Context) bool {
 	if a.closing.Load() || !a.ready.Load() {
@@ -106,7 +108,7 @@ func (a *App) Ready() {
 func (a *App) FinishClose() {
 	a.closing.Store(true)
 	a.downloads.cancel()
-	wailsruntime.Quit(a.ctx)
+	a.host.Quit()
 }
 
 // OpenExternal opens an ordinary link in the user's default web browser.
@@ -116,9 +118,7 @@ func (a *App) OpenExternal(raw string) error {
 		return err
 	}
 
-	wailsruntime.BrowserOpenURL(a.ctx, u)
-
-	return nil
+	return a.host.OpenExternal(u)
 }
 
 // Download lets the user choose where a watch file or decoded JSON is saved.
@@ -137,7 +137,7 @@ func (a *App) Download(relative, name string) error {
 		return err
 	}
 
-	path, err := wailsruntime.SaveFileDialog(ctx, wailsruntime.SaveDialogOptions{DefaultFilename: filepath.Base(name), Title: "Save file"})
+	path, err := a.host.SaveFile(ctx, filepath.Base(name))
 	if err != nil || path == "" {
 		return err
 	}
