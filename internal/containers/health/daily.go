@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"time"
 )
@@ -28,7 +29,14 @@ type DailyHealth struct {
 	IntensityMinutes int    `json:"intensityMinutes"`
 	ActiveSec        int    `json:"activeSec"`
 	HighlyActiveSec  int    `json:"highlyActiveSec"`
-	Error            string `json:"error,omitempty"`
+	// Unavailable names the fields the source cannot provide; they read zero.
+	Unavailable []string `json:"unavailable,omitempty"`
+	Error       string   `json:"error,omitempty"`
+}
+
+// Lacks reports whether the named JSON field is unavailable in this row.
+func (d DailyHealth) Lacks(field string) bool {
+	return slices.Contains(d.Unavailable, field)
 }
 
 func asInt(m map[string]any, k string) int {

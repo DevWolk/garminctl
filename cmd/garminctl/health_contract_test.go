@@ -29,7 +29,7 @@ func TestHealthCLIContracts(t *testing.T) { //nolint:paralleltest // isolates ac
 		{name: "activities JSON", cmd: "activities", args: []string{"-wait", "-n", "1"}, json: true, hash: "c4dce382de2d86ba1cd3870a205f3f784625bf799d4fcbc6421c23ab3bfc58e3"},
 		{name: "daily table", cmd: healthCommandName, args: []string{"-days", "2"}, hash: "43db70e947109931bcc6d546686302f5661b65737a74c73fd33820805f8c75d4"},
 		{name: "daily JSON", cmd: healthCommandName, args: []string{"-days", "2"}, json: true, hash: "58caeb07e494e5c656b75f79facc091909fe186003ce9b6be04237fd3b9f1fb6"},
-		{name: "long daily JSON", cmd: healthCommandName, args: []string{"-days", "15"}, json: true, hash: "38d3ff3b06aafad571ca061eacdcf6388228cae2545cfe18358ebf98e8ca6d8c"},
+		{name: "long daily JSON", cmd: healthCommandName, args: []string{"-days", "15"}, json: true, hash: "ed604593895880ff5f9214ecff6e3a1f31f12f8eabe462db799b597ffec0f138"},
 		{name: "history table", cmd: healthCommandName, args: []string{"history", "3"}, hash: "27f8d4c4a21a31353341302405f2e639a572c36db3fb361dd62860bfbe7f8238"},
 		{name: "intraday text", cmd: healthCommandName, args: []string{"day", "2000-01-02"}, hash: "9f30250d4d8896ced6d62644ce29979f0ea77723ca7683d717e5b94b5280d6a0"},
 		{name: "extras text", cmd: healthCommandName, args: []string{"extras"}, hash: "72000dc02d42d71c5629d69d067c3dd8b18bcc70fa3be77b106fef40a8122706"},

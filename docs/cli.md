@@ -134,7 +134,11 @@ store info APP_ID               Show app details and reviews.
 
 `health -days N` uses the history API when N exceeds 14, matching the web API.
 History supports up to 366 days; larger requests use that limit. Short ranges
-retain the daily API and the existing text/JSON output format.
+retain the daily API and the existing text/JSON output format. History rows
+name the fields that API does not provide in `unavailable` (calories, min/max
+heart rate, floors, intensity minutes, active time); the text output prints
+`-` for them. A day whose range request failed carries `error` and is not
+cached, so a later call fetches it again.
 
 Activities are decoded locally and cached. Health and Connect workouts require
 sign-in. `workouts create` saves in Connect by default; `-send` also fetches the

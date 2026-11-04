@@ -274,7 +274,12 @@ func (c *Command) healthDaily(ctx context.Context, cloud dailyHealthReader, args
 			continue
 		}
 
-		c.Out.Printf("%-10s %6d %5d %4d %6d %3d-%-3d %7s %5d\n", d.Date, d.Steps, d.StepGoal, d.RestingHR, d.AvgStress, d.BodyBatteryLow, d.BodyBatteryHigh, health.FormatDuration(float64(d.SleepSec)), d.Calories)
+		kcal := strconv.Itoa(d.Calories)
+		if d.Lacks("calories") {
+			kcal = "-"
+		}
+
+		c.Out.Printf("%-10s %6d %5d %4d %6d %3d-%-3d %7s %5s\n", d.Date, d.Steps, d.StepGoal, d.RestingHR, d.AvgStress, d.BodyBatteryLow, d.BodyBatteryHigh, health.FormatDuration(float64(d.SleepSec)), kcal)
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -100,5 +101,56 @@ func TestHistoryDoesNotCacheWindowWithFailedFetch(t *testing.T) {
 
 	if second[0].SleepSec != 3600 {
 		t.Fatalf("second oldest row = %+v, want sleep refetched after the failed window", second[0])
+	}
+}
+
+func TestHistoryRowsNameUnavailableFieldsAndWindowErrors(t *testing.T) {
+	t.Parallel()
+
+	account := &historyAccount{}
+	account.failSleep.Store(true)
+
+	action := HistoryAction{Access: AccountAccess{
+		Client:      account,
+		DisplayName: func(context.Context) (string, error) { return "user", nil },
+		DeviceXML:   func(context.Context) (*deviceinfo.DeviceXML, error) { return nil, errors.New("no watch") },
+		CacheDir:    t.TempDir(),
+	}}
+
+	rows, err := action.Run(t.Context(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, row := range rows {
+		if !row.Lacks("calories") || row.Lacks("steps") {
+			t.Fatalf("row %s unavailable = %v", row.Date, row.Unavailable)
+		}
+
+		if !strings.Contains(row.Error, "sleep: sleep unavailable") {
+			t.Fatalf("row %s error = %q, want the window's sleep failure", row.Date, row.Error)
+		}
+	}
+}
+
+func TestHistoryCacheIsPerWatchAndAccount(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reader := func(name string) *accountReader {
+		return newAccountReader(AccountAccess{
+			DisplayName: func(context.Context) (string, error) { return name, nil },
+			DeviceXML:   func(context.Context) (*deviceinfo.DeviceXML, error) { return &deviceinfo.DeviceXML{UnitID: 7}, nil },
+			CacheDir:    dir,
+		})
+	}
+
+	first, second := reader("alice").historyCachePath(t.Context()), reader("bob").historyCachePath(t.Context())
+	if first == second || !strings.HasPrefix(filepath.Base(first), "history-7-") {
+		t.Fatalf("cache paths %q and %q do not separate accounts", first, second)
+	}
+
+	if again := reader("alice").historyCachePath(t.Context()); again != first {
+		t.Fatalf("cache path for the same account changed: %q vs %q", first, again)
 	}
 }

@@ -29,7 +29,7 @@ func TestHealthHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isol
 		{name: "invalid activity name", method: http.MethodGet, path: "/api/health/activities/bad..fit", status: 500, hash: "f1140f0490e18b802a0d75490f9a0154e1bcac81bbaad0331c5898436b3c8d74"},
 		{name: "daily two", method: http.MethodGet, path: "/api/health/daily?days=2", status: 200, hash: "f7364a11ce1b4ef5cba53188c035f7a25bbf4cd5c8656b5c54826f06d36dba38"},
 		{name: "daily default", method: http.MethodGet, path: "/api/health/daily?days=0", status: 200, hash: "e94ccc9da6b8f23f6863a36adb7de3abad8ed24c5c9e3ca8a5727cb971296bf2"},
-		{name: "daily long range", method: http.MethodGet, path: "/api/health/daily?days=15", status: 200, hash: "7bf2334c88ed26a3d64fa2ef265b4ac9aff5d2ca8bb0dc246d13484f6719111c"},
+		{name: "daily long range", method: http.MethodGet, path: "/api/health/daily?days=15", status: 200, hash: "b879220b84d981ee91107c1cef20aa7b14e45426ff2034cc52a9c865d11fd4cc"},
 		{name: "daily row errors", method: http.MethodGet, path: "/api/health/daily?days=2", mode: "daily error", status: 200, hash: "84ddebf4013ed78e9f3ad29f9886f0eb051ab49645c43069ee1dcc74c4e307e3"},
 		{name: "day series", method: http.MethodGet, path: healthFixtureDayURL, status: 200, hash: "c306a3ecc8eae2bce601d26a5cb7a8eece4719a82ee111fb3792fb8fd435389a"},
 		{name: "day partial", method: http.MethodGet, path: healthFixtureDayURL, mode: "partial day", status: 200, hash: "7afb16639049fdb356ade503c587c6bb6d03df868efca164142177df9a92c12c"},
