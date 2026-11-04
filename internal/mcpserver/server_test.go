@@ -92,9 +92,15 @@ func newClientForRoot(t *testing.T, root string) *mcp.ClientSession {
 func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
 	t.Helper()
 
+	return newClientWithAccount(t, open, gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")))
+}
+
+func newClientWithAccount(t *testing.T, open garmin.Opener, account *gc.Client) *mcp.ClientSession {
+	t.Helper()
+
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
-	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")),
+	srv := newServer(s, "test", account,
 		&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
 		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 		&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext, AppCount: func(ctx context.Context, sess *watchsession.Session) (int, error) {
