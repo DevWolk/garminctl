@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -147,5 +148,43 @@ func checkWorkoutQueueBody(t *testing.T, req *http.Request) {
 
 	if !reflect.DeepEqual(rows[0], want) {
 		t.Fatalf("queue payload=%v, want=%v", rows[0], want)
+	}
+}
+
+func TestWorkoutDeliveryForBorrowsCanonicalFacade(t *testing.T) {
+	t.Parallel()
+	root := testdump.WorkoutRoot(t)
+	opens := 0
+	watch := NewLazy(func(context.Context) (device.Device, error) { opens++; return device.NewDirFS(root) })
+	t.Cleanup(watch.Drop)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	lease, err := watch.Manager().Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = lease.Release() }()
+
+	account := testdump.WorkoutClient(t, "")
+
+	provider, ok := watch.WorkoutDeliveryFor(lease.Session(), account).(workoutDelivery)
+	if !ok || provider.cloud.svc != watch.Current() || provider.cloud.gc != account {
+		t.Fatal("queue provider created separate facade/account")
+	}
+
+	cache := watch.AppSchemaCacheFor(lease.Session())
+	if cache != &provider.cloud.svc.schemas {
+		t.Fatal("queue provider bypassed canonical schema cache")
+	}
+
+	if dx, err := provider.DeviceXML(ctx); err != nil || dx.UnitID == 0 {
+		t.Fatalf("borrowed metadata=%+v error=%v", dx, err)
+	}
+
+	if opens != 1 {
+		t.Fatalf("queue provider reopened watch: %d", opens)
 	}
 }

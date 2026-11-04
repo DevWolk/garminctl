@@ -1,11 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/music"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -179,6 +182,8 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	if settingsReads.Load() != 1 {
 		t.Fatalf("HTTP/MCP did not share the settings raw cache: reads=%d", settingsReads.Load())
 	}
+
+	checkRootWorkouts(ctx, t, base, root)
 
 	if opens.Load() != 1 || closes.Load() != 0 {
 		t.Fatalf("HTTP/MCP ownership: opens=%d closes=%d", opens.Load(), closes.Load())
@@ -419,5 +424,75 @@ func checkRootStore(ctx context.Context, t *testing.T, base string) {
 
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatal("HTTP/MCP store views differ")
+	}
+}
+
+func checkRootWorkouts(ctx context.Context, t *testing.T, base, root string) {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Join(root, "GARMIN", "NewFiles"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/workouts", bytes.NewBufferString(`{"spec":`+testdump.WorkoutSpecJSON+`,"local":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("workout HTTP status=%d error=%v", resp.StatusCode, err)
+	}
+
+	testdump.NormalizePendingPath(t, []byte(result.Path))
+
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "root-workouts", Version: "1"}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	out, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "workout_create", Arguments: json.RawMessage(`{"spec":` + testdump.WorkoutSpecJSON + `,"local":true}`)})
+	if err != nil || out.IsError {
+		t.Fatalf("workout MCP=%+v error=%v", out, err)
+	}
+
+	files, err := filepath.Glob(filepath.Join(root, "GARMIN", "NewFiles", "*.FIT"))
+	if err != nil || len(files) != 2 {
+		t.Fatalf("workout files=%v error=%v", files, err)
+	}
+
+	for _, file := range files {
+		checkRootWorkoutFile(t, file)
+	}
+}
+
+func checkRootWorkoutFile(t *testing.T, file string) {
+	t.Helper()
+
+	data, err := os.ReadFile(file) //nolint:gosec // matched only under the temporary root's NewFiles
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := fit.Decode(data)
+	if err != nil || len(f.MessagesByNum(26)) != 1 || len(f.MessagesByNum(27)) != 5 {
+		t.Fatalf("root workout FIT: %v", err)
+	}
+
+	if f.MessagesByNum(0)[0].Value(0) != uint64(5) {
+		t.Fatal("root workout file type changed")
 	}
 }

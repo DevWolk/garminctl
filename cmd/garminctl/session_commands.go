@@ -14,6 +14,7 @@ type sessionCommand func(context.Context, *watchsession.Session, []string) error
 func (c *cli) sessionCommands() map[string]sessionCommand {
 	return map[string]sessionCommand{
 		"settings":     c.settings,
+		"workouts":     c.workouts,
 		"store":        c.store,
 		"updates":      c.updates,
 		"software":     c.software,

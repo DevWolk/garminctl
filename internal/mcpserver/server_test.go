@@ -20,6 +20,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/updates"
 	updatesmcp "github.com/DevWolk/garminctl/internal/containers/updates/ui/mcp"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/workouts"
+	workoutsmcp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -101,6 +103,9 @@ func newClientWithAccount(t *testing.T, open garmin.Opener, account *gc.Client) 
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", account,
+		&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: func(sess *watchsession.Session) workouts.Delivery {
+			return runtime.Watch.WorkoutDeliveryFor(sess, account)
+		}, BindContext: runtime.RequestContext},
 		&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
 		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 		&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext, AppCount: func(ctx context.Context, sess *watchsession.Session) (int, error) {

@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/containers/workouts"
+	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
@@ -112,4 +114,16 @@ func (l *Lazy) Close(ctx context.Context) error {
 	l.mu.Unlock()
 
 	return err
+}
+
+// WorkoutDeliveryFor temporarily supplies the legacy Connect queue provider.
+// The caller holds a Manager lease; this borrows its canonical feature cache
+// without opening/acquiring a second watch or retaining the Session after release.
+func (l *Lazy) WorkoutDeliveryFor(session *watchsession.Session, client *gc.Client) workouts.Delivery {
+	current, epoch := l.manager.Snapshot()
+	if current != session {
+		epoch = 0
+	}
+
+	return NewCloud(l.facade(session, epoch), client).WorkoutDelivery()
 }

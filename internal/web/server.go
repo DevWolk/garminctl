@@ -223,11 +223,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health/day", s.healthDay)
 	mux.HandleFunc("GET /api/health/extras", s.healthExtras)
 	mux.HandleFunc("POST /api/health/weight", s.admittedOperation(s.healthWeight))
-	mux.HandleFunc("GET /api/workouts", s.workoutsList)
-	mux.HandleFunc("POST /api/workouts", s.admittedOperation(s.workoutsCreate))
-	mux.HandleFunc("POST /api/workouts/{id}/send", s.admittedOperation(s.workoutsSend))
-	mux.HandleFunc("DELETE /api/workouts/{id}", s.admittedOperation(s.workoutsDelete))
-	mux.HandleFunc("POST /api/workouts/preview", s.admittedOperation(s.workoutsPreview))
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
 	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
 	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
@@ -544,116 +539,5 @@ func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
 func (s *Server) healthDay(w http.ResponseWriter, r *http.Request) {
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		return garmin.NewCloud(svc, s.cloud).Day(ctx, r.URL.Query().Get("date"))
-	})
-}
-
-// ---------- workouts ----------
-
-func (s *Server) workoutsList(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Workouts(ctx, 0) // default page
-	})
-}
-
-type workoutReq struct {
-	Spec  garmin.WorkoutSpec `json:"spec"`
-	Send  bool               `json:"send"`  // queue it for the watch through Connect
-	Local bool               `json:"local"` // write the FIT straight to the watch instead of Connect
-}
-
-func (s *Server) workoutsPreview(w http.ResponseWriter, r *http.Request) {
-	var req workoutReq
-	if !decodeBody(w, r, &req) {
-		return
-	}
-
-	doc, err := req.Spec.ConnectJSON()
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"spec": req.Spec, "connect": doc})
-}
-
-func (s *Server) workoutsCreate(w http.ResponseWriter, r *http.Request) {
-	var req workoutReq
-	if !decodeBody(w, r, &req) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		if req.Local {
-			p, err := svc.WriteWorkoutToWatch(ctx, &req.Spec)
-			if err != nil {
-				return nil, err
-			}
-
-			return map[string]any{"path": p, noteKey: "Workout file written to GARMIN/NewFiles; unplug the watch and find it under Training > Workouts."}, nil
-		}
-
-		cloud := garmin.NewCloud(svc, s.cloud)
-
-		wk, err := cloud.CreateWorkout(ctx, &req.Spec)
-		if err != nil {
-			return nil, err
-		}
-
-		res := map[string]any{"workout": wk}
-		if !req.Send {
-			res[noteKey] = "Saved in Garmin Connect."
-
-			return res, nil
-		}
-
-		pulled, err := cloud.SendWorkout(ctx, wk.ID, wk.Name)
-		if err != nil {
-			res[noteKey] = "Saved in Garmin Connect, but sending to the watch failed: " + err.Error()
-
-			return res, nil //nolint:nilerr // partial success: the workout is saved in Connect; the send failure is reported in the note
-		}
-
-		res["pulled"] = pulled
-		res[noteKey] = sendNote(len(pulled))
-
-		return res, nil
-	})
-}
-
-// sendNote describes what happened after Connect was asked to queue a workout.
-func sendNote(pulled int) string {
-	if pulled > 0 {
-		return "Saved in Garmin Connect and written to the watch; unplug it to see the workout under Training > Workouts."
-	}
-
-	return "Saved in Garmin Connect and queued for the watch; Sync later or let the phone deliver it."
-}
-
-func (s *Server) workoutsSend(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad workout id")
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		pulled, err := garmin.NewCloud(svc, s.cloud).SendWorkout(ctx, id, r.URL.Query().Get("name"))
-		if err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"pulled": pulled}, nil
-	})
-}
-
-func (s *Server) workoutsDelete(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad workout id")
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(ctx, id)
 	})
 }

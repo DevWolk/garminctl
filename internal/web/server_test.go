@@ -30,6 +30,9 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/watch"
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/workouts"
+	workoutshttp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/http"
+	workoutsmcp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -125,8 +128,17 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 
 // newServer retains the test fixture's constructor while production wiring
 // supplies process owners through ServeRuntime.
-func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
+func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients ...*gc.Client) *Server {
 	runtime := garmin.NewRuntime(ctx, open)
+
+	account := gc.New(gc.DefaultStorePath())
+	if len(clients) > 0 {
+		account = clients[0]
+	}
+
+	delivery := func(sess *watchsession.Session) workouts.Delivery {
+		return runtime.Watch.WorkoutDeliveryFor(sess, account)
+	}
 
 	appCount := func(ctx context.Context, sess *watchsession.Session) (int, error) {
 		apps, err := garmin.NewFromSession(sess).Apps(ctx)
@@ -147,8 +159,9 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 	}
 	invalidateFor := func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset }
 
-	return serverWithRuntime(runtime, gc.New(gc.DefaultStorePath()), autoSync, Features{
+	return serverWithRuntime(runtime, account, autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
+			&workoutshttp.Handler{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery},
 			&musichttp.Handler{Manager: runtime.Watch.Manager()},
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
@@ -156,6 +169,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool) *Server {
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
 		},
 		MCP: []mcpx.ToolRegistrar{
+			&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery, BindContext: runtime.RequestContext},
 			&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
@@ -174,12 +188,11 @@ func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, 
 
 	root := testdump.Root(t)
 
-	s := newServer(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-	if cloud != nil {
-		s.cloud = cloud
-	} else {
-		s.cloud = gc.New(filepath.Join(t.TempDir(), "garmin-connect.json"))
+	if cloud == nil {
+		cloud = gc.New(filepath.Join(t.TempDir(), "garmin-connect.json"))
 	}
+
+	s := newServer(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, cloud)
 
 	ts := httptest.NewUnstartedServer(nil)
 

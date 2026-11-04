@@ -42,8 +42,7 @@ func TestWorkoutsHTTPContracts(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			root := testdump.WorkoutRoot(t)
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-			s.cloud = testdump.WorkoutClient(t, test.mode)
+			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, testdump.WorkoutClient(t, test.mode))
 			ts := serveContractServer(t, s)
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, bytes.NewBufferString(test.body))

@@ -92,6 +92,11 @@ See CLAUDE.md for the working rules. Module map:
   workout-only Delivery ports are supplied by callers; legacy Cloud delegates
   preserve already-leased and job-bound queue access until INV-18. Connect owns
   PulledFile in its early models leaf; garmin and workouts retain aliases.
+  ui/cli owns list/create/send output over the entry point's scoped Session;
+  ui/http owns five existing routes and ui/mcp three typed tools. App injects
+  the same Manager/account and a temporary WorkoutDeliveryFor bridge borrowing
+  the canonical legacy facade/cache without acquiring again. HTTP note and MCP
+  sendError partial-success policies remain adapter-specific.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -106,8 +111,8 @@ See CLAUDE.md for the working rules. Module map:
   protocol and label mapping; caller-scoped profile caching and health/status
   error policy remain in Cloud while feature consumers are extracted.
 - `internal/garmin/health.go` (activities from the watch's FIT files with a
-  disk cache, daily/intraday health from Connect), `workouts.go`
-  (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
+  disk cache, daily/intraday health from Connect); `workouts.go` retains aliases
+  and delegates plus the temporary filtered queue provider;
   `music.go` delegates tracks, ID3 tags and playlists to the music container.
 - `internal/containers/music` owns library/track/playlist/provider DTOs, four
   stateless Actions, ID3 codecs and media path/name helpers over Session.

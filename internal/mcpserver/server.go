@@ -3,7 +3,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -94,7 +93,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 
 	addCloudTools(srv, s, cloudClient)
 	addHealthTools(srv, s, cloudClient)
-	addWorkoutTools(srv, s, cloudClient)
 
 	return srv
 }
@@ -266,130 +264,6 @@ func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 		Annotations: readOnly("Intraday health", true),
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in dayIn) (*garmin.DayDetail, error) {
 		return garmin.NewCloud(svc, cloudClient).Day(ctx, in.Date)
-	}))
-}
-
-// workoutIn mirrors garmin.WorkoutSpec with one level of repeat groups,
-// because a schema for a recursive type cannot be inferred.
-type workoutIn struct {
-	Name        string   `json:"name" jsonschema:"workout name as it will appear on the watch"`
-	Sport       string   `json:"sport" jsonschema:"running, cycling, swimming, walking, hiking, strength, cardio, hiit, yoga, pilates or other"`
-	Description string   `json:"description,omitempty"`
-	Steps       []stepIn `json:"steps" jsonschema:"the steps in order; a step is either one executable step or a repeat group (repeat > 0 with its own steps)"`
-}
-
-type stepIn struct {
-	leafStepIn
-	Repeat int          `json:"repeat,omitempty" jsonschema:"repeat count of a group; then only steps is read"`
-	Steps  []leafStepIn `json:"steps,omitempty" jsonschema:"the steps of a repeat group; groups do not nest"`
-}
-
-// leafStepIn is one executable step: exactly one end condition and an
-// optional target.
-type leafStepIn struct {
-	Type     string `json:"type,omitempty" jsonschema:"warmup, cooldown, interval, recovery, rest or other"`
-	Name     string `json:"name,omitempty" jsonschema:"optional label shown on the watch"`
-	Duration string `json:"duration,omitempty" jsonschema:"end after a time: '10:00', '90s', '10m', '1h'"`
-	Distance string `json:"distance,omitempty" jsonschema:"end after a distance: '400m', '2km', '1mi'"`
-	Calories int    `json:"calories,omitempty" jsonschema:"end after burning this many kcal"`
-	Lap      bool   `json:"lap,omitempty" jsonschema:"end with the lap button"`
-	Target   string `json:"target,omitempty" jsonschema:"'hr 140-160', 'hr zone 3', 'pace 4:30-4:45' (min/km), 'speed 10-12' (km/h), 'cadence 170-180' or 'power 200-250'"`
-}
-
-// spec converts matching JSON fields without duplicating the field mapping.
-func (w workoutIn) spec() (garmin.WorkoutSpec, error) {
-	var out garmin.WorkoutSpec
-
-	b, err := json.Marshal(w)
-	if err != nil {
-		return out, err
-	}
-
-	err = json.Unmarshal(b, &out)
-
-	return out, err
-}
-
-type wkIn struct {
-	Spec  workoutIn `json:"spec" jsonschema:"the workout: name, sport and steps"`
-	Local bool      `json:"local,omitempty" jsonschema:"skip Garmin Connect: write the workout FIT straight into GARMIN/NewFiles (works without sign-in; the workout will not appear in Connect)"`
-}
-
-type wkSendIn struct {
-	ID int64 `json:"id" jsonschema:"workout id from workouts_list"`
-}
-
-type workoutsResult struct {
-	Workouts []garmin.CloudWorkout `json:"workouts"`
-}
-
-type pulledResult struct {
-	Pulled []garmin.PulledFile `json:"pulled"`
-}
-
-type workoutResult struct {
-	Workout   *garmin.CloudWorkout `json:"workout,omitempty"`
-	Pulled    []garmin.PulledFile  `json:"pulled,omitempty"`
-	SendError string               `json:"sendError,omitempty"`
-	Path      string               `json:"path,omitempty"`
-	Note      string               `json:"note,omitempty"`
-}
-
-func addWorkoutTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "workouts_list",
-		Description: "List Garmin Connect workouts with id, name, sport and estimated duration. Use id with workout_send.",
-		Annotations: readOnly("List workouts", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (workoutsResult, error) {
-		list, err := garmin.NewCloud(svc, cloudClient).Workouts(ctx, 0) // default page
-		return workoutsResult{Workouts: list}, err
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "workout_create",
-		Description: "Create a workout in Garmin Connect and attempt USB delivery. With local=true, save only to the watch. Unplug after delivery to load the workout.",
-		Annotations: writes("Create workout", false, true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in wkIn) (workoutResult, error) {
-		spec, err := in.Spec.spec()
-		if err != nil {
-			return workoutResult{}, err
-		}
-
-		if in.Local {
-			p, err := svc.WriteWorkoutToWatch(ctx, &spec)
-			if err != nil {
-				return workoutResult{}, err
-			}
-
-			return workoutResult{Path: p, Note: "written to GARMIN/NewFiles; unplug the watch to see it"}, nil
-		}
-
-		cloud := garmin.NewCloud(svc, cloudClient)
-
-		wk, err := cloud.CreateWorkout(ctx, &spec)
-		if err != nil {
-			return workoutResult{}, err
-		}
-
-		out := workoutResult{Workout: wk}
-
-		pulled, err := cloud.SendWorkout(ctx, wk.ID, wk.Name)
-		if err != nil {
-			out.SendError = err.Error()
-		} else {
-			out.Pulled = pulled
-		}
-
-		return out, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "workout_send",
-		Description: "Queue a Garmin Connect workout and attempt USB delivery. Unplug after delivery to load it; sync later if no file is returned.",
-		Annotations: writes("Send workout to watch", false, true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in wkSendIn) (pulledResult, error) {
-		pulled, err := garmin.NewCloud(svc, cloudClient).SendWorkout(ctx, in.ID, "")
-		return pulledResult{Pulled: pulled}, err
 	}))
 }
 

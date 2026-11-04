@@ -236,7 +236,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 		"activities": c.activities,
 		"activity":   c.activity,
 		"health":     c.health,
-		"workouts":   c.workouts,
 		"backup":     c.backup,
 	}
 }
@@ -251,15 +250,6 @@ func (c *cli) flagSet(name string) *flag.FlagSet {
 	fs.SetOutput(c.errOut)
 
 	return fs
-}
-
-func trunc(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-
-	return string(r[:n-1]) + "…"
 }
 
 func deviceJob(cmd string, args []string) bool {
