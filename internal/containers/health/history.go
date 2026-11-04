@@ -26,6 +26,7 @@ type historyBuild struct {
 	mu     sync.Mutex
 	byDate map[string]*DailyHealth
 	errs   []string
+	failed [][2]string // windows (from, to) with a failed fetch; their rows are incomplete
 }
 
 // row returns the row for date, creating it. The caller holds mu.
@@ -40,10 +41,22 @@ func (h *historyBuild) row(date string) *DailyHealth {
 	return r
 }
 
-func (h *historyBuild) fail(what string, err error) {
+func (h *historyBuild) fail(from, to, what string, err error) {
 	h.mu.Lock()
 	h.errs = append(h.errs, what+": "+err.Error())
+	h.failed = append(h.failed, [2]string{from, to})
 	h.mu.Unlock()
+}
+
+// incomplete reports whether date lies in a window with a failed fetch.
+func (h *historyBuild) incomplete(date string) bool {
+	for _, w := range h.failed {
+		if date >= w[0] && date <= w[1] {
+			return true
+		}
+	}
+
+	return false
 }
 
 // cachedWindow copies the cached rows of ws..we into the build and reports
@@ -67,7 +80,8 @@ func (h *historyBuild) cachedWindow(cache map[string]DailyHealth, ws, we time.Ti
 }
 
 // rows lays the collected days out in order and refreshes the cache with the
-// days that no longer change.
+// days that no longer change. Days of a window with a failed fetch are not
+// cached, so a later call fetches them again.
 func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, final string) []DailyHealth {
 	out := make([]DailyHealth, 0, len(h.byDate))
 
@@ -81,7 +95,7 @@ func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, 
 		}
 
 		out = append(out, *r)
-		if date <= final {
+		if date <= final && !h.incomplete(date) {
 			cache[date] = *r
 		}
 	}
@@ -163,7 +177,7 @@ func (c *accountReader) fetchWindow(ctx context.Context, wg *sync.WaitGroup, sem
 	for _, f := range fetches {
 		wg.Go(func() {
 			if !acquire(ctx, sem) {
-				h.fail(f.what, ctx.Err())
+				h.fail(from, to, f.what, ctx.Err())
 
 				return
 			}
@@ -171,7 +185,7 @@ func (c *accountReader) fetchWindow(ctx context.Context, wg *sync.WaitGroup, sem
 			defer func() { <-sem }()
 
 			if err := f.fn(ctx, h, from, to); err != nil {
-				h.fail(f.what, err)
+				h.fail(from, to, f.what, err)
 			}
 		})
 	}
