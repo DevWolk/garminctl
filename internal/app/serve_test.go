@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/music"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/garmin"
@@ -86,6 +87,8 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	if err := fixture.Close(); err != nil {
 		t.Fatal(err)
 	}
+
+	testdump.AddMusic(t, root)
 
 	var opens, closes, settingsReads, storeRequests atomic.Int32
 
@@ -171,6 +174,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 
 	checkRootStore(ctx, t, base)
 	checkRootUpdates(ctx, t, base)
+	checkRootMusic(ctx, t, base)
 
 	if settingsReads.Load() != 1 {
 		t.Fatalf("HTTP/MCP did not share the settings raw cache: reads=%d", settingsReads.Load())
@@ -184,6 +188,45 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 
 	if closes.Load() != 1 {
 		t.Fatalf("owned watch closes=%d, want 1", closes.Load())
+	}
+}
+
+func checkRootMusic(ctx context.Context, t *testing.T, base string) {
+	t.Helper()
+
+	var expected music.Library
+	rootGetJSON(ctx, t, base, "/api/music", &expected)
+
+	if len(expected.Tracks) != 3 {
+		t.Fatalf("root music tracks=%d", len(expected.Tracks))
+	}
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "root-music", Version: "1"}, nil)
+
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = session.Close() }()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "music_list", Arguments: map[string]any{}})
+	if err != nil || result.IsError {
+		t.Fatalf("music tool=%+v error=%v", result, err)
+	}
+
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var actual music.Library
+	if err := json.Unmarshal(data, &actual); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(expected, actual) {
+		t.Fatal("HTTP/MCP music libraries differ")
 	}
 }
 

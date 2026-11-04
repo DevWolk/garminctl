@@ -17,6 +17,7 @@ func (c *cli) sessionCommands() map[string]sessionCommand {
 		"store":        c.store,
 		"updates":      c.updates,
 		"software":     c.software,
+		musicCommand:   c.music,
 		"apps":         c.apps,
 		"app-hide":     c.appHide,
 		"app-show":     c.appShow,
@@ -60,4 +61,30 @@ func (c *cli) withSessionAt(ctx context.Context, epoch watchsession.ConnectionEp
 	}
 
 	return errors.Join(err, lease.Release())
+}
+
+type sessionJobCommand func(context.Context, []string) error
+
+func (c *cli) sessionJob(cmd string, args []string) sessionJobCommand {
+	if cmd == musicCommand && deviceJob(cmd, args) {
+		return c.musicJob
+	}
+
+	return nil
+}
+
+// runSessionJob connects once, then releases the initial lease before job/epoch
+// admission. Host I/O and per-file operations retain the original batch order.
+func (c *cli) runSessionJob(ctx context.Context, command sessionJobCommand, args []string) error {
+	lease, err := c.runtime.Watch.Manager().Acquire(ctx)
+	if err != nil {
+		return err
+	}
+
+	c.epoch = lease.Epoch()
+	if err := lease.Release(); err != nil {
+		return err
+	}
+
+	return c.runBoundJob(ctx, func(ctx context.Context) error { return command(ctx, args) })
 }

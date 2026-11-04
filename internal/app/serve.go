@@ -6,6 +6,8 @@ import (
 
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	musichttp "github.com/DevWolk/garminctl/internal/containers/music/ui/http"
+	musicmcp "github.com/DevWolk/garminctl/internal/containers/music/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	storehttp "github.com/DevWolk/garminctl/internal/containers/store/ui/http"
@@ -43,13 +45,14 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 
 	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{
 		HTTP: []httpx.RouteRegistrar{
+			&musichttp.Handler{Manager: runtime.Watch.Manager()},
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
 			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
 			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: StoreRegistry},
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: WatchUpdateConfig, Registry: UpdatesRegistry, InvalidateFor: updateInvalidator(runtime)},
 		},
-		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime)},
+		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime), musicTools(runtime)},
 		WatchSummary: WatchSummary,
 	})
 }
@@ -59,7 +62,7 @@ func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime))
+	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime), musicTools(runtime))
 }
 
 func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {
@@ -86,4 +89,8 @@ func updatesTools(runtime *garmin.Runtime) *updatesmcp.Tools {
 		InvalidateFor: updateInvalidator(runtime),
 		BindContext:   runtime.RequestContext,
 	}
+}
+
+func musicTools(runtime *garmin.Runtime) *musicmcp.Tools {
+	return &musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext}
 }

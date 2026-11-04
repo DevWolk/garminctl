@@ -22,7 +22,7 @@ func TestRunMusicBatchAndBackupPreserveFiles(t *testing.T) {
 	}
 
 	var out, diagnostics bytes.Buffer
-	if err := run([]string{rootFlag, root, "music", "add", first, second}, &out, &diagnostics); err != nil {
+	if err := run([]string{rootFlag, root, "music", musicAddSubcommand, first, second}, &out, &diagnostics); err != nil {
 		t.Fatal(err)
 	}
 

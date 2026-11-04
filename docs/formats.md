@@ -195,11 +195,11 @@ The implementation makes these network requests:
 | Area | Implementation and behavior |
 | --- | --- |
 | Authentication | [`internal/gc`](../internal/gc/client.go) uses mobile SSO with MFA, OAuth1 preauthorization and OAuth2 bearer exchange. Token responses supply expiry times. |
-| Software updates | [`updates.go`](../internal/garmin/updates.go) POSTs `{"GarminDeviceXml": "..."}` to `https://omt.garmin.com/api/device-software/v1/updates`. Downloads check supplied size and MD5 before writing the manifest's installation path. |
+| Software updates | [`updates/tasks.go`](../internal/containers/updates/tasks.go) POSTs `{"GarminDeviceXml": "..."}` to `https://omt.garmin.com/api/device-software/v1/updates`. Downloads check supplied size and MD5 before writing the manifest's installation path. |
 | Store | [`ciqstore/store.go`](../internal/ciqstore/store.go) requests public app metadata, search, device types and reviews under `apps.garmin.com/api/appsLibraryExternalServices/api/asw`. `startPageIndex` is a record offset. Store type IDs differ from registry type IDs. |
 | Cloud sync | [`cloud.go`](../internal/garmin/cloud.go) reads and updates device settings, downloads device messages, and uploads supported data types using `uploadTargets`. |
 | Health and workouts | [`health.go`](../internal/garmin/health.go), [`health_more.go`](../internal/garmin/health_more.go) and [`workouts.go`](../internal/garmin/workouts.go) define the Connect endpoints and payloads. |
-| Audio providers | [`music.go`](../internal/garmin/music.go) reports provider names and cache sizes from device XML separately from local audio files. |
+| Audio providers | [`music/tasks.go`](../internal/containers/music/tasks.go) reports provider names and cache sizes from device XML separately from local audio files. |
 
 Cloud downloads route `FIT` to `NewFiles`, `BRAIN`/`PRG` to the app folder,
 and other types to an input-capable XML path. Messages are acknowledged only

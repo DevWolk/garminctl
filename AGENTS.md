@@ -5,9 +5,10 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings, apps, store, updates/software and bounded watch commands) and `deviceCommands`
+  `sessionCommands` (settings, apps, store, updates/software, bounded music and watch commands) and `deviceCommands`
   (legacy features and the backup job compatibility entry).
-  Both watch paths use the same runtime/Manager lifecycle; extracted commands
+  `sessionJob` routes music add/rm through the same job/epoch guard with direct
+  per-file Session leases. Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
@@ -102,13 +103,17 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/garmin/health.go` (activities from the watch's FIT files with a
   disk cache, daily/intraday health from Connect), `workouts.go`
   (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
-  `music.go` (tracks, ID3 tags, playlists).
+  `music.go` delegates tracks, ID3 tags and playlists to the music container.
 - `internal/containers/music` owns library/track/playlist/provider DTOs, four
   stateless Actions, ID3 codecs and media path/name helpers over Session.
   It reads provider metadata from device XML, with no apps registry dependency.
   Legacy DTO/Tags aliases, ReadTags and Service delegates preserve callers.
   Title formatting is privately duplicated unchanged while health still uses
-  the legacy helper; no music-to-health import is introduced.
+  the legacy helper; no music-to-health import is introduced. ui/cli owns list/
+  playlist formatting and host reads with supplied per-file lease callbacks.
+  CLI routing retains initial connect, job admission and epoch binding; add
+  progress stays inside its lease and rm progress follows release. ui/http owns
+  four guarded routes and ui/mcp two typed tools, supplied by app to both shells.
 - `internal/containers/updates` owns watch software manifest/staging/inventory
   and app-version comparison Actions, DTOs and private HTTP helpers. Config
   supplies the existing endpoint/client; a scoped registry reader supplies apps.

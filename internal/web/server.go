@@ -228,10 +228,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/workouts/{id}/send", s.admittedOperation(s.workoutsSend))
 	mux.HandleFunc("DELETE /api/workouts/{id}", s.admittedOperation(s.workoutsDelete))
 	mux.HandleFunc("POST /api/workouts/preview", s.admittedOperation(s.workoutsPreview))
-	mux.HandleFunc("GET /api/music", s.musicList)
-	mux.HandleFunc("POST /api/music", s.admittedOperation(s.musicAdd))
-	mux.HandleFunc("DELETE /api/music", s.admittedOperation(s.musicRemove))
-	mux.HandleFunc("PUT /api/music/playlists/{name}", s.admittedOperation(s.musicPlaylist))
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
 	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
 	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
@@ -659,42 +655,5 @@ func (s *Server) workoutsDelete(w http.ResponseWriter, r *http.Request) {
 
 	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
 		return map[string]any{"ok": true}, garmin.NewCloud(svc, s.cloud).DeleteWorkout(ctx, id)
-	})
-}
-
-// ---------- music ----------
-
-func (s *Server) musicList(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) { return svc.Music(ctx) })
-}
-
-func (s *Server) musicAdd(w http.ResponseWriter, r *http.Request) {
-	data, ok := readBody(w, r, maxTrackBytes)
-	if !ok {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.AddTrack(ctx, r.URL.Query().Get("folder"), r.URL.Query().Get("name"), data)
-	})
-}
-
-func (s *Server) musicRemove(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return map[string]any{"ok": true}, svc.RemoveTrack(ctx, r.URL.Query().Get("path"))
-	})
-}
-
-func (s *Server) musicPlaylist(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Tracks []string `json:"tracks"`
-	}
-
-	if !decodeBody(w, r, &body) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.WritePlaylist(ctx, r.PathValue("name"), body.Tracks)
 	})
 }

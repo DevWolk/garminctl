@@ -10,14 +10,10 @@ import (
 const (
 	maxJSONBody    = httpx.MaxJSONBody
 	maxUploadBytes = httpx.MaxUploadBytes
-	maxTrackBytes  = httpx.MaxTrackBytes
 )
 
 func localOnly(addr string, next http.Handler) http.Handler  { return httpx.LocalOnly(addr, next) }
 func writeJSON(w http.ResponseWriter, status int, value any) { httpx.WriteJSON(w, status, value) }
-func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
-	return httpx.ReadBody(w, r, limit)
-}
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	httpx.WriteError(w, status, message)

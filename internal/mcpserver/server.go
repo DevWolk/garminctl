@@ -95,7 +95,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 	addCloudTools(srv, s, cloudClient)
 	addHealthTools(srv, s, cloudClient)
 	addWorkoutTools(srv, s, cloudClient)
-	addMusicTools(srv, s)
 
 	return srv
 }
@@ -391,29 +390,6 @@ func addWorkoutTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in wkSendIn) (pulledResult, error) {
 		pulled, err := garmin.NewCloud(svc, cloudClient).SendWorkout(ctx, in.ID, "")
 		return pulledResult{Pulled: pulled}, err
-	}))
-}
-
-type plIn struct {
-	Name   string   `json:"name" jsonschema:"playlist name"`
-	Tracks []string `json:"tracks" jsonschema:"watch paths from music_list, in order"`
-}
-
-func addMusicTools(srv *mcp.Server, s *server) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "music_list",
-		Description: "List audio files, playlists and streaming app cache sizes. Streaming downloads are excluded. Use track paths with music_playlist.",
-		Annotations: readOnly("List music", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.MusicLibrary, error) {
-		return svc.Music(ctx)
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "music_playlist",
-		Description: "Write a playlist (Music/<name>.m3u) from tracks already on the watch; an existing playlist of that name is replaced.",
-		Annotations: writes("Write playlist", false, false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in plIn) (*garmin.Playlist, error) {
-		return svc.WritePlaylist(ctx, in.Name, in.Tracks)
 	}))
 }
 

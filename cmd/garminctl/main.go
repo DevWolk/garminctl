@@ -183,6 +183,10 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args 
 		err = errors.Join(err, runtime.Close(closeCtx))
 	}()
 
+	if job := c.sessionJob(cmd, args); job != nil {
+		return c.runSessionJob(runtime.Context(), job, args)
+	}
+
 	if command := c.sessionCommands()[cmd]; command != nil {
 		return c.runSession(runtime.Context(), command, args)
 	}
@@ -233,7 +237,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 		"activity":   c.activity,
 		"health":     c.health,
 		"workouts":   c.workouts,
-		"music":      c.music,
 		"backup":     c.backup,
 	}
 }
@@ -268,7 +271,7 @@ func deviceJob(cmd string, args []string) bool {
 		return false
 	}
 
-	return (cmd == cloudCommand && args[0] == "sync") || (cmd == "music" && (args[0] == "add" || args[0] == "rm"))
+	return (cmd == cloudCommand && args[0] == "sync") || (cmd == musicCommand && (args[0] == "add" || args[0] == "rm"))
 }
 
 func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn deviceCommand, args []string) error {
@@ -276,6 +279,11 @@ func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn deviceCommand, ar
 		return fn(ctx, nil, args)
 	}
 
+	return c.runBoundJob(ctx, func(ctx context.Context) error { return fn(ctx, nil, args) })
+}
+
+// runBoundJob retains admission and connection identity between operation leases.
+func (c *cli) runBoundJob(ctx context.Context, body func(context.Context) error) error {
 	release, err := c.runtime.Watch.Gate().EnterJob(ctx)
 	if err != nil {
 		return err
@@ -288,23 +296,5 @@ func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn deviceCommand, ar
 	}
 	defer releaseEpoch()
 
-	return fn(bound, nil, args)
-}
-
-func (c *cli) withDeviceGroup(ctx context.Context, legacy *garmin.Service, body func(context.Context, *garmin.Service) error) error {
-	if c.runtime == nil {
-		return body(ctx, legacy)
-	}
-
-	lease, err := c.runtime.Watch.AcquireAt(ctx, c.epoch)
-	if err != nil {
-		return err
-	}
-
-	err = body(lease.Context(), lease.Service())
-	if errors.Is(err, device.ErrDisconnected) {
-		err = errors.Join(err, c.runtime.Watch.DropAt(lease.Epoch()))
-	}
-
-	return errors.Join(err, lease.Release())
+	return body(bound)
 }

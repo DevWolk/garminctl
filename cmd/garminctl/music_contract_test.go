@@ -21,8 +21,8 @@ func TestMusicCLIContracts(t *testing.T) {
 	}{
 		{name: "default text", hash: "2d3c6801def30a291923cc3dfbc1be30036e09175f766a7dd581883b4e6a4faf"},
 		{name: "library JSON", args: []string{"ls"}, json: true, hash: "49d18728dfe30ce02d88e060a757bea8fa9aaa4879d4ae2c8935d45035d85488"},
-		{name: "add text", args: []string{"add"}, upload: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
-		{name: "add JSON flag", args: []string{"add"}, upload: true, json: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
+		{name: "add text", args: []string{musicAddSubcommand}, upload: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
+		{name: "add JSON flag", args: []string{musicAddSubcommand}, upload: true, json: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
 		{name: "remove text", args: []string{"rm", testdump.MusicTrack}, hash: "2517836304f6dba02f41b060438947dd631e4dbd7e58fd346d85dcd64efeb802"},
 		{name: "playlist text", args: []string{"playlist", "  Mix:/  ", testdump.MusicTrack, "Podcasts/episode.aac"}, hash: "c4a66c0912372af2ae1b283dd7ec53049a5f902b70347e78569d8fa86361439e"},
 		{name: "playlist JSON flag", args: []string{"playlist", "Mix", testdump.MusicTrack}, json: true, hash: "c4a66c0912372af2ae1b283dd7ec53049a5f902b70347e78569d8fa86361439e"},

@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	musicmcp "github.com/DevWolk/garminctl/internal/containers/music/ui/mcp"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/store"
 	storemcp "github.com/DevWolk/garminctl/internal/containers/store/ui/mcp"
@@ -94,6 +95,7 @@ func newClientWithOpener(t *testing.T, open garmin.Opener) *mcp.ClientSession {
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", gc.New(filepath.Join(t.TempDir(), "garmin-connect.json")),
+		&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
 		&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
 		&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext, AppCount: func(ctx context.Context, sess *watchsession.Session) (int, error) {
 			apps, err := garmin.NewFromSession(sess).Apps(ctx)

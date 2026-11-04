@@ -25,6 +25,15 @@ func MusicPayload() []byte {
 func MusicRoot(tb testing.TB) string {
 	tb.Helper()
 	root := Root(tb)
+	AddMusic(tb, root)
+
+	return root
+}
+
+// AddMusic adds fixed synthetic media to an existing temporary fixture root.
+func AddMusic(tb testing.TB, root string) {
+	tb.Helper()
+
 	files := map[string][]byte{
 		MusicTrack:                []byte("synthetic local audio"),
 		"Podcasts/episode.aac":    []byte("synthetic podcast"),
@@ -48,6 +57,4 @@ func MusicRoot(tb testing.TB) string {
 			tb.Fatal(err)
 		}
 	}
-
-	return root
 }
