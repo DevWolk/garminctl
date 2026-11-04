@@ -103,6 +103,10 @@ See CLAUDE.md for the working rules. Module map:
   disk cache, daily/intraday health from Connect), `workouts.go`
   (`WorkoutSpec` → Connect JSON and workout FIT; create/send/delete),
   `music.go` (tracks, ID3 tags, playlists).
+- `internal/containers/store` owns catalog View/App/Detail, Browse/Detail Actions,
+  installed-version decoration and the process device-type cache. A scoped
+  InstalledApps callback supplies the apps registry; nil/error leaves records
+  undecorated. Legacy store DTO aliases and Service delegates retain callers.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); `internal/garmin/store.go` merges it
   with the installed apps.
