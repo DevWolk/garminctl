@@ -28,6 +28,7 @@ func TestArchitectureImportRules(t *testing.T) {
 		{name: "feature cannot import legacy", from: architectureSettings, to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "own UI uses core", from: architectureSettings + "/ui/http", to: architectureSettings},
 		{name: "UI cannot import other feature", from: architectureSettings + "/ui/http", to: architectureModule + "/internal/containers/apps", forbidden: true},
+		{name: "UI cannot import legacy facade", from: architectureSettings + "/ui/http", to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "core cannot import own UI", from: architectureSettings, to: architectureSettings + "/ui/http", forbidden: true},
 		{name: "legacy facade may delegate to core", from: architectureModule + "/internal/garmin", to: architectureSettings},
 		{name: "HTTP clients allowed", from: architectureSettings, to: "net/http"},

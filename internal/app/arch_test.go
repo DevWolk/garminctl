@@ -16,7 +16,11 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const architectureModule = "github.com/DevWolk/garminctl"
+const (
+	architectureModule = "github.com/DevWolk/garminctl"
+	// architectureFacade is the legacy facade package below internal.
+	architectureFacade = "garmin"
+)
 
 type architectureView struct {
 	name string
@@ -168,7 +172,7 @@ func architectureInfrastructure(path string) bool {
 }
 
 func architectureCore(path string) bool {
-	return !architectureTransport(path) && (architectureInfrastructure(path) || architectureFeature(path) != "" || architectureInternal(path) == "garmin")
+	return !architectureTransport(path) && (architectureInfrastructure(path) || architectureFeature(path) != "" || architectureInternal(path) == architectureFacade)
 }
 
 func architectureImportViolation(from, to string) string {
@@ -176,7 +180,7 @@ func architectureImportViolation(from, to string) string {
 		return "only entry points and app wiring may import app"
 	}
 
-	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureInternal(to) == "garmin" || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
+	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureInternal(to) == architectureFacade || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
 		return "infrastructure cannot depend on features or server/native shells"
 	}
 
@@ -184,7 +188,19 @@ func architectureImportViolation(from, to string) string {
 		return architectureCoreImportViolation(from, to)
 	}
 
-	if architectureFeatureUI(from) && architectureFeature(to) != "" && architectureFeature(from) != architectureFeature(to) {
+	if architectureFeatureUI(from) {
+		return architectureFeatureUIImportViolation(from, to)
+	}
+
+	return ""
+}
+
+func architectureFeatureUIImportViolation(from, to string) string {
+	if architectureInternal(to) == architectureFacade {
+		return "a feature UI cannot import the legacy facade"
+	}
+
+	if architectureFeature(to) != "" && architectureFeature(from) != architectureFeature(to) {
 		return "a feature UI may import only its own feature"
 	}
 
@@ -196,7 +212,7 @@ func architectureCoreImportViolation(from, to string) string {
 		return "core cannot import transport adapters"
 	}
 
-	if architectureFeature(from) != "" && architectureInternal(to) == "garmin" {
+	if architectureFeature(from) != "" && architectureInternal(to) == architectureFacade {
 		return "new feature core cannot import the legacy facade"
 	}
 
