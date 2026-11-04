@@ -18,8 +18,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) { httpx.WriteJSON(w
 func writeError(w http.ResponseWriter, status int, message string) {
 	httpx.WriteError(w, status, message)
 }
-func writeErr(w http.ResponseWriter, err error)     { httpx.WriteErr(w, err) }
-func deviceErrorStatus(err error, fallback int) int { return httpx.ErrorStatus(err, fallback) }
+func writeErr(w http.ResponseWriter, err error) { httpx.WriteErr(w, err) }
 func decodeBody(w http.ResponseWriter, r *http.Request, value any) bool {
 	return httpx.DecodeBody(w, r, value)
 }

@@ -17,6 +17,9 @@ import (
 
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/health"
+	healthhttp "github.com/DevWolk/garminctl/internal/containers/health/ui/http"
+	healthmcp "github.com/DevWolk/garminctl/internal/containers/health/ui/mcp"
 	musichttp "github.com/DevWolk/garminctl/internal/containers/music/ui/http"
 	musicmcp "github.com/DevWolk/garminctl/internal/containers/music/ui/mcp"
 	settingshttp "github.com/DevWolk/garminctl/internal/containers/settings/ui/http"
@@ -136,6 +139,10 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 		account = clients[0]
 	}
 
+	access := func(sess *watchsession.Session) health.AccountAccess {
+		return runtime.Watch.HealthAccessFor(sess, account)
+	}
+
 	delivery := func(sess *watchsession.Session) workouts.Delivery {
 		return runtime.Watch.WorkoutDeliveryFor(sess, account)
 	}
@@ -161,6 +168,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 
 	return serverWithRuntime(runtime, account, autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
+			&healthhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access},
 			&workoutshttp.Handler{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery},
 			&musichttp.Handler{Manager: runtime.Watch.Manager()},
 			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
@@ -169,6 +177,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
 		},
 		MCP: []mcpx.ToolRegistrar{
+			&healthmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access, BindContext: runtime.RequestContext},
 			&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery, BindContext: runtime.RequestContext},
 			&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
 			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},

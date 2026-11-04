@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/containers/workouts"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
@@ -126,4 +127,15 @@ func (l *Lazy) WorkoutDeliveryFor(session *watchsession.Session, client *gc.Clie
 	}
 
 	return NewCloud(l.facade(session, epoch), client).WorkoutDelivery()
+}
+
+// HealthAccessFor borrows the canonical facade under the caller's Manager lease.
+// The returned identity/metadata callbacks must not escape that operation scope.
+func (l *Lazy) HealthAccessFor(session *watchsession.Session, client *gc.Client) health.AccountAccess {
+	current, epoch := l.manager.Snapshot()
+	if current != session {
+		epoch = 0
+	}
+
+	return NewCloud(l.facade(session, epoch), client).HealthAccess()
 }

@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +30,6 @@ var uiFS embed.FS
 const (
 	shutdownTimeout = 3 * time.Second
 	noteKey         = "note" // human-readable remark on a result object
-	rangeDays       = 14     // beyond this the range endpoints replace one request per day
 )
 
 // Features contains adapters assembled by the composition root. HTTP and MCP
@@ -217,12 +215,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/server", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
 	})
-	mux.HandleFunc("GET /api/health/activities", s.healthActivities)
-	mux.HandleFunc("GET /api/health/activities/{name}", s.healthActivity)
-	mux.HandleFunc("GET /api/health/daily", s.healthDaily)
-	mux.HandleFunc("GET /api/health/day", s.healthDay)
-	mux.HandleFunc("GET /api/health/extras", s.healthExtras)
-	mux.HandleFunc("POST /api/health/weight", s.admittedOperation(s.healthWeight))
 	mux.HandleFunc("GET /api/cloud/status", s.cloudStatus)
 	mux.HandleFunc("POST /api/cloud/login", s.admittedOperation(s.cloudLogin))
 	mux.HandleFunc("POST /api/cloud/mfa", s.admittedOperation(s.cloudMFA))
@@ -473,71 +465,5 @@ func (s *Server) withOptionalService(ctx context.Context, body func(context.Cont
 		}
 
 		return body(ctx, svc)
-	})
-}
-
-// ---------- health ----------
-
-func (s *Server) healthActivities(w http.ResponseWriter, r *http.Request) {
-	out, err := s.runtime.Activities.Activities(r.Context(), r.URL.Query().Get("wait") == "1")
-	if err != nil {
-		if _, ok := errors.AsType[*garmin.WatchAcquireError](err); ok {
-			writeJSON(w, deviceErrorStatus(err, http.StatusServiceUnavailable), statusResponse{Error: err.Error()})
-			return
-		}
-
-		writeErr(w, err)
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, out)
-}
-
-func (s *Server) healthActivity(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return svc.Activity(ctx, r.PathValue("name"), 0) // default track resolution
-	})
-}
-
-func (s *Server) healthDaily(w http.ResponseWriter, r *http.Request) {
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		if days > rangeDays {
-			return garmin.NewCloud(svc, s.cloud).History(ctx, days)
-		}
-
-		return garmin.NewCloud(svc, s.cloud).Daily(ctx, days)
-	})
-}
-
-func (s *Server) healthExtras(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Extras(ctx)
-	})
-}
-
-func (s *Server) healthWeight(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Kg float64 `json:"kg"`
-	}
-
-	if !decodeBody(w, r, &in) {
-		return
-	}
-
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		if err := garmin.NewCloud(svc, s.cloud).LogWeight(ctx, in.Kg, time.Time{}); err != nil {
-			return nil, err
-		}
-
-		return map[string]any{"ok": true, "kg": in.Kg}, nil
-	})
-}
-
-func (s *Server) healthDay(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(ctx context.Context, svc *garmin.Service) (any, error) {
-		return garmin.NewCloud(svc, s.cloud).Day(ctx, r.URL.Query().Get("date"))
 	})
 }

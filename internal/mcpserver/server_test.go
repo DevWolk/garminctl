@@ -13,6 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
+	"github.com/DevWolk/garminctl/internal/containers/health"
+	healthmcp "github.com/DevWolk/garminctl/internal/containers/health/ui/mcp"
 	musicmcp "github.com/DevWolk/garminctl/internal/containers/music/ui/mcp"
 	settingsmcp "github.com/DevWolk/garminctl/internal/containers/settings/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/store"
@@ -103,6 +105,9 @@ func newClientWithAccount(t *testing.T, open garmin.Opener, account *gc.Client) 
 	runtime := garmin.NewRuntime(t.Context(), open)
 	s := &server{svc: runtime.Watch, runtime: runtime}
 	srv := newServer(s, "test", account,
+		&healthmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: func(sess *watchsession.Session) health.AccountAccess {
+			return runtime.Watch.HealthAccessFor(sess, account)
+		}, BindContext: runtime.RequestContext},
 		&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: func(sess *watchsession.Session) workouts.Delivery {
 			return runtime.Watch.WorkoutDeliveryFor(sess, account)
 		}, BindContext: runtime.RequestContext},

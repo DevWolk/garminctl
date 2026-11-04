@@ -103,6 +103,11 @@ See CLAUDE.md for the working rules. Module map:
   Cloud retains per-instance profile/error/Forget policy until INV-18. Legacy
   types and coordinator constructors are aliases/delegates; no second runtime
   decoder or watch owner is created. Private barrier regressions moved with health.
+  ui/cli owns health/activity output and the daily-vs-history cutoff; activities
+  retains only the initial connect/release compatibility dispatch. ui/http owns
+  six routes and ui/mcp seven typed tools over the same runtime coordinator.
+  App supplies scoped HealthAccessFor callbacks, retaining per-operation identity
+  and canonical facade/cache without acquiring another lease.
 - `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
   `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
   `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
@@ -116,8 +121,8 @@ See CLAUDE.md for the working rules. Module map:
   `Upload`, `Sync`. `gc.CloudProfile`/`Client.SocialProfile` own the profile
   protocol and label mapping; caller-scoped profile caching and health/status
   error policy remain in Cloud while feature consumers are extracted.
-- `internal/garmin/health.go` (activities from the watch's FIT files with a
-  disk cache, daily/intraday health from Connect); `workouts.go` retains aliases
+- `internal/garmin/health.go` retains health model aliases/Service/Cloud delegates
+  and caller-scoped identity policy; `workouts.go` retains aliases
   and delegates plus the temporary filtered queue provider;
   `music.go` delegates tracks, ID3 tags and playlists to the music container.
 - `internal/containers/music` owns library/track/playlist/provider DTOs, four
@@ -159,8 +164,8 @@ See CLAUDE.md for the working rules. Module map:
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: legacy go-sdk tools are thin wrappers over `Service`
   through `withWatch[In, Out]`; registration is grouped by area
-  (`addUpdateTools`, `addCloudTools`, ...). Extracted settings, watch, apps and store
-  tools arrive through injected registrars. Every tool has
+  (`addCloudTools`). Extracted settings, watch, apps, store, updates, music,
+  workouts and health tools arrive through injected registrars. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so lists are wrapped (`filesResult`
   and friends) and recursive inputs are flattened (`workoutIn`: one level of

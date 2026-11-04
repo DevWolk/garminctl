@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -9,7 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/containers/health"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 )
 
 const (
@@ -19,14 +20,14 @@ const (
 )
 
 type healthReaderStub struct {
-	rows   []garmin.DailyHealth
+	rows   []health.DailyHealth
 	err    error
 	calls  []string
 	days   int
 	onRead func(context.Context)
 }
 
-func (r *healthReaderStub) Daily(ctx context.Context, days int) ([]garmin.DailyHealth, error) {
+func (r *healthReaderStub) Daily(ctx context.Context, days int) ([]health.DailyHealth, error) {
 	r.calls = append(r.calls, dailyRead)
 
 	r.days = days
@@ -37,7 +38,7 @@ func (r *healthReaderStub) Daily(ctx context.Context, days int) ([]garmin.DailyH
 	return r.rows, r.err
 }
 
-func (r *healthReaderStub) History(ctx context.Context, days int) ([]garmin.DailyHealth, error) {
+func (r *healthReaderStub) History(ctx context.Context, days int) ([]health.DailyHealth, error) {
 	r.calls = append(r.calls, historyRead)
 
 	r.days = days
@@ -74,7 +75,7 @@ func TestHealthDailySelectsHistoryForLongRanges(t *testing.T) {
 					t.Error("reader received a different request context")
 				}
 			}}
-			c := &cli{out: newPrinter(&bytes.Buffer{}), errOut: newPrinter(&bytes.Buffer{})}
+			c := &Command{Out: clix.NewPrinter(&bytes.Buffer{}), ErrOut: clix.NewPrinter(&bytes.Buffer{})}
 
 			if err := c.healthDaily(ctx, reader, tt.args); err != nil {
 				t.Fatal(err)
@@ -90,7 +91,7 @@ func TestHealthDailySelectsHistoryForLongRanges(t *testing.T) {
 func TestHealthDailyPreservesOutputForBothSources(t *testing.T) {
 	t.Parallel()
 
-	rows := []garmin.DailyHealth{
+	rows := []health.DailyHealth{
 		{Date: "2026-01-02", Steps: 10, StepGoal: 20, RestingHR: 50, AvgStress: 7, BodyBatteryLow: 1, BodyBatteryHigh: 90, SleepSec: 3661, Calories: 123},
 		{Date: "2026-01-03", Error: "synthetic day unavailable"},
 	}
@@ -106,7 +107,7 @@ func TestHealthDailyPreservesOutputForBothSources(t *testing.T) {
 
 				var out, errOut bytes.Buffer
 
-				c := &cli{asJSON: asJSON, out: newPrinter(&out), errOut: newPrinter(&errOut)}
+				c := &Command{JSON: asJSON, Out: clix.NewPrinter(&out), ErrOut: clix.NewPrinter(&errOut)}
 				if err := c.healthDaily(t.Context(), &healthReaderStub{rows: rows}, []string{healthDaysFlag, days}); err != nil {
 					t.Fatal(err)
 				}
@@ -123,7 +124,7 @@ func TestHealthDailyPreservesOutputForBothSources(t *testing.T) {
 					return
 				}
 
-				var got []garmin.DailyHealth
+				var got []health.DailyHealth
 				if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 					t.Fatalf("JSON list: %v, output %s", err, &out)
 				}
@@ -142,13 +143,13 @@ func TestHealthDailyErrorsAndEmptyResults(t *testing.T) {
 	for _, days := range []string{"14", "15"} {
 		for _, tt := range []struct {
 			name string
-			rows []garmin.DailyHealth
+			rows []health.DailyHealth
 			err  error
 			want string
 		}{
 			{name: "nil", want: "null\n"},
-			{name: "empty", rows: []garmin.DailyHealth{}, want: "[]\n"},
-			{name: "failure", rows: []garmin.DailyHealth{{Date: "2026-01-04"}}, err: errors.New("synthetic health source failed")},
+			{name: "empty", rows: []health.DailyHealth{}, want: "[]\n"},
+			{name: "failure", rows: []health.DailyHealth{{Date: "2026-01-04"}}, err: errors.New("synthetic health source failed")},
 			{name: "cancelled", err: context.Canceled},
 		} {
 			t.Run(days+"/"+tt.name, func(t *testing.T) {
@@ -156,7 +157,7 @@ func TestHealthDailyErrorsAndEmptyResults(t *testing.T) {
 
 				var out bytes.Buffer
 
-				c := &cli{asJSON: true, out: newPrinter(&out), errOut: newPrinter(&bytes.Buffer{})}
+				c := &Command{JSON: true, Out: clix.NewPrinter(&out), ErrOut: clix.NewPrinter(&bytes.Buffer{})}
 
 				err := c.healthDaily(t.Context(), &healthReaderStub{rows: tt.rows, err: tt.err}, []string{healthDaysFlag, days})
 				if !errors.Is(err, tt.err) || out.String() != tt.want {
@@ -171,10 +172,10 @@ func TestHealthDailyRejectsInvalidDaysBeforeReading(t *testing.T) {
 	t.Parallel()
 
 	reader := &healthReaderStub{}
-	c := &cli{out: newPrinter(&bytes.Buffer{}), errOut: newPrinter(&bytes.Buffer{})}
+	c := &Command{Out: clix.NewPrinter(&bytes.Buffer{}), ErrOut: clix.NewPrinter(&bytes.Buffer{})}
 
 	err := c.healthDaily(t.Context(), reader, []string{healthDaysFlag, "invalid"})
-	if exitCode(err) != 2 || len(reader.calls) != 0 {
+	if clix.ExitCode(err) != 2 || len(reader.calls) != 0 {
 		t.Fatalf("error=%v calls=%v", err, reader.calls)
 	}
 }

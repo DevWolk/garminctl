@@ -13,11 +13,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 )
 
-const (
-	defaultActivities = 30
-	defaultPoints     = 200
-)
-
 // server holds the lazily connected watch the tools share.
 type server struct {
 	svc     *garmin.Lazy
@@ -92,7 +87,6 @@ func newServer(s *server, version string, cloudClient *gc.Client, registrars ...
 	}
 
 	addCloudTools(srv, s, cloudClient)
-	addHealthTools(srv, s, cloudClient)
 
 	return srv
 }
@@ -161,112 +155,6 @@ func addCloudTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
 	}))
 }
 
-type actsIn struct {
-	Limit int `json:"limit,omitempty" jsonschema:"how many of the newest activities to return (default 30)"`
-}
-
-type actIn struct {
-	File   string `json:"file" jsonschema:"activity file name from activities_list"`
-	Points int    `json:"points,omitempty" jsonschema:"max track points to include (default 200; a negative value keeps laps only)"`
-}
-
-type daysIn struct {
-	Days int `json:"days,omitempty" jsonschema:"days including today; default 14 for health_daily, 30 for health_history"`
-}
-
-type weightIn struct {
-	Kg float64 `json:"kg" jsonschema:"body weight in kilograms"`
-}
-
-type dayIn struct {
-	Date string `json:"date" jsonschema:"YYYY-MM-DD"`
-}
-
-type daysResult struct {
-	Days []garmin.DailyHealth `json:"days"`
-}
-
-type weightResult struct {
-	OK bool    `json:"ok"`
-	Kg float64 `json:"kg"`
-}
-
-func addHealthTools(srv *mcp.Server, s *server, cloudClient *gc.Client) {
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "activities_list",
-		Description: "List recorded activities with time, sport, distance, calories and heart rate. Call again while pending > 0. Use file with activity_detail.",
-		Annotations: readOnly("List activities", false),
-	}, s.activitiesTool())
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "activity_detail",
-		Description: "One activity with laps and a downsampled track (time, lat/lon, heart rate, speed, altitude).",
-		Annotations: readOnly("Activity detail", false),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in actIn) (*garmin.ActivityDetail, error) {
-		n := in.Points
-		if n == 0 {
-			n = defaultPoints
-		}
-
-		d, err := svc.Activity(ctx, in.File, n)
-		if err != nil {
-			return nil, err
-		}
-
-		if in.Points < 0 {
-			d.Points = nil
-		}
-
-		return d, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_daily",
-		Description: "Read daily health from Garmin Connect, including steps, heart rate, stress, sleep and calories. Makes one request per day; use health_history for longer ranges. Sign-in required.",
-		Annotations: readOnly("Daily health", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in daysIn) (daysResult, error) {
-		days, err := garmin.NewCloud(svc, cloudClient).Daily(ctx, in.Days)
-		return daysResult{Days: days}, err
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_history",
-		Description: "Read up to a year of daily steps, distance, resting heart rate, stress, body battery and sleep from Garmin Connect. Excludes calories and intensity minutes. Sign-in required.",
-		Annotations: readOnly("Health history", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in daysIn) (daysResult, error) {
-		days, err := garmin.NewCloud(svc, cloudClient).History(ctx, in.Days)
-		return daysResult{Days: days}, err
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_extras",
-		Description: "Read VO2 max, fitness age, HRV, records, badges and weight history from Garmin Connect. Sign-in required.",
-		Annotations: readOnly("Fitness metrics", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, _ empty) (*garmin.HealthExtras, error) {
-		return garmin.NewCloud(svc, cloudClient).Extras(ctx)
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_log_weight",
-		Description: "Record a manual weigh-in (kg, now) in Garmin Connect. Each call adds one entry.",
-		Annotations: writes("Log weight", false, true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in weightIn) (weightResult, error) {
-		if err := garmin.NewCloud(svc, cloudClient).LogWeight(ctx, in.Kg, time.Time{}); err != nil {
-			return weightResult{}, err
-		}
-
-		return weightResult{OK: true, Kg: in.Kg}, nil
-	}))
-
-	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "health_day",
-		Description: "Read one day's heart rate, stress and body battery series ([Unix ms, value]), sleep stages and sleep score from Garmin Connect. Sign-in required.",
-		Annotations: readOnly("Intraday health", true),
-	}, withWatch(s, func(ctx context.Context, svc *garmin.Service, in dayIn) (*garmin.DayDetail, error) {
-		return garmin.NewCloud(svc, cloudClient).Day(ctx, in.Date)
-	}))
-}
-
 func (s *server) syncTool(client *gc.Client) mcp.ToolHandlerFor[syncIn, *garmin.SyncResult] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in syncIn) (*mcp.CallToolResult, *garmin.SyncResult, error) {
 		ctx, cancel := s.runtime.RequestContext(ctx)
@@ -295,28 +183,5 @@ func (s *server) syncTool(client *gc.Client) mcp.ToolHandlerFor[syncIn, *garmin.
 		out, err := job.Wait(ctx)
 
 		return nil, out, err
-	}
-}
-
-func (s *server) activitiesTool() mcp.ToolHandlerFor[actsIn, *garmin.ActivityList] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in actsIn) (*mcp.CallToolResult, *garmin.ActivityList, error) {
-		ctx, cancel := s.runtime.RequestContext(ctx)
-		defer cancel()
-
-		list, err := s.runtime.Activities.Activities(ctx, false)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		n := in.Limit
-		if n <= 0 {
-			n = defaultActivities
-		}
-
-		if len(list.Activities) > n {
-			list.Activities = list.Activities[:n]
-		}
-
-		return nil, list, nil
 	}
 }

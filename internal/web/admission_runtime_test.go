@@ -86,7 +86,13 @@ func TestActivitiesInitialOpenFailureRetainsStatusShape(t *testing.T) {
 	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return nil, errors.New("synthetic missing watch") }, false)
 	s.cloud = gc.New(filepath.Join(t.TempDir(), "account.json"))
 	response := httptest.NewRecorder()
-	s.healthActivities(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/health/activities", nil))
+
+	mux := http.NewServeMux()
+	for _, registrar := range s.features.HTTP {
+		registrar.RegisterRoutes(mux)
+	}
+
+	mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/health/activities", nil))
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status=%d, body=%s", response.Code, response.Body)

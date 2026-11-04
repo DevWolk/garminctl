@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/containers/music"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
@@ -92,6 +93,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	}
 
 	testdump.AddMusic(t, root)
+	testdump.AddHealth(t, root)
 
 	var opens, closes, settingsReads, storeRequests atomic.Int32
 
@@ -184,6 +186,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	}
 
 	checkRootWorkouts(ctx, t, base, root)
+	checkRootHealth(ctx, t, base)
 
 	if opens.Load() != 1 || closes.Load() != 0 {
 		t.Fatalf("HTTP/MCP ownership: opens=%d closes=%d", opens.Load(), closes.Load())
@@ -494,5 +497,69 @@ func checkRootWorkoutFile(t *testing.T, file string) {
 
 	if f.MessagesByNum(0)[0].Value(0) != uint64(5) {
 		t.Fatal("root workout file type changed")
+	}
+}
+
+func checkRootHealth(ctx context.Context, t *testing.T, base string) {
+	t.Helper()
+
+	var list health.ActivityList
+	rootGetJSON(ctx, t, base, "/api/health/activities?wait=1", &list)
+
+	if list.Total != 2 || list.Pending != 0 || len(list.Activities) != 2 || list.Activities[0].Sport == "unreadable" {
+		t.Fatalf("root activity list=%+v", list)
+	}
+
+	var detail health.ActivityDetail
+	rootGetJSON(ctx, t, base, "/api/health/activities/"+testdump.HealthActivity, &detail)
+
+	if len(detail.Points) != 6 || len(detail.Laps) != 1 {
+		t.Fatalf("root activity detail=%+v", detail)
+	}
+
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "root-health", Version: "1"}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		if err := session.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	checkRootHealthTool(ctx, t, session, "activities_list", map[string]any{}, &list)
+	checkRootHealthTool(ctx, t, session, "activity_detail", map[string]any{"file": testdump.HealthActivity}, &detail)
+}
+
+func checkRootHealthTool(ctx context.Context, t *testing.T, session *mcp.ClientSession, tool string, args map[string]any, want any) {
+	t.Helper()
+
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
+	if err != nil || result.IsError {
+		t.Fatalf("health tool %s=%+v error=%v", tool, result, err)
+	}
+
+	data, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotValue, wantValue any
+	if err := json.Unmarshal(data, &gotValue); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := json.Unmarshal(expected, &wantValue); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("HTTP/MCP differ for %s", tool)
 	}
 }

@@ -234,8 +234,6 @@ func (c *cli) deviceCommands() map[string]deviceCommand {
 	return map[string]deviceCommand{
 		"cloud":      c.cloud,
 		"activities": c.activities,
-		"activity":   c.activity,
-		"health":     c.health,
 		"backup":     c.backup,
 	}
 }
