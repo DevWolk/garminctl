@@ -50,7 +50,7 @@ func TestRun_InfoPrintsTheWatch(t *testing.T) {
 	root := testdump.Root(t)
 
 	var out, errOut bytes.Buffer
-	if err := run([]string{rootFlag, root, "info"}, &out, &errOut); err != nil {
+	if err := run([]string{rootFlag, root, infoCommand}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 

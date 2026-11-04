@@ -37,7 +37,7 @@ func TestAppsCLIContracts(t *testing.T) { //nolint:paralleltest // isolates proc
 
 			var out, diagnostics bytes.Buffer
 
-			argv := []string{"-root", root}
+			argv := []string{rootFlag, root}
 			if test.json {
 				argv = append(argv, "-json")
 			}

@@ -32,7 +32,7 @@ func TestSettingsCLIContracts(t *testing.T) {
 
 			var out, errOut bytes.Buffer
 
-			args := append([]string{"-root", testdump.Root(t)}, test.args...)
+			args := append([]string{rootFlag, testdump.Root(t)}, test.args...)
 			if err := run(args, &out, &errOut); err != nil || errOut.Len() != 0 {
 				t.Fatalf("CLI error=%v stderr=%s", err, errOut.String())
 			}
@@ -51,7 +51,7 @@ func TestSettingsCLIApplyContract(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if err := run([]string{"-root", root, settingsJSONFlag, settingsContractCommand, "set", "2.58=1500"}, &out, &errOut); err != nil || errOut.Len() != 0 {
+	if err := run([]string{rootFlag, root, settingsJSONFlag, settingsContractCommand, "set", "2.58=1500"}, &out, &errOut); err != nil || errOut.Len() != 0 {
 		t.Fatalf("apply error=%v stderr=%s", err, errOut.String())
 	}
 
