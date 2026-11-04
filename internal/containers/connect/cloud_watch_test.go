@@ -21,7 +21,10 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-const deviceMessagesPath = "/device-service/devicemessage/messages"
+const (
+	deviceMessagesPath = "/device-service/devicemessage/messages"
+	syntheticFilePath  = "/synthetic.fit"
+)
 
 type syncTransport func(*http.Request) (*http.Response, error)
 
@@ -94,7 +97,7 @@ func (tr *deliveryTransport) RoundTrip(req *http.Request) (*http.Response, error
 	switch req.URL.Path {
 	case deviceMessagesPath:
 		return syncResponse(req, syncMessages()), nil
-	case "/synthetic.fit":
+	case syntheticFilePath:
 		close(tr.entered)
 
 		select {
@@ -211,7 +214,7 @@ func TestManagedSyncDropCancelsNetworkBeforeAnyDeliveryOrAck(t *testing.T) {
 		switch req.URL.Path {
 		case deviceMessagesPath:
 			return syncResponse(req, syncMessages()), nil
-		case "/synthetic.fit":
+		case syntheticFilePath:
 			close(entered)
 			<-req.Context().Done()
 
@@ -407,7 +410,7 @@ func TestManagedPullDoesNotAckFailedWrite(t *testing.T) {
 		switch req.URL.Path {
 		case deviceMessagesPath:
 			return syncResponse(req, syncMessages()), nil
-		case "/synthetic.fit":
+		case syntheticFilePath:
 			return syncResponse(req, []byte("synthetic payload")), nil
 		case "/device-service/devicemessage/message/42":
 			acks.Add(1)

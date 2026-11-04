@@ -30,15 +30,18 @@ type Cloud struct {
 	watch       *watchsession.Manager
 	epoch       watchsession.ConnectionEpoch
 	invalidated func(*watchsession.Session, uint64)
+	claims      *MessageClaims
 
 	mu      sync.Mutex
 	profile *CloudProfile
 }
 
-// Config supplies caller-owned invalidation and an optional cache directory.
+// Config supplies caller-owned invalidation, an optional cache directory and
+// the runtime's message claims shared by every Cloud of one watch owner.
 type Config struct {
 	Invalidated func(*watchsession.Session, uint64)
 	CacheDir    string
+	Claims      *MessageClaims
 }
 
 // NewCloud borrows an already leased Session; nil supports account-only reads.
@@ -46,6 +49,8 @@ func NewCloud(session *watchsession.Session, client *gc.Client, configs ...Confi
 	c := &Cloud{session: session, gc: client, cacheDir: paths.Cache()}
 	if len(configs) > 0 {
 		c.invalidated = configs[0].Invalidated
+		c.claims = configs[0].Claims
+
 		if configs[0].CacheDir != "" {
 			c.cacheDir = configs[0].CacheDir
 		}
@@ -465,7 +470,8 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 }
 
 // Pull downloads every queued message that matches (nil = all), writes it
-// where the watch expects it and tells Connect it was received.
+// where the watch expects it and tells Connect it was received. A message
+// another pull of this process is delivering is left to that pull.
 func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]PulledFile, error) {
 	msgs, err := c.Messages(ctx)
 	if err != nil {
@@ -488,37 +494,12 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			continue
 		}
 
-		pf := PulledFile{MessageID: m.MessageID, Type: m.MessageType, Name: m.MetaData.MessageName}
-
-		data, err := c.gc.Download(ctx, m.MetaData.MessageURL)
-		if err != nil {
-			pf.Error = err.Error()
-			out = append(out, pf)
-
+		if !c.claims.claim(m.MessageID) {
 			continue
 		}
 
-		target := targetFor(dx, m)
-		if target == "" {
-			pf.Error = fmt.Sprintf("no place on the watch for %s files (%s); left in Connect's queue", m.MetaData.FileType, m.DeviceXMLDataType)
-			out = append(out, pf)
-
-			continue
-		}
-
-		if err := c.deliver(ctx, target, data); err != nil {
-			pf.Error = err.Error()
-			out = append(out, pf)
-
-			continue
-		}
-
-		pf.Path, pf.Bytes = target, len(data)
-		if err := c.ack(ctx, m.MessageID); err != nil {
-			pf.Error = "written, but Connect was not told: " + err.Error()
-		}
-
-		out = append(out, pf)
+		out = append(out, c.pullMessage(ctx, dx, m))
+		c.claims.release(m.MessageID)
 	}
 
 	if err := c.invalidateApps(ctx); err != nil {
@@ -526,6 +507,35 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 	}
 
 	return out, nil
+}
+
+// pullMessage downloads one queued message, writes it and acknowledges it.
+func (c *Cloud) pullMessage(ctx context.Context, dx *deviceinfo.DeviceXML, m DeviceMessage) PulledFile {
+	pf := PulledFile{MessageID: m.MessageID, Type: m.MessageType, Name: m.MetaData.MessageName}
+
+	data, err := c.gc.Download(ctx, m.MetaData.MessageURL)
+	if err != nil {
+		pf.Error = err.Error()
+		return pf
+	}
+
+	target := targetFor(dx, m)
+	if target == "" {
+		pf.Error = fmt.Sprintf("no place on the watch for %s files (%s); left in Connect's queue", m.MetaData.FileType, m.DeviceXMLDataType)
+		return pf
+	}
+
+	if err := c.deliver(ctx, target, data); err != nil {
+		pf.Error = err.Error()
+		return pf
+	}
+
+	pf.Path, pf.Bytes = target, len(data)
+	if err := c.ack(ctx, m.MessageID); err != nil {
+		pf.Error = "written, but Connect was not told: " + err.Error()
+	}
+
+	return pf
 }
 
 // deliver writes a pulled file where the watch expects it; app binaries go
