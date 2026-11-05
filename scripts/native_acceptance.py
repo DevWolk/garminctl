@@ -18,8 +18,7 @@ def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app):
     log_path = work / 'native-acceptance.log'
     server_log = work / 'native-fixture-server.log'
     result = {'status': 'running', 'passed': [], 'failures': []}
-    commands = Commands()
-    app = None
+    traces = []
     with server_log.open('wb') as log:
         server = subprocess.Popen([
             str(cli), '-root', str(dump), 'serve', '-addr', f'127.0.0.1:{upstream}',
@@ -36,6 +35,45 @@ def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app):
             except OSError:
                 return False
         wait_for(server_ready)
+        for suite, scenario in (('runtime', runtime_scenarios), ('ui', ui_scenarios)):
+            before = len(result['failures'])
+            try:
+                run_native_window(suite, scenario, desktop, dump, env, work, upstream, result, traces, stop_app)
+            except Exception as error:
+                if len(result['failures']) == before:
+                    result['failures'].append({'scenario': 'native-' + suite, 'error': str(error)})
+        assert server.poll() is None, 'Native acceptance stopped the reused backend'
+        result['status'] = 'failed' if result['failures'] else 'passed'
+    except Exception as error:
+        result['status'] = 'failed'
+        if not result['failures']:
+            result['failures'].append({'scenario': 'native-session', 'error': str(error)})
+        raise
+    finally:
+        stop_app(server)
+        print(json.dumps({'nativeAcceptance': result}, sort_keys=True))
+        logs = (log_path, work / 'native-runtime.log', server_log, work / 'native-missing-dbus.log')
+        for log in logs:
+            if log.exists():
+                print(log.read_text(errors='replace'))
+        evidence = os.environ.get('NATIVE_RESULTS_DIR')
+        if evidence:
+            folder = Path(evidence)
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / 'native-acceptance.json').write_text(json.dumps(result, indent=2))
+            (folder / 'native-commands.json').write_text(json.dumps(traces, indent=2))
+            for log in logs:
+                if log.exists():
+                    shutil.copyfile(log, folder / log.name)
+    assert not result['failures'], result['failures']
+    return result
+
+
+def run_native_window(suite, scenario, desktop, dump, env, work, upstream, result, traces, stop_app):
+    commands = Commands()
+    log_path = work / ('native-runtime.log' if suite == 'runtime' else 'native-acceptance.log')
+    app = None
+    try:
         with fixture_proxy(upstream, commands) as port:
             with log_path.open('wb') as log:
                 app = subprocess.Popen([
@@ -44,39 +82,17 @@ def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app):
             def page_ready():
                 if commands.errors:
                     raise AssertionError(commands.errors[-1])
+                assert app.poll() is None, 'Native window exited before its page receipt'
                 return commands.boots[0] if commands.boots else None
             commands.wait(page_ready, timeout=45)
             wait_for(lambda: 'desktop window ready' in log_path.read_text(errors='replace'))
-            driver = driver_for(app.pid)
-            scenarios(commands, driver, app, dump, work, log_path, result)
-            assert server.poll() is None, 'Native acceptance stopped the reused backend'
-            result['status'] = 'passed'
-    except Exception as error:
-        result['status'] = 'failed'
-        if not result['failures']:
-            result['failures'].append({'scenario': 'native-session', 'error': str(error)})
-        raise
+            scenario(commands, driver_for(app.pid), app, dump, work, log_path, result)
     finally:
         try:
             if app is not None:
                 stop_app(app)
         finally:
-            stop_app(server)
-            print(json.dumps({'nativeAcceptance': result}, sort_keys=True))
-            for log in (log_path, server_log):
-                if log.exists():
-                    print(log.read_text(errors='replace'))
-            evidence = os.environ.get('NATIVE_RESULTS_DIR')
-            if evidence:
-                folder = Path(evidence)
-                folder.mkdir(parents=True, exist_ok=True)
-                (folder / 'native-acceptance.json').write_text(json.dumps(result, indent=2))
-                (folder / 'native-commands.json').write_text(json.dumps(commands.events, indent=2))
-                for log in (log_path, server_log, work / 'native-missing-dbus.log'):
-                    if log.exists():
-                        shutil.copyfile(log, folder / log.name)
-    assert not result['failures'], result['failures']
-    return result
+            traces.extend(dict(event, suite=suite) for event in commands.events)
 
 
 def missing_bus(desktop, dump, env, work, free_port, stop_app):
@@ -99,15 +115,16 @@ def missing_bus(desktop, dump, env, work, free_port, stop_app):
         stop_app(child)
 
 
-def scenarios(commands, driver, app, dump, work, log_path, result):
-    def check(name, action):
-        try:
-            action()
-        except Exception as error:
-            result['failures'].append({'scenario': name, 'error': str(error)})
-            raise
-        result['passed'].append(name)
+def check_scenario(result, name, action):
+    try:
+        action()
+    except Exception as error:
+        result['failures'].append({'scenario': name, 'error': str(error)})
+        raise
+    result['passed'].append(name)
 
+
+def runtime_scenarios(commands, driver, app, dump, work, log_path, result):
     def runtime():
         before = log_path.read_text(errors='replace').count('desktop window ready')
         observed = commands.call('runtime')
@@ -117,7 +134,12 @@ def scenarios(commands, driver, app, dump, work, log_path, result):
         assert observed['positive'] == 200, observed
         after = log_path.read_text(errors='replace').count('desktop window ready')
         assert after == before + 1, 'Foreign-origin Ready call reached the native service'
-    check('native-runtime-origin-and-method', runtime)
+    check_scenario(result, 'native-runtime-origin-and-method', runtime)
+
+
+def ui_scenarios(commands, driver, app, dump, work, log_path, result):
+    def check(name, action):
+        check_scenario(result, name, action)
 
     target = work / 'native-export.xml'
     expected = (dump / 'GARMIN/GarminDevice.xml').read_bytes()
