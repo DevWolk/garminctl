@@ -119,23 +119,16 @@ func (l *Manager) acquireReserved(ctx context.Context, expected ConnectionEpoch,
 	lease := &Lease{owner: l, ctx: groupCtx, cancel: cancel, releaseAdmission: release}
 	l.mu.Lock()
 	if l.closed || ctx.Err() != nil {
-		var stopped, cleanup error
+		var stopped error
 		if l.closed {
 			stopped = lifecycle.ErrStopped
 		}
 		l.mu.Unlock()
-		cancel()
 
-		// A transport retired while this slot was held is closed here; Close
-		// owns that cleanup once the manager is stopped.
-		if stopped == nil {
-			cleanup = l.closeRetired()
-		}
-
-		<-l.slot
-		release()
-
-		return nil, errors.Join(stopped, ctx.Err(), cleanup)
+		// Release closes a transport retired while this slot was held and
+		// frees the slot under mu, so a concurrent DropAt sees either this
+		// holder or a free slot and the retired transport is never left open.
+		return nil, errors.Join(stopped, ctx.Err(), lease.Release())
 	}
 
 	l.active = lease
