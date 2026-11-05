@@ -78,10 +78,12 @@ func ServeListener(ctx context.Context, listener net.Listener, open watchsession
 
 // ServeMCP assembles a standalone stdio backend, with its own process owners.
 func ServeMCP(ctx context.Context, open watchsession.Opener, version string) error {
-	return serveMCPTransport(ctx, open, version, &mcp.StdioTransport{})
+	return ServeMCPTransport(ctx, open, version, &mcp.StdioTransport{})
 }
 
-func serveMCPTransport(ctx context.Context, open watchsession.Opener, version string, transport mcp.Transport) error {
+// ServeMCPTransport assembles the same standalone backend over the caller's
+// transport. It builds its own process owners and account client.
+func ServeMCPTransport(ctx context.Context, open watchsession.Opener, version string, transport mcp.Transport) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 

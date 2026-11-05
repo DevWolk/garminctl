@@ -71,7 +71,7 @@ func newMCPContractClientWithOpener(t *testing.T, open watchsession.Opener) *mcp
 	go func() {
 		defer close(done)
 
-		serveErr = serveMCPTransport(ctx, open, contractVersion, st)
+		serveErr = ServeMCPTransport(ctx, open, contractVersion, st)
 	}()
 
 	var client *mcp.ClientSession
