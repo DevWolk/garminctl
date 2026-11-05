@@ -47,9 +47,8 @@ function Find-Control([string]$Name, [string]$Kind = '') {
 }
 
 function Focus-Control($element) {
+  [void][NativeInput]::SetForegroundWindow([IntPtr]$element.Current.NativeWindowHandle)
   $element.SetFocus()
-  $window = Get-Process -Id $AppProcessId
-  [void][NativeInput]::SetForegroundWindow($window.MainWindowHandle)
 }
 
 function Click-Control($element) {
@@ -75,8 +74,8 @@ switch ($request.action) {
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
   }
   'cancel-save' {
-    Focus-Control (Find-Control '^Save file$' 'Window')
-    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+    [void](Find-Control '^Save file$' 'Window')
+    Click-Control (Find-Control '^Cancel$' 'Button')
   }
   'replace' {
     if ($request.choice -eq 'yes') {

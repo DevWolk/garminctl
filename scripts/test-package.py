@@ -216,7 +216,12 @@ def stop_app(app):
     """Stop the test application's process group before deleting WebKit caches."""
     try:
         if app.poll() is None:
-            app.terminate()
+            if os.name == "nt":
+                result = subprocess.run(["taskkill", "/PID", str(app.pid), "/T", "/F"], capture_output=True, text=True, timeout=10)
+                if result.returncode and app.poll() is None:
+                    raise RuntimeError(result.stdout + result.stderr)
+            else:
+                app.terminate()
         try:
             app.wait(timeout=5)
         except subprocess.TimeoutExpired:
