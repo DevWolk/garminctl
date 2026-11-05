@@ -21,6 +21,8 @@ See CLAUDE.md for the working rules. Module map:
   native initialization precedes backend startup and shutdown joins owned work.
   The outer Assets middleware validates private origins before Wails dispatch;
   `/wails/runtime` accepts POST, while runtime modules remain available over GET.
+  The proxy preserves native body streams with no advertised length before
+  forwarding them to the backend's bounded request readers.
   Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
   acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.

@@ -37,6 +37,14 @@ func Proxy(backend *url.URL, script []byte) http.Handler {
 			return
 		}
 
+		// Native WebViews may supply a stream without an advertised length.
+		// ReverseProxy treats zero as no body, so retain it as unknown length.
+		if r.ContentLength == 0 && r.Body != nil && r.Body != http.NoBody {
+			r = r.Clone(r.Context())
+			r.ContentLength = -1
+			r.Header.Del("Content-Length")
+		}
+
 		proxy.ServeHTTP(w, r)
 	})
 }
