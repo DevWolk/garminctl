@@ -13,7 +13,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
+func TestRunSessionSharesRuntimeOwnerAndAdmission(t *testing.T) {
 	t.Parallel()
 
 	dev, err := device.NewDirFS(testdump.Root(t))
@@ -35,14 +35,14 @@ func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
 		}
 	})
 
-	legacy, err := runtime.Manager().Acquire(t.Context())
+	first, err := runtime.Manager().Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	expected, epoch := runtime.Manager().Snapshot()
 
-	if err := legacy.Release(); err != nil {
+	if err := first.Release(); err != nil {
 		t.Fatal(err)
 	}
 

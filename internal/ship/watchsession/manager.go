@@ -90,8 +90,9 @@ func (l *Manager) Current() *Session {
 	return session
 }
 
-// Drop is the legacy current-connection invalidation bridge. Leased callers use
-// DropAt so a delayed error cannot drop a newer connection.
+// Drop retires the current connection without a lease, as an explicit
+// disconnect request does. Leased callers use DropAt so a delayed error cannot
+// drop a newer connection.
 func (l *Manager) Drop() {
 	l.mu.Lock()
 	epoch := l.epoch

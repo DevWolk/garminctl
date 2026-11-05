@@ -10,7 +10,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
-// WatchLease is the lifetime contract shared by Session and compatibility leases.
+// WatchLease is the lifetime contract of a watch lease.
 type WatchLease interface {
 	Context() context.Context
 	Epoch() watchsession.ConnectionEpoch
@@ -18,7 +18,7 @@ type WatchLease interface {
 }
 
 // WatchOwner admits leases and retires a matching broken connection. Manager
-// satisfies it directly; compatibility adapters need no feature import here.
+// satisfies it directly.
 type WatchOwner[L WatchLease] interface {
 	Acquire(context.Context) (L, error)
 	DropAt(watchsession.ConnectionEpoch) error

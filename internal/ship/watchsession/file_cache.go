@@ -68,7 +68,7 @@ func (s *Session) Refresh() uint64 {
 
 // ReadThrough returns independently owned bytes, populating the raw cache only
 // if its generation survives the read. allowCached=false bypasses lookup but
-// still populates the cache, preserving the legacy decoder's read policy.
+// still populates the cache, so a fresh read also serves later cached reads.
 func (s *Session) ReadThrough(ctx context.Context, p string, allowCached bool) ([]byte, error) {
 	before := s.deviceReconnectCount()
 	key := strings.ToLower(p)

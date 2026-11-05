@@ -43,7 +43,7 @@ func (c *cli) sessionCommands() map[string]sessionCommand {
 }
 
 // runSession uses the runtime's existing Manager for extracted adapters.
-// runDevice owns runtime shutdown for both extracted and legacy commands.
+// runDevice owns runtime shutdown for session and job commands.
 func (c *cli) runSession(ctx context.Context, command sessionCommand, args []string) error {
 	return c.withSessionAt(ctx, 0, func(ctx context.Context, sess *watchsession.Session) error {
 		return command(ctx, sess, args)

@@ -15,7 +15,7 @@ type RouteRegistrar interface {
 	RegisterRoutes(*http.ServeMux)
 }
 
-// WatchLease is the lifetime contract for Session and compatibility leases.
+// WatchLease is the lifetime contract of a watch lease.
 type WatchLease interface {
 	Context() context.Context
 	Epoch() watchsession.ConnectionEpoch
