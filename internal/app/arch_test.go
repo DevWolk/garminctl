@@ -132,8 +132,9 @@ func TestArchitecture(t *testing.T) {
 	t.Run("tests", func(t *testing.T) {
 		t.Parallel()
 
+		// Test-only packages under tests/ have no production view.
 		view := architectureView{name: "tests", tags: architectureBuildTags, tests: true}
-		for _, pkg := range loadArchitecture(ctx, t, view, packages.NeedName|packages.NeedImports, patterns...) {
+		for _, pkg := range loadArchitecture(ctx, t, view, packages.NeedName|packages.NeedImports, append(patterns, "./tests/...")...) {
 			checkArchitectureTestPackage(t, pkg)
 		}
 	})

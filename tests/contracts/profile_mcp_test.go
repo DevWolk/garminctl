@@ -1,4 +1,4 @@
-package app
+package contracts
 
 import (
 	"crypto/sha256"

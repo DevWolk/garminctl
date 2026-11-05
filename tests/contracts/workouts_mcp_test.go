@@ -1,4 +1,4 @@
-package app
+package contracts
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 )
 
 const contractQueueFailure = "queue failure"
+
+const ackFailureMode = "ack failure"
 
 const workoutCreateTool = "workout_create"
 

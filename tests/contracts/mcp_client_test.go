@@ -1,4 +1,4 @@
-package app
+package contracts
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -71,7 +72,7 @@ func newMCPContractClientWithOpener(t *testing.T, open watchsession.Opener) *mcp
 	go func() {
 		defer close(done)
 
-		serveErr = ServeMCPTransport(ctx, open, contractVersion, st)
+		serveErr = app.ServeMCPTransport(ctx, open, contractVersion, st)
 	}()
 
 	var client *mcp.ClientSession

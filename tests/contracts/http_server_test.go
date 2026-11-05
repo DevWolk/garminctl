@@ -1,4 +1,4 @@
-package app
+package contracts
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -102,7 +103,7 @@ func serveContractRoot(t *testing.T, open watchsession.Opener) *contractServer {
 	go func() {
 		defer close(done)
 
-		serveErr = ServeListener(ctx, listener, open, false, contractVersion)
+		serveErr = app.ServeListener(ctx, listener, open, false, contractVersion)
 	}()
 
 	client := &http.Client{Transport: new(http.Transport), Timeout: 10 * time.Second}

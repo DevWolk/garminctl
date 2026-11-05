@@ -1,4 +1,4 @@
-package app
+package contracts
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/containers/music"
@@ -127,7 +128,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		serveErr = ServeListener(ctx, listener, open, false, "root-test")
+		serveErr = app.ServeListener(ctx, listener, open, false, "root-test")
 	}()
 
 	stop := sync.OnceFunc(func() {
@@ -380,7 +381,7 @@ func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
 	}
 	// Supply an explicit in-memory runtime/account to test the shell's transfer
 	// of ownership without consulting any default account store.
-	runtime := NewRuntime(ctx, nil)
+	runtime := app.NewRuntime(ctx, nil)
 
 	account := gc.New(filepath.Join(t.TempDir(), "account.json"))
 	if err := web.ServeRuntime(listener, runtime, account, false, contractVersion, web.Features{}); !errors.Is(err, net.ErrClosed) {
