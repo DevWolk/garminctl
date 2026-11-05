@@ -184,6 +184,7 @@ this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
 the Windows autostart copy, keeping stopped servers stopped); `make update`
 pulls the current branch first. The web and HTTP MCP servers share the `garmin.Lazy` facade over one
 `watchsession.Manager` (one lazily opened watch); `internal/paths` names the cache directory; tests over a dump use
-`internal/testdump`. `tools/expresswatch` monitors upstream release notes
+`internal/testdump`, which owns the shared XML and app-registry fixtures.
+`tools/expresswatch` monitors upstream release notes
 (state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.

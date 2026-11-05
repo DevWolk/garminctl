@@ -20,8 +20,8 @@ def check_package(desktop, cli, repo, version, work):
     for folder in ("Apps", "Settings", "Activity", "Music"):
         (dump / "GARMIN" / folder).mkdir(parents=True, exist_ok=True)
     fixtures = {
-        "garmin/testdata/GarminDevice.xml": "GarminDevice.xml",
-        "garmin/testdata/OUT.BIN": "Apps/OUT.BIN",
+        "testdump/testdata/GarminDevice.xml": "GarminDevice.xml",
+        "testdump/testdata/OUT.BIN": "Apps/OUT.BIN",
         "fit/testdata/Settings.fit": "Settings/Settings.fit",
     }
     for source, target in fixtures.items():

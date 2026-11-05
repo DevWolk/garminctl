@@ -22,7 +22,7 @@ const updatesFixture = `{"updates":[{"partNumber":"006-DA094-00","productName":"
 func dumpWithDeviceXML(t *testing.T) *device.DirFS {
 	t.Helper()
 
-	xmlBytes, err := os.ReadFile("testdata/GarminDevice.xml")
+	xmlBytes, err := os.ReadFile("../testdump/testdata/GarminDevice.xml")
 	if err != nil {
 		t.Fatal(err)
 	}

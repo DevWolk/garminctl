@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-// Root returns a temporary GARMIN tree holding GarminDevice.xml, OUT.BIN and
-// Settings.fit from the garmin and fit testdata, with the folders a watch
-// has. A missing fixture fails the test.
+// Root returns a temporary GARMIN tree holding the shared XML and registry
+// fixtures and FIT Settings.fit, with the folders a watch has. A missing
+// fixture fails the test.
 func Root(tb testing.TB) string {
 	tb.Helper()
 
@@ -24,9 +24,9 @@ func Root(tb testing.TB) string {
 	}
 
 	for src, dst := range map[string]string{
-		filepath.Join("garmin", "testdata", "GarminDevice.xml"): filepath.Join("GARMIN", "GarminDevice.xml"),
-		filepath.Join("garmin", "testdata", "OUT.BIN"):          filepath.Join("GARMIN", "Apps", "OUT.BIN"),
-		filepath.Join("fit", "testdata", "Settings.fit"):        filepath.Join("GARMIN", "Settings", "Settings.fit"),
+		filepath.Join("testdump", "testdata", "GarminDevice.xml"): filepath.Join("GARMIN", "GarminDevice.xml"),
+		filepath.Join("testdump", "testdata", "OUT.BIN"):          filepath.Join("GARMIN", "Apps", "OUT.BIN"),
+		filepath.Join("fit", "testdata", "Settings.fit"):          filepath.Join("GARMIN", "Settings", "Settings.fit"),
 	} {
 		b, err := os.ReadFile(filepath.Join(internal, src)) //nolint:gosec // testdata fixture
 		if err != nil {

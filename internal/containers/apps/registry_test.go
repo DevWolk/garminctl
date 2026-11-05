@@ -8,7 +8,7 @@ import (
 func TestParseAppsConfig(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../garmin/testdata/OUT.BIN")
+	b, err := os.ReadFile("../../testdump/testdata/OUT.BIN")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestParseAppsConfig(t *testing.T) {
 func TestRewriteAppsRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../garmin/testdata/OUT.BIN")
+	b, err := os.ReadFile("../../testdump/testdata/OUT.BIN")
 	if err != nil {
 		t.Fatal(err)
 	}

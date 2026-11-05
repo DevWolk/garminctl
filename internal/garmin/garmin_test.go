@@ -8,7 +8,7 @@ import (
 func TestParseDeviceXML(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("testdata/GarminDevice.xml")
+	b, err := os.ReadFile("../testdump/testdata/GarminDevice.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestParseDeviceXML(t *testing.T) {
 func TestParseDeviceXMLApps(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("testdata/GarminDevice.xml")
+	b, err := os.ReadFile("../testdump/testdata/GarminDevice.xml")
 	if err != nil {
 		t.Fatal(err)
 	}
