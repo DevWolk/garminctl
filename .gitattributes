@@ -1,5 +1,4 @@
 # Embedded metadata and byte-contract fixtures retain repository bytes on Windows.
 /internal/containers/apps/knowledge/*.json text eol=lf
 /internal/containers/settings/knowledge/*.json text eol=lf
-/internal/garmin/knowledge/*.json text eol=lf
 /internal/fit/profile.json text eol=lf

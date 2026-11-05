@@ -18,11 +18,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const (
-	architectureModule = "github.com/DevWolk/garminctl"
-	// architectureFacade is the legacy facade package below internal.
-	architectureFacade = "garmin"
-)
+const architectureModule = "github.com/DevWolk/garminctl"
 
 type architectureView struct {
 	name  string
@@ -49,17 +45,13 @@ type architectureOwner struct {
 	callers []string
 }
 
-const (
-	ownerApp    = "internal/app"
-	ownerFacade = "internal/" + architectureFacade
-)
+const ownerApp = "internal/app"
 
 var architectureOwners = []architectureOwner{
-	{pkg: ownerFacade, names: []string{"NewRuntime"}, callers: []string{ownerApp}},
-	{pkg: ownerFacade, names: []string{"NewLazy", "NewLazyWithGate", "NewSyncCoordinator", "NewActivityCoordinator"}, callers: []string{ownerApp}},
-	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerFacade, ownerApp}},
-	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerFacade, ownerApp}},
-	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerFacade, ownerApp}},
+	{pkg: ownerApp + "/process", names: []string{"New"}, callers: []string{ownerApp}},
+	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerApp}},
+	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerApp}},
+	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerApp}},
 	{pkg: "internal/gc", names: []string{"New"}, callers: []string{"cmd", ownerApp, "internal/testdump"}},
 }
 
@@ -221,10 +213,6 @@ func architectureTestImportViolation(from, to string) string {
 		return "feature tests cannot import app"
 	}
 
-	if architectureInternal(to) == architectureFacade {
-		return "feature tests cannot import the legacy facade"
-	}
-
 	if other := architectureFeature(to); other != "" && other != feature && !architectureFeatureEdge(feature, other) {
 		return "feature tests may import another feature only through a declared edge"
 	}
@@ -288,7 +276,7 @@ func architectureInfrastructure(path string) bool {
 }
 
 func architectureCore(path string) bool {
-	return !architectureTransport(path) && (architectureInfrastructure(path) || architectureFeature(path) != "" || architectureInternal(path) == architectureFacade)
+	return !architectureTransport(path) && (architectureInfrastructure(path) || architectureFeature(path) != "")
 }
 
 func architectureImportViolation(from, to string) string {
@@ -296,7 +284,7 @@ func architectureImportViolation(from, to string) string {
 		return "only entry points and app wiring may import app"
 	}
 
-	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureInternal(to) == architectureFacade || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
+	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
 		return "infrastructure cannot depend on features or server/native shells"
 	}
 
@@ -330,10 +318,6 @@ func architectureShellImportViolation(from, to string) string {
 }
 
 func architectureFeatureUIImportViolation(from, to string) string {
-	if architectureInternal(to) == architectureFacade {
-		return "a feature UI cannot import the legacy facade"
-	}
-
 	if architectureShell(to) {
 		return "a feature UI cannot import server or native shells"
 	}
@@ -348,10 +332,6 @@ func architectureFeatureUIImportViolation(from, to string) string {
 func architectureCoreImportViolation(from, to string) string {
 	if architectureTransport(to) {
 		return "core cannot import transport adapters"
-	}
-
-	if architectureFeature(from) != "" && architectureInternal(to) == architectureFacade {
-		return "new feature core cannot import the legacy facade"
 	}
 
 	if feature, other := architectureFeature(from), architectureFeature(to); feature != "" && other != "" && other != feature && !architectureFeatureEdge(feature, other) {

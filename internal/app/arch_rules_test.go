@@ -14,6 +14,7 @@ import (
 const (
 	architectureSettings = architectureModule + "/internal/containers/settings"
 	architectureApps     = architectureModule + "/internal/containers/apps"
+	architectureProcess  = architectureModule + "/internal/app/process"
 )
 
 func TestArchitectureImportRules(t *testing.T) {
@@ -26,14 +27,13 @@ func TestArchitectureImportRules(t *testing.T) {
 		{name: "entry point builds app", from: architectureModule + "/cmd/garminctl", to: architectureModule + "/internal/app"},
 		{name: "shell cannot import app", from: architectureModule + "/internal/web", to: architectureModule + "/internal/app", forbidden: true},
 		{name: "infrastructure cannot import feature", from: architectureModule + "/internal/ship/watchsession", to: architectureSettings, forbidden: true},
-		{name: "client cannot import facade", from: architectureModule + "/internal/gc", to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "core cannot import HTTP helper", from: architectureSettings, to: architectureModule + "/internal/ship/httpx", forbidden: true},
-		{name: "feature cannot import legacy", from: architectureSettings, to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "own UI uses core", from: architectureSettings + "/ui/http", to: architectureSettings},
 		{name: "UI cannot import other feature", from: architectureSettings + "/ui/http", to: architectureApps, forbidden: true},
-		{name: "UI cannot import legacy facade", from: architectureSettings + "/ui/http", to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "core cannot import own UI", from: architectureSettings, to: architectureSettings + "/ui/http", forbidden: true},
-		{name: "legacy facade may delegate to core", from: architectureModule + "/internal/garmin", to: architectureSettings},
+		{name: "process runtime builds feature owners", from: architectureProcess, to: architectureModule + "/internal/containers/connect"},
+		{name: "shell cannot import process runtime", from: architectureModule + "/internal/web", to: architectureProcess, forbidden: true},
+		{name: "feature cannot import process runtime", from: architectureSettings, to: architectureProcess, forbidden: true},
 		{name: "HTTP clients allowed", from: architectureSettings, to: "net/http"},
 		{name: "MCP SDK forbidden in core", from: architectureSettings, to: "github.com/modelcontextprotocol/go-sdk/mcp", forbidden: true},
 		{name: "Wails forbidden in core", from: architectureSettings, to: "github.com/wailsapp/wails/v3/pkg/application", forbidden: true},
@@ -72,10 +72,11 @@ func TestArchitectureTestImportRules(t *testing.T) {
 		{name: "feature test uses own core", from: architectureSettings + "_test", to: architectureSettings},
 		{name: "feature test uses fixtures", from: architectureSettings, to: architectureModule + "/internal/testdump"},
 		{name: "feature test cannot import app", from: architectureSettings + "_test", to: architectureModule + "/internal/app", forbidden: true},
-		{name: "feature test cannot import legacy facade", from: architectureSettings, to: architectureModule + "/internal/garmin", forbidden: true},
 		{name: "UI test may use declared feature edge", from: architectureModule + "/internal/containers/updates/ui/cli", to: architectureApps},
 		{name: "feature test cannot add feature edge", from: architectureSettings + "/ui/http_test", to: architectureApps, forbidden: true},
 		{name: "shell test assembles features", from: architectureModule + "/internal/web", to: architectureSettings + "/ui/http"},
+		{name: "shell test builds the process runtime", from: architectureModule + "/internal/web", to: architectureProcess},
+		{name: "feature test cannot import process runtime", from: architectureSettings + "_test", to: architectureProcess, forbidden: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -102,7 +103,7 @@ func TestArchitectureTypedRules(t *testing.T) {
 
 	imports := architectureFixtureImporter{}
 	for _, pkg := range loadArchitecture(t.Context(), t, architectureView{name: "typed fixtures"}, packages.LoadTypes, "net/http",
-		architectureModule+"/internal/garmin", architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/gc") {
+		architectureProcess, architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/containers/connect", architectureModule+"/internal/gc") {
 		imports[pkg.PkgPath] = pkg.Types
 	}
 
@@ -119,11 +120,11 @@ func TestArchitectureTypedRules(t *testing.T) {
 		{name: "server struct", code: `import wire "net/http"; var _ = &wire.Server{}`, forbidden: true},
 		{name: "serve function value", code: `import wire "net/http"; var _ = wire.ListenAndServe`, forbidden: true},
 		{name: "server APIs belong to UI", owner: architectureSettings + "/ui/http", code: `import wire "net/http"; var _ = &wire.Server{}`},
-		{name: "runtime factory alias outside app", owner: architectureModule + "/internal/web", code: `import legacy "github.com/DevWolk/garminctl/internal/garmin"; var factory = legacy.NewRuntime`, forbidden: true},
-		{name: "runtime factory belongs to app", owner: architectureModule + "/internal/app", code: `import legacy "github.com/DevWolk/garminctl/internal/garmin"; var factory = legacy.NewRuntime`},
-		{name: "watch owner outside facade", owner: architectureModule + "/internal/web", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManager`, forbidden: true},
-		{name: "facade owns watch manager", owner: architectureModule + "/internal/garmin", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManagerWithGate`},
-		{name: "lazy watch outside facade", owner: architectureModule + "/internal/mcpserver", code: `import legacy "github.com/DevWolk/garminctl/internal/garmin"; var _ = legacy.NewLazy`, forbidden: true},
+		{name: "runtime factory alias outside app", owner: architectureModule + "/internal/web", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`, forbidden: true},
+		{name: "runtime factory belongs to app", owner: architectureModule + "/internal/app", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`},
+		{name: "watch owner outside app", owner: architectureModule + "/internal/web", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManager`, forbidden: true},
+		{name: "process runtime owns watch manager", owner: architectureProcess, code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManagerWithGate`},
+		{name: "sync coordinator outside app", owner: architectureModule + "/internal/mcpserver", code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`, forbidden: true},
 		{name: "account built by feature UI", owner: architectureSettings + "/ui/http", code: `import "github.com/DevWolk/garminctl/internal/gc"; var _ = gc.New`, forbidden: true},
 		{name: "entry point builds account", owner: architectureModule + "/cmd/garminctl", code: `import "github.com/DevWolk/garminctl/internal/gc"; var _ = gc.New`},
 	} {
