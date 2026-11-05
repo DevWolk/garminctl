@@ -19,6 +19,8 @@ See CLAUDE.md for the working rules. Module map:
   `desktop`), owned/reused loopback backend, private-origin proxy, native Save
   dialog and lifecycle/edit protection. A private windowHost isolates bridge calls;
   native initialization precedes backend startup and shutdown joins owned work.
+  The outer Assets middleware validates private origins before Wails dispatch;
+  `/wails/runtime` accepts POST, while runtime modules remain available over GET.
   Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
   acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.

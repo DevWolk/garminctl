@@ -62,7 +62,7 @@ func newV3WindowHost(service *App, dataDir string, assets http.Handler) *v3Windo
 	host := new(v3WindowHost)
 	host.app = application.New(application.Options{
 		Name: applicationName, Icon: appIcon,
-		Assets:     application.AssetOptions{Handler: assets},
+		Assets:     nativeAssetOptions(assets),
 		Services:   []application.Service{application.NewService(service)},
 		ShouldQuit: func() bool { return !service.beforeClose(context.Background()) },
 		// The production logger discards output, so a fatal host error (for
@@ -86,6 +86,30 @@ func newV3WindowHost(service *App, dataDir string, assets http.Handler) *v3Windo
 	host.menu(service)
 
 	return host
+}
+
+func nativeAssetOptions(handler http.Handler) application.AssetOptions {
+	return application.AssetOptions{Handler: handler, Middleware: guardNativeAssets}
+}
+
+// Wails dispatches runtime calls before the asset handler, so this guard must
+// wrap the entire native asset pipeline rather than only the backend proxy.
+func guardNativeAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !desktopOrigin(r) {
+			http.Error(w, "forbidden: not a desktop request", http.StatusForbidden)
+			return
+		}
+
+		if r.URL.Path == "/wails/runtime" && r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // windowOptions describes the main window, or the smaller startup error window.
