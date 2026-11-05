@@ -41,6 +41,7 @@ type historyBuild struct {
 	byDate map[string]*DailyHealth
 	errs   []string
 	failed []historyFailure // windows with a failed fetch; their rows are incomplete
+	cached map[string]bool  // days copied from the cache; only complete days are cached
 }
 
 // row returns the row for date, creating it. The caller holds mu.
@@ -94,6 +95,7 @@ func (h *historyBuild) cachedWindow(cache map[string]DailyHealth, ws, we time.Ti
 		}
 
 		h.byDate[ds] = &r
+		h.cached[ds] = true
 	}
 
 	return true
@@ -102,7 +104,8 @@ func (h *historyBuild) cachedWindow(cache map[string]DailyHealth, ws, we time.Ti
 // rows lays the collected days out in order and refreshes the cache with the
 // days that no longer change. In a window with a failed fetch, a day with data
 // names the failed fields in Unavailable and a day without data reports the
-// error; neither is cached, so a later call fetches them again.
+// error; neither is cached, so a later call fetches them again. A day taken
+// from the cache is complete and keeps its cached values.
 func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, final string) []DailyHealth {
 	out := make([]DailyHealth, 0, len(h.byDate))
 
@@ -119,6 +122,9 @@ func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, 
 		row.Unavailable = slices.Clone(historyUnavailable)
 
 		message, fields := h.failure(date)
+		if h.cached[date] {
+			message, fields = "", nil
+		}
 
 		switch {
 		case message != "" && ok:
@@ -162,7 +168,7 @@ func (c *accountReader) history(ctx context.Context, days int) ([]DailyHealth, e
 	cachePath := c.historyCachePath(ctx, dn)
 	cache := loadHistoryCache(cachePath)
 	final := end.AddDate(0, 0, -2).Format(time.DateOnly) // days up to this one no longer change
-	h := &historyBuild{displayName: dn, byDate: map[string]*DailyHealth{}}
+	h := &historyBuild{displayName: dn, byDate: map[string]*DailyHealth{}, cached: map[string]bool{}}
 
 	var wg sync.WaitGroup
 

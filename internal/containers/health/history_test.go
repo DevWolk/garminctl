@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,12 +21,15 @@ const historyUser = "user"
 // historyAccount serves the five range endpoints for every day of the
 // requested window; sleep fails while failSleep is set.
 type historyAccount struct {
-	failSleep atomic.Bool
-	failFrom  string // every range request of the window starting here fails
+	failSleep  atomic.Bool
+	failBefore string // every range request of a window starting before this date fails
 }
 
+// historyDate finds the first date of a range request.
+var historyDate = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
 func (a *historyAccount) GetJSON(_ context.Context, path string, out any) error {
-	if a.failFrom != "" && strings.Contains(path, a.failFrom) {
+	if from := historyDate.FindString(path); a.failBefore != "" && from != "" && from < a.failBefore {
 		return errors.New("window unavailable")
 	}
 
@@ -149,8 +153,8 @@ func TestHistoryKeepsPartialRowsAndNamesFailedFields(t *testing.T) {
 func TestHistoryReportsErrorForDaysWithoutData(t *testing.T) {
 	t.Parallel()
 
-	start := time.Now().AddDate(0, 0, -39).Format(time.DateOnly)
-	account := &historyAccount{failFrom: start}
+	// Only the oldest window starts this far back, even across midnight.
+	account := &historyAccount{failBefore: time.Now().AddDate(0, 0, -25).Format(time.DateOnly)}
 
 	action := HistoryAction{Access: AccountAccess{
 		Client:      account,
@@ -174,6 +178,45 @@ func TestHistoryReportsErrorForDaysWithoutData(t *testing.T) {
 
 	if last := rows[len(rows)-1]; last.Error != "" || last.Steps != 100 || last.Lacks("steps") {
 		t.Fatalf("row of the complete window = %+v", last)
+	}
+}
+
+func TestHistoryKeepsCachedDaysOfWindowWithFailedFetch(t *testing.T) {
+	t.Parallel()
+
+	account := &historyAccount{}
+	action := HistoryAction{Access: AccountAccess{
+		Client:      account,
+		DisplayName: func(context.Context) (string, error) { return historyUser, nil },
+		DeviceXML:   func(context.Context) (*deviceinfo.DeviceXML, error) { return nil, errors.New("no watch") },
+		CacheDir:    t.TempDir(),
+	}}
+
+	if _, err := action.Run(t.Context(), 10); err != nil {
+		t.Fatal(err)
+	}
+
+	// The window is fetched again for its two newest days, and sleep fails.
+	account.failSleep.Store(true)
+
+	rows, err := action.Run(t.Context(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rows) != 10 {
+		t.Fatalf("rows = %d, want 10", len(rows))
+	}
+
+	for i, row := range rows {
+		cached := i < len(rows)-2
+		if cached && (row.SleepSec != 3600 || row.Lacks("sleepSec")) {
+			t.Fatalf("cached row %s = %+v, want its cached sleep", row.Date, row)
+		}
+
+		if !cached && !row.Lacks("sleepSec") {
+			t.Fatalf("fetched row %s unavailable = %v, want sleepSec", row.Date, row.Unavailable)
+		}
 	}
 }
 
