@@ -8,8 +8,6 @@ on:
   push:
     branches: [main] # tag pushes ignore path filters and would run this too
     paths: [.github/workflows/copilot-setup-steps.yml]
-  pull_request:
-    paths: [.github/workflows/copilot-setup-steps.yml]
 
 jobs:
   copilot-setup-steps:

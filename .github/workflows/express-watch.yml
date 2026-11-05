@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "41 5 * * *"
   workflow_dispatch:
+    inputs:
+      copilot:
+        description: Ask Copilot to assess a newly detected Garmin Express release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -46,7 +51,10 @@ jobs:
           gh pr create --base main --head "$branch" --title "Garmin Express $VERSION released" --body-file "$RUNNER_TEMP/notes.md"
 
       - name: Ask Copilot whether garminctl has to follow
-        if: steps.check.outputs.changed == 'true' && env.WATCH_TOKEN != ''
+        if: >-
+          steps.check.outputs.changed == 'true' && env.WATCH_TOKEN != '' &&
+          ((github.event_name == 'workflow_dispatch' && inputs.copilot) ||
+           (github.event_name == 'schedule' && vars.EXPRESS_WATCH_COPILOT == 'true'))
         env:
           GH_TOKEN: ${{ secrets.EXPRESS_WATCH_TOKEN }}
           VERSION: ${{ steps.check.outputs.version }}

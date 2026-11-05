@@ -68,3 +68,27 @@ remain failed checks; the runner continues with the remaining packages.
 - Keep dependencies small and discuss additions before adding a module.
 - Keep each pull request focused, explain its effect, and report validation.
   The Linux/Windows tests, quality gate and installed-package checks must pass.
+
+## Copilot usage
+
+Do not automatically request Copilot reviews on pull requests. Keep normal
+test, lint, security and package workflows enabled.
+
+The Garmin Express watch workflow can create a Copilot coding task only when
+it detects a new upstream release and `EXPRESS_WATCH_TOKEN` is available.
+The release check and metadata pull request run independently of this task.
+
+| Trigger | Copilot control | Default |
+| --- | --- | --- |
+| Manual Garmin Express watch run | Select the `copilot` input for that run. | Off |
+| Scheduled Garmin Express watch run | Set the repository Actions variable `EXPRESS_WATCH_COPILOT` to `true`. | Off when unset or any other value |
+| Ordinary pull request | No workflow requests a Copilot review or coding task. | Off in workflows |
+
+GitHub can also request reviews through personal Copilot settings or repository
+rulesets. Disable **Automatic Copilot code review**, **Review new pushes** and
+draft reviews in personal settings, and remove **Automatically request Copilot
+code review** from any applicable rulesets. These settings are separate from
+workflow triggers; see [GitHub's configuration guide](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review).
+
+`copilot-setup-steps.yml` prepares the agent environment. It does not request
+a review or start a coding task, and has no pull-request trigger.
