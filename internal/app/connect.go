@@ -2,17 +2,12 @@ package app
 
 import (
 	"context"
-	"sync"
 
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
-
-// messageClaims holds one claim registry per watch owner, so a bounded pull
-// and a sync job of the same runtime never deliver a queued message twice.
-var messageClaims sync.Map // *watchsession.Manager -> *connect.MessageClaims
 
 // ConnectFor borrows the caller's leased Session and canonical schema cache.
 func ConnectFor(watch *garmin.Lazy, account *gc.Client) func(*watchsession.Session) *connect.Cloud {
@@ -27,12 +22,9 @@ func JobConnect(watch *garmin.Lazy, account *gc.Client, epoch watchsession.Conne
 }
 
 func connectConfig(watch *garmin.Lazy) connect.Config {
-	claims, _ := messageClaims.LoadOrStore(watch.Manager(), new(connect.MessageClaims))
-	shared, _ := claims.(*connect.MessageClaims)
-
 	return connect.Config{
 		Invalidated: func(sess *watchsession.Session, generation uint64) { watch.AppSchemaCacheFor(sess).Reset(generation) },
-		Claims:      shared,
+		Claims:      watch.MessageClaims(),
 	}
 }
 

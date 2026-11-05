@@ -471,7 +471,7 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 
 // Pull downloads every queued message that matches (nil = all), writes it
 // where the watch expects it and tells Connect it was received. A message
-// another pull of this process is delivering is left to that pull.
+// another pull of this process is delivering or has written is skipped.
 func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]PulledFile, error) {
 	msgs, err := c.Messages(ctx)
 	if err != nil {
@@ -498,8 +498,9 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			continue
 		}
 
-		out = append(out, c.pullMessage(ctx, dx, m))
-		c.claims.release(m.MessageID)
+		pf := c.pullMessage(ctx, dx, m)
+		c.claims.finish(m.MessageID, pf.Path != "")
+		out = append(out, pf)
 	}
 
 	if err := c.invalidateApps(ctx); err != nil {

@@ -55,7 +55,7 @@ func (r *pullRace) roundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		return syncResponse(req, []byte("synthetic payload")), nil
-	case "/device-service/devicemessage/message/42":
+	case syntheticAckPath:
 		r.acks.Add(1)
 		return syncResponse(req, nil), nil
 	default:
@@ -107,5 +107,48 @@ func TestConcurrentPullsDeliverQueuedMessageOnce(t *testing.T) {
 
 	if delivered := len(results[0]) + len(results[1]); delivered != 1 || race.downloads.Load() != 1 || race.acks.Load() != 1 {
 		t.Fatalf("message delivered %d times (downloads=%d acks=%d): %+v", delivered, race.downloads.Load(), race.acks.Load(), results)
+	}
+}
+
+func TestPullWithStaleListingSkipsDeliveredMessage(t *testing.T) {
+	t.Parallel()
+
+	dev, err := device.NewDirFS(testdump.Root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	var downloads, acks atomic.Int32
+
+	// Connect still lists the message as new after the first acknowledgement,
+	// as a listing taken before that acknowledgement would.
+	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case deviceMessagesPath:
+			return syncResponse(req, syncMessages()), nil
+		case syntheticFilePath:
+			downloads.Add(1)
+			return syncResponse(req, []byte("synthetic payload")), nil
+		case syntheticAckPath:
+			acks.Add(1)
+			return syncResponse(req, nil), nil
+		default:
+			return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
+		}
+	})
+
+	config := Config{CacheDir: t.TempDir(), Claims: new(MessageClaims)}
+	sess := watchsession.New(dev)
+
+	for i := range 2 {
+		if _, err := NewCloud(sess, client, config).Pull(t.Context(), nil); err != nil {
+			t.Fatalf("pull %d: %v", i, err)
+		}
+	}
+
+	if downloads.Load() != 1 || acks.Load() != 1 {
+		t.Fatalf("delivered message fetched again: downloads=%d acks=%d", downloads.Load(), acks.Load())
 	}
 }

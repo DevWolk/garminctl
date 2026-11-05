@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/containers/workouts"
 	"github.com/DevWolk/garminctl/internal/gc"
@@ -25,6 +26,7 @@ var ErrSessionChanged = watchsession.ErrSessionChanged
 // It owns no transport, admission permits or shutdown worker.
 type Lazy struct {
 	manager *watchsession.Manager
+	claims  connect.MessageClaims
 
 	mu           sync.Mutex
 	facadeClosed bool
@@ -43,6 +45,10 @@ func NewLazyWithGate(open Opener, gate *lifecycle.Gate) *Lazy {
 
 // Manager supplies the feature-free owner to newly extracted adapters.
 func (l *Lazy) Manager() *watchsession.Manager { return l.manager }
+
+// MessageClaims is the runtime's one registry of Connect messages its pulls
+// are delivering or have written; every Cloud of this owner shares it.
+func (l *Lazy) MessageClaims() *connect.MessageClaims { return &l.claims }
 
 // Gate is the shared operation/job/maintenance admission owner.
 func (l *Lazy) Gate() *lifecycle.Gate { return l.manager.Gate() }

@@ -24,6 +24,7 @@ import (
 const (
 	deviceMessagesPath = "/device-service/devicemessage/messages"
 	syntheticFilePath  = "/synthetic.fit"
+	syntheticAckPath   = "/device-service/devicemessage/message/42"
 )
 
 type syncTransport func(*http.Request) (*http.Response, error)
@@ -106,7 +107,7 @@ func (tr *deliveryTransport) RoundTrip(req *http.Request) (*http.Response, error
 		case <-req.Context().Done():
 			return nil, req.Context().Err()
 		}
-	case "/device-service/devicemessage/message/42":
+	case syntheticAckPath:
 		if req.Method != http.MethodPut || req.URL.Query().Get("status") != "received" {
 			return nil, errors.New("unexpected acknowledgement")
 		}
@@ -412,7 +413,7 @@ func TestManagedPullDoesNotAckFailedWrite(t *testing.T) {
 			return syncResponse(req, syncMessages()), nil
 		case syntheticFilePath:
 			return syncResponse(req, []byte("synthetic payload")), nil
-		case "/device-service/devicemessage/message/42":
+		case syntheticAckPath:
 			acks.Add(1)
 			return syncResponse(req, nil), nil
 		default:

@@ -15,6 +15,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -177,4 +178,30 @@ func serveConnectRoot(t *testing.T, root string, opens, closes *atomic.Int32) (s
 	t.Cleanup(stop)
 
 	return "http://" + listener.Addr().String(), stop
+}
+
+func TestConnectCloudsShareRuntimeMessageClaims(t *testing.T) {
+	t.Parallel()
+
+	open := func(context.Context) (device.Device, error) { return nil, device.ErrDisconnected }
+	first, second := garmin.NewLazy(open), garmin.NewLazy(open)
+
+	t.Cleanup(func() {
+		for _, watch := range []*garmin.Lazy{first, second} {
+			if err := watch.Close(context.WithoutCancel(t.Context())); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+
+	// HTTP, MCP, CLI and the sync runner build their Clouds through
+	// connectConfig; they must share the runtime's one registry.
+	claims := connectConfig(first).Claims
+	if claims == nil || claims != connectConfig(first).Claims || claims != first.MessageClaims() {
+		t.Fatal("clouds of one runtime do not share its message claims")
+	}
+
+	if connectConfig(second).Claims == claims {
+		t.Fatal("two runtimes share message claims")
+	}
 }
