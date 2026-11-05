@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 type probeDevice struct {
@@ -20,22 +20,30 @@ func (d probeDevice) Stat(ctx context.Context, _ string) (device.Entry, error) {
 	return device.Entry{}, d.stat(ctx)
 }
 
-func probeService(t *testing.T, stat func(context.Context) error) (*Server, *garmin.Service) {
+func probeService(t *testing.T, stat func(context.Context) error) (*Server, *watchsession.Session) {
 	t.Helper()
 
 	root := t.TempDir()
-	lazy := garmin.NewLazy(func(context.Context) (device.Device, error) {
+	manager := watchsession.NewManager(func(context.Context) (device.Device, error) {
 		d, err := device.NewDirFS(root)
 		return probeDevice{Device: d, stat: stat}, err
 	})
-	t.Cleanup(lazy.Drop)
+	t.Cleanup(manager.Drop)
 
-	svc, err := lazy.Get(t.Context())
+	lease, err := manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return &Server{svc: lazy}, svc
+	sess := lease.Session()
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{manager: manager}
+	s.features.WatchModel = func(context.Context, *watchsession.Session) (string, error) { return "", nil }
+
+	return s, sess
 }
 
 func TestProbeRetainsSessionOnNonDisconnectErrors(t *testing.T) {
@@ -54,7 +62,7 @@ func TestProbeRetainsSessionOnNonDisconnectErrors(t *testing.T) {
 			t.Parallel()
 
 			s, svc := probeService(t, func(context.Context) error { return tt.err })
-			if !s.probe(t.Context(), true) || s.svc.Current() != svc {
+			if !s.probe(t.Context(), true) || s.manager.Current() != svc {
 				t.Fatal("probe discarded a usable session")
 			}
 
@@ -71,7 +79,7 @@ func TestProbeDropsTypedDisconnect(t *testing.T) {
 	s, _ := probeService(t, func(context.Context) error {
 		return errors.Join(device.ErrDisconnected, context.DeadlineExceeded)
 	})
-	if s.probe(t.Context(), false) || s.svc.Current() != nil {
+	if s.probe(t.Context(), false) || s.manager.Current() != nil {
 		t.Fatal("probe retained a broken transport")
 	}
 }
@@ -98,7 +106,7 @@ func TestProbeLateDeadlineRetainsSession(t *testing.T) {
 		<-ctx.Done()
 		close(release)
 
-		if !<-result || s.svc.Current() != svc {
+		if !<-result || s.manager.Current() != svc {
 			t.Fatal("late deadline dropped the session after waiting for the device")
 		}
 	})
@@ -110,7 +118,7 @@ func TestSkippedProbePreservesEitherPreviousObservation(t *testing.T) {
 	called := false
 	s, _ := probeService(t, func(context.Context) error { called = true; return nil })
 
-	lease, err := s.svc.Acquire(t.Context())
+	lease, err := s.manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +149,7 @@ func TestPollConnectionConfirmsEachEpochOnce(t *testing.T) {
 		t.Fatal("same epoch repeated connection actions")
 	}
 
-	if err := s.svc.DropAt(first); err != nil {
+	if err := s.manager.DropAt(first); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,7 +157,7 @@ func TestPollConnectionConfirmsEachEpochOnce(t *testing.T) {
 		t.Fatal("missing connection was reported connected")
 	}
 
-	lease, err := s.svc.Acquire(t.Context())
+	lease, err := s.manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +177,7 @@ func TestPollConnectionSkippedProbeDoesNotInventConnection(t *testing.T) {
 	t.Parallel()
 	s, _ := probeService(t, func(context.Context) error { return nil })
 
-	lease, err := s.svc.Acquire(t.Context())
+	lease, err := s.manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

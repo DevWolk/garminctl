@@ -111,7 +111,7 @@ func TestSettingsAdapterAdmitsBeforeReadingBody(t *testing.T) {
 	}, false)
 	t.Cleanup(func() { closeSettingsTestRuntime(t, s) })
 
-	resume, err := s.svc.Gate().TryMaintenance(t.Context())
+	resume, err := s.manager.Gate().TryMaintenance(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

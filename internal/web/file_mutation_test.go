@@ -12,7 +12,7 @@ import (
 
 	watchhttp "github.com/DevWolk/garminctl/internal/containers/watch/ui/http"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -31,23 +31,23 @@ func TestFilePutFailureInvalidatesSharedServiceCache(t *testing.T) {
 
 	root := testdump.Root(t)
 	opens := 0
-	lazy := garmin.NewLazy(func(context.Context) (device.Device, error) {
+	manager := watchsession.NewManager(func(context.Context) (device.Device, error) {
 		opens++
 
 		d, err := device.NewDirFS(root)
 
 		return uncertainWriteDevice{Device: d}, err
 	})
-	t.Cleanup(lazy.Drop)
+	t.Cleanup(manager.Drop)
 
-	lease, err := lazy.Acquire(t.Context())
+	lease, err := manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	epoch := lease.Epoch()
 
-	original, readErr := lease.Service().DeviceXML(lease.Context())
+	original, readErr := lease.Session().DeviceXML(lease.Context())
 	if err := errors.Join(readErr, lease.Release()); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestFilePutFailureInvalidatesSharedServiceCache(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	(&watchhttp.Handler{Manager: lazy.Manager()}).RegisterRoutes(mux)
+	(&watchhttp.Handler{Manager: manager}).RegisterRoutes(mux)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
@@ -78,14 +78,14 @@ func TestFilePutFailureInvalidatesSharedServiceCache(t *testing.T) {
 		t.Fatalf("failed verification status=%d body=%s", w.Code, w.Body)
 	}
 
-	lease, err = lazy.Acquire(t.Context())
+	lease, err = manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	nextEpoch := lease.Epoch()
 
-	updated, readErr := lease.Service().DeviceXML(lease.Context())
+	updated, readErr := lease.Session().DeviceXML(lease.Context())
 	if err := errors.Join(readErr, lease.Release()); err != nil {
 		t.Fatal(err)
 	}

@@ -55,7 +55,7 @@ func TestUploadBodyReservesAdmissionAndShutdownJoinsIt(t *testing.T) {
 		t.Fatal("upload body did not start")
 	}
 
-	if resume, err := s.svc.Gate().TryMaintenance(t.Context()); !errors.Is(err, lifecycle.ErrBusy) {
+	if resume, err := s.manager.Gate().TryMaintenance(t.Context()); !errors.Is(err, lifecycle.ErrBusy) {
 		if resume != nil {
 			resume()
 		}

@@ -67,9 +67,12 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: StoreRegistry},
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: WatchUpdateConfig, Registry: UpdatesRegistry, InvalidateFor: updateInvalidator(runtime)},
 		},
-		MCP:          mcpTools(runtime, account),
-		WatchSummary: WatchSummary,
-		SyncRunner:   connectRunner(runtime.Watch, account),
+		MCP:             mcpTools(runtime, account),
+		WatchSummary:    WatchSummary,
+		WatchModel:      WatchModel,
+		SoftwareUpdates: SoftwareUpdateNames,
+		Refresh:         refreshWith(runtime.Watch.AppSchemaCacheFor),
+		AutoSync:        autoSyncNotes(runtime.Sync, connectRunner(runtime.Watch, account)),
 	})
 }
 

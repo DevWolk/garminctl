@@ -15,7 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/gc"
 )
 
@@ -55,7 +55,7 @@ func TestHTTPSyncConflictsAndMCPWaiterSharesRuntimeJob(t *testing.T) {
 	client, transport := signedInSyncClient(t)
 	s, ts, _ := newTestBackend(t, client)
 
-	lease, err := s.svc.Acquire(t.Context())
+	lease, err := s.manager.Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,12 +70,12 @@ func TestHTTPSyncConflictsAndMCPWaiterSharesRuntimeJob(t *testing.T) {
 	release := sync.OnceFunc(func() { close(gate) })
 	defer release()
 
-	job, _, err := s.runtime.Sync.Start(t.Context(), garmin.SyncOptions{Upload: true, Download: true, Epoch: epoch}, func(ctx context.Context, _ garmin.Progress) (*garmin.SyncResult, error) {
+	job, _, err := syncCoordinator(t, s).Start(t.Context(), connect.SyncOptions{Upload: true, Download: true, Epoch: epoch}, func(ctx context.Context, _ connect.Progress) (*connect.SyncResult, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-gate:
-			return &garmin.SyncResult{Errors: []string{"synthetic result"}}, nil
+			return &connect.SyncResult{Errors: []string{"synthetic result"}}, nil
 		}
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestHTTPSyncConflictsAndMCPWaiterSharesRuntimeJob(t *testing.T) {
 
 	checkMCPWaiterCancellation(t, s, ts.URL)
 
-	if !s.runtime.Sync.Snapshot().Running || transport.calls.Load() != 0 {
+	if !syncCoordinator(t, s).Snapshot().Running || transport.calls.Load() != 0 {
 		t.Fatalf("MCP started independent sync or cancelled shared job: network calls=%d", transport.calls.Load())
 	}
 

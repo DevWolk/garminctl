@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 // Runtime owns the shared watch and jobs of one process backend. This temporary
@@ -24,6 +25,9 @@ func NewRuntime(parent context.Context, open Opener) *Runtime {
 
 	return &Runtime{Watch: watch, Sync: NewSyncCoordinator(ctx, watch.Gate()), Activities: NewActivityCoordinator(ctx, watch), ctx: ctx, cancel: cancel}
 }
+
+// Manager is the runtime's watch owner.
+func (r *Runtime) Manager() *watchsession.Manager { return r.Watch.Manager() }
 
 // Context is the runtime lifetime used by server requests and owned workers.
 func (r *Runtime) Context() context.Context { return r.ctx }

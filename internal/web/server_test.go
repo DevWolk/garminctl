@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/containers/apps"
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
@@ -81,25 +82,25 @@ func TestWithServiceDropsOnlyDisconnectedSessions(t *testing.T) {
 
 			root := t.TempDir()
 			opens, closes := 0, 0
-			lazy := garmin.NewLazy(func(context.Context) (device.Device, error) {
+			manager := watchsession.NewManager(func(context.Context) (device.Device, error) {
 				opens++
 
 				d, err := device.NewDirFS(root)
 
 				return closeTrackedDevice{Device: d, closes: &closes}, err
 			})
-			t.Cleanup(lazy.Drop)
+			t.Cleanup(manager.Drop)
 
-			s := &Server{svc: lazy}
 			w := httptest.NewRecorder()
 			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/files", nil)
-			s.withService(w, r, func(context.Context, *garmin.Service) (any, error) { return nil, tt.err })
+			httpx.WithWatch(w, r, manager, func(context.Context, *watchsession.Lease) (any, error) { return nil, tt.err })
 
 			if w.Code != tt.status || (closes == 1) != tt.drop {
 				t.Fatalf("response status=%d, closes=%d, body=%s", w.Code, closes, w.Body)
 			}
 
-			if _, err := lazy.Get(t.Context()); err != nil {
+			lease, err := manager.Acquire(t.Context())
+			if err := errors.Join(err, lease.Release()); err != nil {
 				t.Fatal(err)
 			}
 
@@ -151,8 +152,8 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 	}
 
 	appCount := func(ctx context.Context, sess *watchsession.Session) (int, error) {
-		apps, err := garmin.NewFromSession(sess).Apps(ctx)
-		return len(apps), err
+		entries, err := (apps.ReadRegistryAction{}).Run(ctx, sess)
+		return len(entries), err
 	}
 
 	storeRegistry := func(sess *watchsession.Session) store.InstalledApps {
@@ -160,7 +161,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 			return nil
 		}
 
-		return garmin.NewFromSession(sess).Apps
+		return func(ctx context.Context) ([]apps.App, error) { return (apps.ReadRegistryAction{}).Run(ctx, sess) }
 	}
 
 	updateConfig := func() updates.Config { return updates.Config{URL: updates.DefaultURL, Client: updates.HTTPClient} }
@@ -197,17 +198,23 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 			&storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
 			&updatesmcp.Tools{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor, BindContext: runtime.RequestContext},
 		},
-		SyncRunner: func(epoch watchsession.ConnectionEpoch, up, down bool) connect.SyncRunner {
-			cloud := jobFor(epoch)
-
-			return func(ctx context.Context, progress connect.Progress) (*connect.SyncResult, error) {
-				return (connect.SyncAction{Cloud: cloud}).Run(ctx, up, down, progress)
-			}
-		},
+		Refresh: func(sess *watchsession.Session) { runtime.Watch.AppSchemaCacheFor(sess).Reset(sess.Refresh()) },
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)
 		},
 	})
+}
+
+// syncCoordinator is the test backend's shared sync coordinator.
+func syncCoordinator(t *testing.T, s *Server) *connect.SyncCoordinator {
+	t.Helper()
+
+	runtime, ok := s.runtime.(*garmin.Runtime)
+	if !ok {
+		t.Fatalf("test backend runtime is %T", s.runtime)
+	}
+
+	return runtime.Sync
 }
 
 func newTestBackend(t *testing.T, cloud *gc.Client) (*Server, *httptest.Server, string) {
@@ -283,48 +290,6 @@ func TestServer_StatusBeforeConnecting(t *testing.T) {
 
 	if st.Connected || st.Summary != nil || st.Auto["enabled"] != false {
 		t.Fatalf("unexpected status before connecting: %+v", st)
-	}
-}
-
-func TestServer_StoreDeviceSelection(t *testing.T) {
-	t.Parallel()
-
-	root := testdump.Root(t)
-	s := newServer(t.Context(), func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-	t.Cleanup(s.svc.Drop)
-
-	_, err := s.withOptionalService(t.Context(), func(ctx context.Context, svc *garmin.Service) (any, error) {
-		if part := storePart(ctx, svc); svc != nil || part != "" {
-			t.Fatalf("disconnected store must not assume a device: service=%v part=%q", svc, part)
-		}
-
-		return nil, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	lease, err := s.svc.Acquire(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := lease.Service()
-
-	dx, err := svc.DeviceXML(lease.Context())
-	if err := errors.Join(err, lease.Release()); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = s.withOptionalService(t.Context(), func(ctx context.Context, selected *garmin.Service) (any, error) {
-		if part := storePart(ctx, selected); selected != svc || part != dx.PartNumber {
-			t.Fatalf("connected store selected service=%v part=%q, want service=%v part=%q", selected, part, svc, dx.PartNumber)
-		}
-
-		return nil, nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -667,14 +632,4 @@ func getUIAsset(t *testing.T, ts *httptest.Server, path, contentType string) []b
 	}
 
 	return body
-}
-
-func storePart(ctx context.Context, svc *garmin.Service) string {
-	if svc != nil {
-		if dx, err := svc.DeviceXML(ctx); err == nil {
-			return dx.PartNumber
-		}
-	}
-
-	return ""
 }

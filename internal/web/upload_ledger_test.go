@@ -15,7 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/paths"
 )
 
@@ -88,7 +88,7 @@ func TestLedgerSaveFailureVisibleThroughMCPAndHTTPState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var structured garmin.SyncResult
+	var structured connect.SyncResult
 	if err := json.Unmarshal(data, &structured); err != nil {
 		t.Fatal(err)
 	}
@@ -96,9 +96,9 @@ func TestLedgerSaveFailureVisibleThroughMCPAndHTTPState(t *testing.T) {
 	checkLedgerPartialSync(t, &structured)
 
 	var state struct {
-		Running bool               `json:"running"`
-		Error   string             `json:"error"`
-		Result  *garmin.SyncResult `json:"result"`
+		Running bool                `json:"running"`
+		Error   string              `json:"error"`
+		Result  *connect.SyncResult `json:"result"`
 	}
 	if status := getJSON(t, ts, "/api/cloud/sync", &state); status != http.StatusOK {
 		t.Fatalf("HTTP sync state status=%d", status)
@@ -111,7 +111,7 @@ func TestLedgerSaveFailureVisibleThroughMCPAndHTTPState(t *testing.T) {
 	checkLedgerPartialSync(t, state.Result)
 }
 
-func checkLedgerPartialSync(t *testing.T, result *garmin.SyncResult) {
+func checkLedgerPartialSync(t *testing.T, result *connect.SyncResult) {
 	t.Helper()
 
 	if result == nil || result.Upload == nil || result.Upload.Uploaded != 1 {

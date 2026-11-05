@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/mcpserver"
 	"github.com/DevWolk/garminctl/internal/notify"
@@ -32,20 +31,38 @@ const (
 
 // Features contains adapters assembled by the composition root. HTTP and MCP
 // shells receive registrations, never import the feature implementations.
+// Functions taking a Session borrow the caller's lease only for that call.
 type Features struct {
-	HTTP       []httpx.RouteRegistrar
-	MCP        []mcpx.ToolRegistrar
-	SyncRunner func(watchsession.ConnectionEpoch, bool, bool) garmin.SyncRunner
-	// WatchSummary borrows the already leased Session only for this call.
+	HTTP []httpx.RouteRegistrar
+	MCP  []mcpx.ToolRegistrar
+	// WatchSummary is the connection-state view of the leased watch.
 	WatchSummary func(context.Context, *watchsession.Session) (any, error)
+	// WatchModel names the leased watch in notifications.
+	WatchModel func(context.Context, *watchsession.Session) (string, error)
+	// SoftwareUpdates names the offered watch updates as "product version".
+	SoftwareUpdates func(context.Context, *watchsession.Session) ([]string, error)
+	// Refresh drops the cached device state of the leased watch.
+	Refresh func(*watchsession.Session)
+	// AutoSync runs or joins the sync for a newly plugged watch and describes
+	// its outcome. ok is false when ctx ended before the sync finished.
+	AutoSync func(ctx context.Context, epoch watchsession.ConnectionEpoch) (notes []string, ok bool)
+}
+
+// Runtime is the process owner this shell serves and closes. The composition
+// root supplies it; Stop rejects new work and Close joins it.
+type Runtime interface {
+	Context() context.Context
+	Manager() *watchsession.Manager
+	Stop()
+	Close(context.Context) error
 }
 
 // Server holds the lazily connected device service.
 type Server struct {
 	features   Features
-	svc        *garmin.Lazy
+	manager    *watchsession.Manager
 	cloud      *gc.Client
-	runtime    *garmin.Runtime
+	runtime    Runtime
 	watchDone  <-chan struct{}
 	auto       autoState
 	version    string
@@ -65,7 +82,7 @@ type statusResponse struct {
 
 // ServeRuntime serves an already-bound listener with owners supplied by the
 // composition root. It owns the listener and closes the runtime on every exit.
-func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Client, autoSync bool, version string, features Features) error {
+func ServeRuntime(listener net.Listener, runtime Runtime, account *gc.Client, autoSync bool, version string, features Features) error {
 	ctx, cancel := context.WithCancel(runtime.Context())
 	defer cancel()
 
@@ -142,8 +159,8 @@ func ServeRuntime(listener net.Listener, runtime *garmin.Runtime, account *gc.Cl
 	return shutdownErr
 }
 
-func serverWithRuntime(runtime *garmin.Runtime, account *gc.Client, autoSync bool, features Features) *Server {
-	s := &Server{features: features, svc: runtime.Watch, runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
+func serverWithRuntime(runtime Runtime, account *gc.Client, autoSync bool, features Features) *Server {
+	s := &Server{features: features, manager: runtime.Manager(), runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s
@@ -226,21 +243,13 @@ func logRequests(h http.Handler) http.Handler {
 	})
 }
 
-// withService runs fn with a connected service; a bridge failure drops the
-// connection so the next call reconnects.
-func (s *Server) withService(w http.ResponseWriter, r *http.Request, fn func(context.Context, *garmin.Service) (any, error)) {
-	httpx.WithWatch(w, r, s.svc, func(ctx context.Context, lease *garmin.Lease) (any, error) {
-		return fn(ctx, lease.Service())
-	})
-}
-
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	if s.svc.Manager().Current() == nil && r.URL.Query().Get("connect") == "" {
+	if s.manager.Current() == nil && r.URL.Query().Get("connect") == "" {
 		writeJSON(w, http.StatusOK, statusResponse{Auto: s.autoSnapshot()})
 		return
 	}
 
-	httpx.WithWatch(w, r, s.svc.Manager(), func(ctx context.Context, lease *watchsession.Lease) (any, error) {
+	httpx.WithWatch(w, r, s.manager, func(ctx context.Context, lease *watchsession.Lease) (any, error) {
 		sum, err := s.features.WatchSummary(ctx, lease.Session())
 		if err != nil {
 			return nil, err
@@ -251,7 +260,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	httpx.WithWatch(w, r, s.svc.Manager(), func(ctx context.Context, lease *watchsession.Lease) (any, error) {
+	httpx.WithWatch(w, r, s.manager, func(ctx context.Context, lease *watchsession.Lease) (any, error) {
 		sum, err := s.features.WatchSummary(ctx, lease.Session())
 		if err != nil {
 			return nil, err
@@ -262,13 +271,13 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) disconnectHandler(w http.ResponseWriter, _ *http.Request) {
-	s.svc.Drop()
+	s.manager.Drop()
 	writeJSON(w, http.StatusOK, statusResponse{})
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
-	s.withService(w, r, func(_ context.Context, svc *garmin.Service) (any, error) {
-		svc.Refresh()
+	httpx.WithWatch(w, r, s.manager, func(_ context.Context, lease *watchsession.Lease) (any, error) {
+		s.features.Refresh(lease.Session())
 		return map[string]any{"ok": true}, nil
 	})
 }
@@ -276,22 +285,9 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 // admittedOperation admits mutating requests before body reads or account-store
 // work, without acquiring a watch or serializing the network through USB.
 func (s *Server) admittedOperation(next http.HandlerFunc) http.HandlerFunc {
-	return httpx.Admit(s.svc.Gate(), next)
+	return httpx.Admit(s.manager.Gate(), next)
 }
 
 // ---------- Garmin Connect ----------
 
 // ---------- Connect IQ store ----------
-
-// withOptionalService keeps offline catalog/account behavior without exporting
-// an unleased Service or opening a watch solely to decorate a network response.
-func (s *Server) withOptionalService(ctx context.Context, body func(context.Context, *garmin.Service) (any, error)) (any, error) {
-	return httpx.WithCurrentWatch(ctx, s.svc, func(ctx context.Context, lease *garmin.Lease) (any, error) {
-		var svc *garmin.Service
-		if lease != nil {
-			svc = lease.Service()
-		}
-
-		return body(ctx, svc)
-	})
-}

@@ -14,6 +14,21 @@ func WatchUpdateConfig() updates.Config {
 	return updates.Config{URL: updates.DefaultURL, Client: updates.HTTPClient}
 }
 
+// SoftwareUpdateNames names the offered watch updates as "product version".
+func SoftwareUpdateNames(ctx context.Context, sess *watchsession.Session) ([]string, error) {
+	offered, err := updates.NewCheckSoftwareAction(WatchUpdateConfig()).Run(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(offered))
+	for _, u := range offered {
+		names = append(names, u.ProductName+" "+u.Version)
+	}
+
+	return names, nil
+}
+
 // UpdatesRegistry supplies app entries for the current operation scope.
 func UpdatesRegistry(sess *watchsession.Session) updates.InstalledApps {
 	return func(ctx context.Context) ([]apps.App, error) { return (apps.ReadRegistryAction{}).Run(ctx, sess) }
