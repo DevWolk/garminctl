@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -312,4 +313,21 @@ func TestSetAppHiddenSnapshotsPendingRegistry(t *testing.T) { //nolint:parallelt
 	assertRegistryBytes(t, second, out)
 	assertRegistryBytes(t, filepath.Join(filepath.Dir(second), "IN.BIN"), queued)
 	assertRegistryBackupProtection(t, filepath.Join(filepath.Dir(second), "IN.BIN"))
+}
+
+func TestPendingRegistryTransportErrorIsNotAbsence(t *testing.T) { //nolint:paralleltest // registryCache changes process cache-directory environment
+	registryCache(t)
+	d, _, targets := registryFixture(t)
+
+	// A broken USB transfer whose text happens to contain "not found".
+	broken := fmt.Errorf("%w: MTP transfer: libusb: not found [code -5]", device.ErrDisconnected)
+	sess := watchsession.New(&registryReadDevice{Device: d, path: PathAppsIn, fail: broken})
+
+	if changes, err := (PendingRegistryAction{}).Run(t.Context(), sess); !errors.Is(err, device.ErrDisconnected) {
+		t.Fatalf("pending changes = %v, error = %v; want the transport error", changes, err)
+	}
+
+	if _, err := (VisibilityAction{}).Run(t.Context(), sess, targets[0].Name, !targets[0].Hidden); !errors.Is(err, device.ErrDisconnected) || d.writes != 0 {
+		t.Fatalf("visibility change over a broken read: err=%v writes=%d", err, d.writes)
+	}
 }

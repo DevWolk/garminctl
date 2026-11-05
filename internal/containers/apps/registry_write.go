@@ -225,10 +225,11 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 	return backup, nil
 }
 
-// isNotFound reports a missing path, including bridge errors that carry only
-// the message.
+// isNotFound reports a missing path. Every transport maps absence to
+// device.ErrNotFound; matching the message text would also accept transport
+// failures whose text contains "not found" and silently drop a queued IN.BIN.
 func isNotFound(err error) bool {
-	return errors.Is(err, device.ErrNotFound) || strings.Contains(err.Error(), "not found")
+	return errors.Is(err, device.ErrNotFound)
 }
 
 // PendingRegistryAction lists what IN.BIN will change when the watch is unplugged.
