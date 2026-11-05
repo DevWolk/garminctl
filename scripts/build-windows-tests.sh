@@ -5,11 +5,14 @@ cd "$(dirname "$0")/.."
 directory=bin/windows-tests
 mkdir -p "$directory"
 manifest="$directory/manifest.tsv"
+packages="$directory/packages.txt"
 : > "$manifest"
+# A file instead of process substitution: set -e stops on a failed listing.
+GOOS=windows CGO_ENABLED=0 go list -tags desktop,production -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}|{{.Dir}}{{end}}' ./... > "$packages"
 while IFS='|' read -r package path; do
   [[ -n $package ]] || continue
   relative=${path#"$PWD/"}
   binary="$directory/${relative//\//_}.test.exe"
   GOOS=windows CGO_ENABLED=0 go test -tags desktop,production -c -o "$binary" "$package"
   printf '%s\t%s\n' "$relative" "$binary" >> "$manifest"
-done < <(GOOS=windows CGO_ENABLED=0 go list -tags desktop,production -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}|{{.Dir}}{{end}}' ./...)
+done < "$packages"
