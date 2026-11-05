@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/containers/watch"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -42,7 +42,7 @@ func TestBackupRetainsJobWhileReleasingEachDeviceGroup(t *testing.T) {
 			t.Errorf("backup I/O admission=%+v", state)
 		}
 	}}
-	runtime := garmin.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return wrapped, nil })
+	runtime := app.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return wrapped, nil })
 	gate = runtime.Watch.Gate()
 
 	t.Cleanup(func() {
@@ -54,7 +54,7 @@ func TestBackupRetainsJobWhileReleasingEachDeviceGroup(t *testing.T) {
 		}
 	})
 
-	lease, err := runtime.Watch.Acquire(t.Context())
+	lease, err := runtime.Watch.Manager().Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestBackupRetainsJobWhileReleasingEachDeviceGroup(t *testing.T) {
 		}
 	}}
 
-	err = c.runDeviceJob(t.Context(), "backup", func(ctx context.Context, _ *garmin.Service, _ []string) error {
+	err = c.runDeviceJob(t.Context(), "backup", func(ctx context.Context, _ []string) error {
 		_, err := watch.NewBackupAction(&backupSource{cli: c}, observer).Run(ctx, watch.BackupRequest{Destination: t.TempDir()})
 		return err
 	}, nil)

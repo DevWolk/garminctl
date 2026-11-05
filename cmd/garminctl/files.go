@@ -3,19 +3,12 @@ package main
 import (
 	"context"
 
-	"github.com/DevWolk/garminctl/internal/containers/watch"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
-func (c *cli) backup(ctx context.Context, legacy *garmin.Service, args []string) error {
-	var source watch.BackupSource = &backupSource{cli: c}
-	if c.runtime == nil {
-		source = legacy
-	}
-
-	return c.watchCLI().Backup(ctx, source, args)
+func (c *cli) backup(ctx context.Context, args []string) error {
+	return c.watchCLI().Backup(ctx, &backupSource{cli: c}, args)
 }
 
 // backupSource releases each operation lease before host I/O/progress. The

@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/app"
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -32,8 +34,8 @@ func TestWatchCLIReadContracts(t *testing.T) {
 		{name: "info JSON", cmd: infoCommand, json: true, hash: "98bfabe17c291b0667cd3b7c8ea5416cd9ea5ba5f422e358ec40a13a19bb724e"},
 		{name: "list text", cmd: "ls", args: []string{watchStorageDir}, hash: "0b3dac477c24cf48be105d6d439ee37637a984434b7b6019b327cb6854a5d951"},
 		{name: "list JSON", cmd: "ls", args: []string{watchStorageDir}, json: true, hash: "76d8f64ba5adf0ad11de9029d1ba41718d7a850d27e4690e0d13329b477a405c"},
-		{name: "decode text", cmd: "decode", args: []string{garmin.PathSettings}, hash: "20612928fa469d61e7ea236d38bb93903ce2bcea68f8bb21a457ed32c37d54ab"},
-		{name: "decode JSON", cmd: "decode", args: []string{garmin.PathSettings}, json: true, hash: "12428aa2bd441bc4296e0f9253d04241069955c77886f9e8d9762cd6ac83d32e"},
+		{name: "decode text", cmd: "decode", args: []string{watchsession.PathSettings}, hash: "20612928fa469d61e7ea236d38bb93903ce2bcea68f8bb21a457ed32c37d54ab"},
+		{name: "decode JSON", cmd: "decode", args: []string{watchsession.PathSettings}, json: true, hash: "12428aa2bd441bc4296e0f9253d04241069955c77886f9e8d9762cd6ac83d32e"},
 		{name: "cat text", cmd: watchCatCommand, args: []string{"GARMIN/notes.txt"}, hash: "52f000e01e486d4b4caca23e88c4a003305ba77b294fd563237f1012a3451ad3"},
 		{name: "cat binary", cmd: watchCatCommand, args: []string{"GARMIN/sample.bin"}, hash: "068a9db2aec30c1c6f182c6c9e6ed8f34b8b6e1d303e9918a29534d481bef126"},
 	} {
@@ -72,15 +74,32 @@ func TestWatchCLIBackupContracts(t *testing.T) {
 			t.Parallel()
 
 			dev, _ := testdump.Watch(t)
-			svc := garmin.New(dev)
+			runtime := app.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return dev, nil })
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
+				defer cancel()
 
-			t.Cleanup(func() { _ = svc.Close() })
+				if err := runtime.Close(ctx); err != nil {
+					t.Error(err)
+				}
+			})
+
+			lease, err := runtime.Watch.Manager().Acquire(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			epoch := lease.Epoch()
+			if err := lease.Release(); err != nil {
+				t.Fatal(err)
+			}
+
 			dest := t.TempDir()
 
 			var out, diagnostics bytes.Buffer
 
-			c := &cli{asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
-			if err := c.backup(t.Context(), svc, []string{dest}); err != nil || diagnostics.Len() != 0 {
+			c := &cli{runtime: runtime, epoch: epoch, asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
+			if err := c.runDeviceJob(t.Context(), "backup", c.backup, []string{dest}); err != nil || diagnostics.Len() != 0 {
 				t.Fatalf("backup error=%v diagnostics=%s", err, &diagnostics)
 			}
 

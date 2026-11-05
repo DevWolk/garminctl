@@ -6,7 +6,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	connectcli "github.com/DevWolk/garminctl/internal/containers/connect/ui/cli"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
@@ -34,7 +33,7 @@ func (c *cli) cloud(ctx context.Context, sess *watchsession.Session, args []stri
 
 // cloudSync runs sync as a runtime job bound to the epoch of the initial lease;
 // it holds no lease itself, and the job takes its own operation groups.
-func (c *cli) cloudSync(ctx context.Context, _ *garmin.Service, args []string) error {
+func (c *cli) cloudSync(ctx context.Context, args []string) error {
 	client := gc.New(gc.DefaultStorePath())
 	command := c.cloudCommand(client)
 	managed := app.JobConnect(c.runtime.Watch, client, c.epoch)

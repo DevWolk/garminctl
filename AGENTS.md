@@ -5,11 +5,12 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings, apps, store, updates/software, cloud, bounded music and watch commands) and `deviceCommands`
+  `sessionCommands` (settings, apps, store, updates/software, cloud, bounded music and watch commands) and `jobCommands`
   (`cloud sync` and the activities and backup jobs).
   `sessionJob` routes music add/rm through the same job/epoch guard with direct
-  per-file Session leases. Both watch paths use the same runtime/Manager lifecycle; extracted commands
-  receive a scoped Session directly, and legacy commands receive Service.
+  per-file Session leases. Both watch paths use the same runtime/Manager lifecycle;
+  bounded commands receive a scoped Session, while jobs start after releasing
+  the initial lease and use their existing coordinator or per-file leases.
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
   `serve.go`, `autostart.go`; extracted app CLI wrappers live in `apps_cli.go`.

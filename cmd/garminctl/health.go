@@ -7,7 +7,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	healthcli "github.com/DevWolk/garminctl/internal/containers/health/ui/cli"
 	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
@@ -16,16 +15,9 @@ func (c *cli) healthCLI(access health.AccountAccess) *healthcli.Command {
 	return &healthcli.Command{Out: c.out, ErrOut: c.errOut, JSON: c.asJSON, Profile: fit.MustProfile(), Access: access}
 }
 
-// activities retains the initial connect/release dispatch until facade removal.
-func (c *cli) activities(ctx context.Context, svc *garmin.Service, args []string) error {
-	var read func(context.Context, bool) (*health.ActivityList, error)
-	if c.runtime != nil {
-		read = c.runtime.Activities.Activities
-	} else {
-		read = svc.Activities
-	}
-
-	return c.healthCLI(health.AccountAccess{}).Activities(ctx, read, args)
+// activities reads through the runtime's shared activity coordinator.
+func (c *cli) activities(ctx context.Context, args []string) error {
+	return c.healthCLI(health.AccountAccess{}).Activities(ctx, c.runtime.Activities.Activities, args)
 }
 
 func (c *cli) activity(ctx context.Context, sess *watchsession.Session, args []string) error {

@@ -16,6 +16,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
 	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 //nolint:dupword // command names repeat at the start of consecutive usage lines
@@ -99,7 +100,7 @@ const cloudCommand = "cloud"
 
 type cli struct {
 	runtime *garmin.Runtime
-	epoch   garmin.ConnectionEpoch
+	epoch   watchsession.ConnectionEpoch
 	root    string
 	devID   string
 	asJSON  bool
@@ -107,8 +108,8 @@ type cli struct {
 	errOut  *printer // prompts and diagnostics
 }
 
-// deviceCommand runs against the connected watch.
-type deviceCommand func(ctx context.Context, svc *garmin.Service, args []string) error
+// jobCommand runs after the initial watch lease has been released.
+type jobCommand func(ctx context.Context, args []string) error
 
 // plainCommand runs without the watch.
 type plainCommand func(ctx context.Context, args []string) error
@@ -163,7 +164,7 @@ func (c *cli) run(args []string) error {
 		return fn(ctx, rest)
 	}
 
-	fn, ok := c.deviceCommands()[cmd]
+	fn, ok := c.jobCommands()[cmd]
 	if !ok && c.sessionCommands()[cmd] == nil {
 		fs.Usage()
 		return usageErrorf("unknown command %q", cmd)
@@ -172,7 +173,7 @@ func (c *cli) run(args []string) error {
 	return c.runDevice(ctx, cmd, fn, rest)
 }
 
-func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args []string) (err error) {
+func (c *cli) runDevice(ctx context.Context, cmd string, fn jobCommand, args []string) (err error) {
 	runtime := app.NewRuntime(ctx, func(ctx context.Context) (device.Device, error) { return openDevice(ctx, c.root, c.devID) })
 	c.runtime = runtime
 
@@ -192,26 +193,17 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args 
 		return c.runSession(runtime.Context(), command, args)
 	}
 
-	lease, err := runtime.Watch.Acquire(runtime.Context())
+	lease, err := runtime.Watch.Manager().Acquire(runtime.Context())
 	if err != nil {
 		return err
 	}
 
 	c.epoch = lease.Epoch()
-	if deviceJob(cmd, args) {
-		if err := lease.Release(); err != nil {
-			return err
-		}
-
-		return c.runDeviceJob(runtime.Context(), cmd, fn, args)
+	if err := lease.Release(); err != nil {
+		return err
 	}
 
-	err = fn(lease.Context(), lease.Service(), args)
-	if errors.Is(err, device.ErrDisconnected) {
-		err = errors.Join(err, runtime.Watch.DropAt(lease.Epoch()))
-	}
-
-	return errors.Join(err, lease.Release())
+	return c.runDeviceJob(runtime.Context(), cmd, fn, args)
 }
 
 // plainCommands are the commands that do not need the watch.
@@ -231,8 +223,8 @@ func (c *cli) version(_ context.Context, _ []string) error {
 	return nil
 }
 
-func (c *cli) deviceCommands() map[string]deviceCommand {
-	return map[string]deviceCommand{
+func (c *cli) jobCommands() map[string]jobCommand {
+	return map[string]jobCommand{
 		cloudCommand: c.cloudSync,
 		"activities": c.activities,
 		"backup":     c.backup,
@@ -263,12 +255,12 @@ func deviceJob(cmd string, args []string) bool {
 	return (cmd == cloudCommand && args[0] == "sync") || (cmd == musicCommand && (args[0] == "add" || args[0] == "rm"))
 }
 
-func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn deviceCommand, args []string) error {
+func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn jobCommand, args []string) error {
 	if cmd == "activities" || cmd == cloudCommand {
-		return fn(ctx, nil, args)
+		return fn(ctx, args)
 	}
 
-	return c.runBoundJob(ctx, func(ctx context.Context) error { return fn(ctx, nil, args) })
+	return c.runBoundJob(ctx, func(ctx context.Context) error { return fn(ctx, args) })
 }
 
 // runBoundJob retains admission and connection identity between operation leases.
