@@ -18,7 +18,10 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const architectureModule = "github.com/DevWolk/garminctl"
+const (
+	architectureModule      = "github.com/DevWolk/garminctl"
+	architectureCGODisabled = "CGO_ENABLED=0"
+)
 
 type architectureView struct {
 	name  string
@@ -89,6 +92,12 @@ func loadArchitecture(ctx context.Context, t *testing.T, view architectureView, 
 	t.Helper()
 
 	cfg := &packages.Config{Context: ctx, Dir: architectureRoot(t), Mode: mode, Env: append(os.Environ(), view.env...), BuildFlags: []string{"-mod=readonly"}, Tests: view.tests}
+	// Active views must inspect the same build as the running suite. Reusing its
+	// export data also avoids compiling an uninstrumented desktop dependency tree.
+	if architectureRaceEnabled && len(view.env) == 0 {
+		cfg.BuildFlags = append(cfg.BuildFlags, "-race")
+	}
+
 	if view.tags != "" {
 		cfg.BuildFlags = append(cfg.BuildFlags, "-tags="+view.tags)
 	}
@@ -140,9 +149,9 @@ func TestArchitecture(t *testing.T) {
 	})
 
 	for _, view := range []architectureView{
-		{name: "linux portable", env: []string{"GOOS=linux", "CGO_ENABLED=0"}},
+		{name: "linux portable", env: []string{"GOOS=linux", architectureCGODisabled}},
 		{name: "linux desktop", tags: "desktop,production,gtk3", env: []string{"GOOS=linux", "CGO_ENABLED=1"}},
-		{name: "windows desktop", tags: "desktop,production", env: []string{"GOOS=windows", "CGO_ENABLED=0"}},
+		{name: "windows desktop", tags: "desktop,production", env: []string{"GOOS=windows", architectureCGODisabled}},
 	} {
 		t.Run(view.name, func(t *testing.T) {
 			t.Parallel()
