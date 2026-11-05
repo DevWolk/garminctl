@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -150,5 +152,60 @@ func TestPullWithStaleListingSkipsDeliveredMessage(t *testing.T) {
 
 	if downloads.Load() != 1 || acks.Load() != 1 {
 		t.Fatalf("delivered message fetched again: downloads=%d acks=%d", downloads.Load(), acks.Load())
+	}
+}
+
+func TestPullRetriesFailedAckWithoutWritingAgain(t *testing.T) {
+	t.Parallel()
+
+	root := testdump.Root(t)
+
+	dev, err := device.NewDirFS(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	var downloads, acks atomic.Int32
+
+	// The first acknowledgement fails, so Connect keeps listing the message as new.
+	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case deviceMessagesPath:
+			return syncResponse(req, syncMessages()), nil
+		case syntheticFilePath:
+			downloads.Add(1)
+			return syncResponse(req, []byte("synthetic payload")), nil
+		case syntheticAckPath:
+			if acks.Add(1) == 1 {
+				response := syncResponse(req, []byte(`{"error":"synthetic"}`))
+				response.StatusCode = http.StatusBadRequest
+
+				return response, nil
+			}
+
+			return syncResponse(req, nil), nil
+		default:
+			return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
+		}
+	})
+
+	config := Config{CacheDir: t.TempDir(), Claims: new(MessageClaims)}
+	sess := watchsession.New(dev)
+
+	for i := range 3 {
+		if _, err := NewCloud(sess, client, config).Pull(t.Context(), nil); err != nil {
+			t.Fatalf("pull %d: %v", i, err)
+		}
+	}
+
+	written, err := os.ReadDir(filepath.Join(root, "GARMIN", "NewFiles"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if downloads.Load() != 1 || acks.Load() != 2 || len(written) != 1 {
+		t.Fatalf("downloads=%d acks=%d files=%d, want 1, 2 and 1", downloads.Load(), acks.Load(), len(written))
 	}
 }

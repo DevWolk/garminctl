@@ -471,7 +471,8 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 
 // Pull downloads every queued message that matches (nil = all), writes it
 // where the watch expects it and tells Connect it was received. A message
-// another pull of this process is delivering or has written is skipped.
+// another pull of this process is delivering or has written is skipped; one it
+// wrote without telling Connect is only acknowledged.
 func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]PulledFile, error) {
 	msgs, err := c.Messages(ctx)
 	if err != nil {
@@ -494,12 +495,23 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			continue
 		}
 
-		if !c.claims.claim(m.MessageID) {
+		switch c.claims.claim(m.MessageID) {
+		case claimSkip:
 			continue
+		case claimAck:
+			err := c.ack(ctx, m.MessageID)
+			c.claims.finish(m.MessageID, true, err == nil)
+
+			if err != nil {
+				out = append(out, PulledFile{MessageID: m.MessageID, Type: m.MessageType, Name: m.MetaData.MessageName, Error: "written earlier, but Connect was not told: " + err.Error()})
+			}
+
+			continue
+		case claimDeliver:
 		}
 
 		pf := c.pullMessage(ctx, dx, m)
-		c.claims.finish(m.MessageID, pf.Path != "")
+		c.claims.finish(m.MessageID, pf.Path != "", pf.Path != "" && pf.Error == "")
 		out = append(out, pf)
 	}
 
