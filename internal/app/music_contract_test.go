@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"bytes"
@@ -11,10 +11,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func TestMusicHTTPContracts(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
+func TestMusicHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isolate process account paths and transports.
+	for _, test := range []struct { //nolint:paralleltest // cases isolate process account paths and transports.
 		name, method, path string
 		body               []byte
 		status             int
@@ -30,10 +28,9 @@ func TestMusicHTTPContracts(t *testing.T) {
 		{name: "trailing JSON", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":[]} {}`), status: http.StatusBadRequest, hash: contractTrailingJSONHash},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+			isolateContractAccount(t)
 			root := testdump.MusicRoot(t)
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-			ts := serveContractServer(t, s)
+			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, bytes.NewReader(test.body))
 			if err != nil {

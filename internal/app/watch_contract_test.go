@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/device"
@@ -44,23 +43,7 @@ func TestWatchHTTPContracts(t *testing.T) { //nolint:paralleltest // the real en
 		t.Run(test.name, func(t *testing.T) {
 			ts := newWatchContractServer(t)
 
-			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, strings.NewReader(test.body))
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			response, err := ts.Client().Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer response.Body.Close()
-
-			data, err := io.ReadAll(response.Body)
-			if err != nil || response.StatusCode != test.status {
-				t.Fatalf("status=%d body=%s error=%v", response.StatusCode, data, err)
-			}
-
-			testdump.CheckDigest(t, data, test.hash)
+			checkHTTPContract(t, ts, test.method, test.path, test.body, test.status, test.hash)
 		})
 	}
 }

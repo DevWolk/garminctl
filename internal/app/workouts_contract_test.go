@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"bytes"
@@ -13,10 +13,8 @@ import (
 
 const workoutsAPI = "/api/workouts"
 
-func TestWorkoutsHTTPContracts(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
+func TestWorkoutsHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isolate process account paths and transports.
+	for _, test := range []struct { //nolint:paralleltest // cases isolate process account paths and transports.
 		name, method, path, body, mode string
 		status                         int
 		normalize                      bool
@@ -36,14 +34,13 @@ func TestWorkoutsHTTPContracts(t *testing.T) {
 		{name: "ack failure", method: http.MethodPost, path: "/api/workouts/42/send", mode: "ack failure", status: 200, normalize: true, hash: "7ae7e7f78707777b6e10bc4a80c48e8f628030fc31bb91eafb5692c0cbefaef1"},
 		{name: "send failure", method: http.MethodPost, path: "/api/workouts/42/send", mode: "queue failure", status: 500, hash: "ca76c7c42120061cbcdd4ed9090547982474c2efca355061cf8822c5fcf748c0"},
 		{name: "bad send id", method: http.MethodPost, path: "/api/workouts/no/send", status: 400, hash: "9ed27c99b693f4627830cb243ccb7b1d1ee42d2fb1f1c2fe17bb02032e1e75ba"},
-		{name: "delete", method: http.MethodDelete, path: "/api/workouts/42", status: 200, hash: ""},
+		{name: "delete workout", method: http.MethodDelete, path: "/api/workouts/42", status: 200, hash: ""},
 		{name: "bad delete id", method: http.MethodDelete, path: "/api/workouts/no", status: 400, hash: "9ed27c99b693f4627830cb243ccb7b1d1ee42d2fb1f1c2fe17bb02032e1e75ba"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+			testdump.WorkoutCLIEnvironment(t, test.mode)
 			root := testdump.WorkoutRoot(t)
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, testdump.WorkoutClient(t, test.mode))
-			ts := serveContractServer(t, s)
+			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, bytes.NewBufferString(test.body))
 			if err != nil {
@@ -65,7 +62,7 @@ func TestWorkoutsHTTPContracts(t *testing.T) {
 				data = testdump.NormalizePendingPath(t, data)
 			}
 
-			if test.name == "delete" {
+			if test.name == "delete workout" {
 				if string(data) != "{\n \"ok\": true\n}\n" {
 					t.Fatalf("delete response=%s", data)
 				}

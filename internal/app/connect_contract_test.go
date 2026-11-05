@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"bytes"
@@ -40,21 +40,13 @@ func TestConnectHTTPContracts(t *testing.T) { //nolint:paralleltest // isolates 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testdump.HealthEnvironment(t)
+			testdump.ConnectCLIEnvironment(t, test.mode)
 			root := testdump.ConnectRoot(t)
 
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, testdump.ConnectClient(t, test.mode))
+			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 			if test.current {
-				lease, err := s.svc.Acquire(t.Context())
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if err := lease.Release(); err != nil {
-					t.Fatal(err)
-				}
+				connectContractWatch(t, ts)
 			}
-
-			ts := serveContractServer(t, s)
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, bytes.NewBufferString(test.body))
 			if err != nil {

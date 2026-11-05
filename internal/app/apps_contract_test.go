@@ -1,48 +1,20 @@
-package web
+package app
 
 import (
 	"context"
-	"io"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func newAppsContractServer(t *testing.T) *httptest.Server {
+func newAppsContractServer(t *testing.T) *contractServer {
 	t.Helper()
-
+	isolateContractAccount(t)
 	dev, _ := testdump.Apps(t)
-	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return dev, nil }, false)
-	ts := httptest.NewUnstartedServer(nil)
 
-	h, err := s.handler(ts.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ts.Config.Handler = h
-	ts.Start()
-	t.Cleanup(func() {
-		ts.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		if err := s.mcp.Close(ctx); err != nil {
-			t.Error(err)
-		}
-
-		if err := s.runtime.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	})
-
-	return ts
+	return serveContractRoot(t, func(context.Context) (device.Device, error) { return dev, nil })
 }
 
 func TestAppsHTTPContracts(t *testing.T) { //nolint:paralleltest // isolates process schema client and cache environment
@@ -66,23 +38,7 @@ func TestAppsHTTPContracts(t *testing.T) { //nolint:paralleltest // isolates pro
 		t.Run(test.name, func(t *testing.T) {
 			ts := newAppsContractServer(t)
 
-			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, strings.NewReader(test.body))
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			response, err := ts.Client().Do(req)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer response.Body.Close()
-
-			data, err := io.ReadAll(response.Body)
-			if err != nil || response.StatusCode != test.status {
-				t.Fatalf("status=%d body=%s error=%v", response.StatusCode, data, err)
-			}
-
-			testdump.CheckDigest(t, data, test.hash)
+			checkHTTPContract(t, ts, test.method, test.path, test.body, test.status, test.hash)
 		})
 	}
 }

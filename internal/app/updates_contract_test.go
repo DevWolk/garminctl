@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 		hash                           string
 	}{
 		{name: "software", method: http.MethodGet, path: "/api/updates/software", status: http.StatusOK, hash: "959024256dd98d0661ff9eceadd237083ff87e8a7b3b52561d7e77e42f8c2132"},
-		{name: "apps", method: http.MethodGet, path: "/api/updates/apps", status: http.StatusOK, hash: "8786614eb22446f9d2d3a10847ab06008d03d732061a1addf9bdb45b70c0f77c"},
+		{name: "app updates", method: http.MethodGet, path: "/api/updates/apps", status: http.StatusOK, hash: "8786614eb22446f9d2d3a10847ab06008d03d732061a1addf9bdb45b70c0f77c"},
 		{name: "inventory", method: http.MethodGet, path: "/api/software", status: http.StatusOK, hash: "edf78db57bfb47cdfb2b44a6aa77bef0ff8b6deccb67a4ce072144cc9a1a9abe"},
 		{name: "install", method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, status: http.StatusOK, hash: "5ddf1ab973ef354b2a98715fd78a3701d495186a12004775d8597575a5dfc12e"},
 		{name: "missing part", method: http.MethodPost, path: "/api/updates/software/install", body: `{}`, status: http.StatusBadRequest, hash: "3e2e35f88dcdb03e6e24fd1b384464449b0bd61ea6a932ee139941523bab746d"},
@@ -31,9 +31,9 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 			previous := garmin.HTTPClient
 			garmin.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
 			t.Cleanup(func() { garmin.HTTPClient = previous })
+			isolateContractAccount(t)
 			root := testdump.UpdateRoot(t)
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false)
-			ts := serveContractServer(t, s)
+			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, strings.NewReader(test.body))
 			if err != nil {

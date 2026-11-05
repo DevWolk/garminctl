@@ -1,6 +1,7 @@
-package web
+package app
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -8,13 +9,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func TestSettingsHTTPContracts(t *testing.T) {
-	t.Parallel()
+func newSettingsContractServer(t *testing.T) (*contractServer, string) {
+	t.Helper()
+	isolateContractAccount(t)
+	root := testdump.Root(t)
 
-	ts, _ := newTestServer(t)
+	return serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }), root
+}
+
+func TestSettingsHTTPContracts(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	ts, _ := newSettingsContractServer(t)
 	for _, test := range []struct {
 		name, method, path, body string
 		status                   int
@@ -52,10 +60,8 @@ func TestSettingsHTTPContracts(t *testing.T) {
 	}
 }
 
-func TestSettingsHTTPApplyContract(t *testing.T) {
-	t.Parallel()
-
-	ts, root := newTestServer(t)
+func TestSettingsHTTPApplyContract(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	ts, root := newSettingsContractServer(t)
 	if err := os.Mkdir(filepath.Join(root, "GARMIN", "NewFiles"), 0o750); err != nil {
 		t.Fatal(err)
 	}

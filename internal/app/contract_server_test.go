@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +16,10 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-const contractOKHash = "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"
+const (
+	contractOKHash           = "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"
+	contractTrailingJSONHash = "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"
+)
 
 // contractServer drives the production composition over a real listener.
 // It never constructs feature registrars or its own account/runtime owners.
@@ -24,6 +29,47 @@ type contractServer struct {
 }
 
 func (s *contractServer) Client() *http.Client { return s.client }
+
+func checkHTTPContract(t *testing.T, s *contractServer, method, path, body string, status int, hash string) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), method, s.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	data, err := io.ReadAll(response.Body)
+	if err != nil || response.StatusCode != status {
+		t.Fatalf("status=%d body=%s error=%v", response.StatusCode, data, err)
+	}
+
+	testdump.CheckDigest(t, data, hash)
+}
+
+func connectContractWatch(t *testing.T, s *contractServer) {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.URL+"/api/connect", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := s.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("connect fixture status=%d", response.StatusCode)
+	}
+}
 
 func isolateContractAccount(t *testing.T) {
 	t.Helper()

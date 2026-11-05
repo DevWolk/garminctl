@@ -1,14 +1,12 @@
-package web
+package app
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/store"
 	"github.com/DevWolk/garminctl/internal/device"
@@ -33,7 +31,7 @@ func TestStoreHTTPContracts(t *testing.T) { //nolint:paralleltest // fixture rep
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := testdump.StoreEnvironment(t, test.fail)
-			_, ts, opens := newStoreContractServer(t, test.connected)
+			ts, _, opens := newStoreContractServer(t, test.connected)
 
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+test.path, nil)
 			if err != nil {
@@ -71,21 +69,46 @@ func TestStoreHTTPContracts(t *testing.T) { //nolint:paralleltest // fixture rep
 
 func TestStoreHTTPIgnoresUnavailableXML(t *testing.T) { //nolint:paralleltest // fixture replaces the process store client
 	testdump.StoreEnvironment(t, "")
-	s, ts, opens := newStoreContractServer(t, true)
+	ts, root, opens := newStoreContractServer(t, true)
 
-	lease, err := s.svc.Manager().Acquire(t.Context())
+	// Mutate through the same public endpoint that invalidates Session caches.
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, ts.URL+"/api/file?path=GARMIN/GarminDevice.xml", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = lease.Session().DeleteFile(lease.Context(), "GARMIN/GarminDevice.xml")
-	if err := errors.Join(err, lease.Release()); err != nil {
+	resp, err := ts.Client().Do(req)
+	if err != nil {
 		t.Fatal(err)
 	}
 
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete XML status=%d root=%s", resp.StatusCode, root)
+	}
+
 	var view store.View
-	if code := getJSON(t, ts, "/api/store", &view); code != http.StatusOK {
-		t.Fatalf("store without XML status=%d", code)
+
+	req, err = http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/store", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("store without XML status=%d", response.StatusCode)
+	}
+
+	if err := json.NewDecoder(response.Body).Decode(&view); err != nil {
+		t.Fatal(err)
 	}
 
 	if len(view.Apps) != 2 || !view.Apps[0].Installed || view.Apps[0].HasSettings != nil || opens.Load() != 1 {
@@ -93,45 +116,19 @@ func TestStoreHTTPIgnoresUnavailableXML(t *testing.T) { //nolint:paralleltest //
 	}
 }
 
-func newStoreContractServer(t *testing.T, connected bool) (*Server, *httptest.Server, *atomic.Int32) {
+func newStoreContractServer(t *testing.T, connected bool) (*contractServer, string, *atomic.Int32) {
 	t.Helper()
+	isolateContractAccount(t)
 	root := testdump.Root(t)
 	opens := new(atomic.Int32)
-	s := newServer(t.Context(), func(context.Context) (device.Device, error) {
+
+	ts := serveContractRoot(t, func(context.Context) (device.Device, error) {
 		opens.Add(1)
 		return device.NewDirFS(root)
-	}, false)
-
-	if connected {
-		lease, err := s.svc.Acquire(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := lease.Release(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	ts := httptest.NewUnstartedServer(nil)
-
-	handler, err := s.handler(ts.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ts.Config.Handler = handler
-	ts.Start()
-	t.Cleanup(func() {
-		ts.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		if err := errors.Join(s.mcp.Close(ctx), s.runtime.Close(ctx)); err != nil {
-			t.Error(err)
-		}
 	})
+	if connected {
+		connectContractWatch(t, ts)
+	}
 
-	return s, ts, opens
+	return ts, root, opens
 }

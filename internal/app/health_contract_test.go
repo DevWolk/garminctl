@@ -1,4 +1,4 @@
-package web
+package app
 
 import (
 	"bytes"
@@ -45,14 +45,14 @@ func TestHealthHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isol
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testdump.HealthEnvironment(t)
+			testdump.HealthCLIEnvironment(t, test.mode)
 
 			root := testdump.HealthRoot(t)
 			if test.empty {
 				root = testdump.Root(t)
 			}
 
-			s := newServer(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, testdump.HealthClient(t, test.mode))
-			ts := serveContractServer(t, s)
+			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, bytes.NewBufferString(test.body))
 			if err != nil {
