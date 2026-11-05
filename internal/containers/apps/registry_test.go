@@ -10,7 +10,7 @@ func TestParseAppsConfig(t *testing.T) {
 
 	b, err := os.ReadFile("../../garmin/testdata/OUT.BIN")
 	if err != nil {
-		t.Skip("no sample")
+		t.Fatal(err)
 	}
 
 	apps, err := ParseAppsConfig(b)
@@ -40,7 +40,7 @@ func TestRewriteAppsRoundTrip(t *testing.T) {
 
 	b, err := os.ReadFile("../../garmin/testdata/OUT.BIN")
 	if err != nil {
-		t.Skip("no sample")
+		t.Fatal(err)
 	}
 
 	same, err := rewriteApps(b, func(_ App, f []pbField) ([]pbField, error) { return f, nil })

@@ -10,7 +10,7 @@ import (
 
 // Root returns a temporary GARMIN tree holding GarminDevice.xml, OUT.BIN and
 // Settings.fit from the garmin and fit testdata, with the folders a watch
-// has. The test is skipped when a fixture is missing.
+// has. A missing fixture fails the test.
 func Root(tb testing.TB) string {
 	tb.Helper()
 
@@ -30,7 +30,7 @@ func Root(tb testing.TB) string {
 	} {
 		b, err := os.ReadFile(filepath.Join(internal, src)) //nolint:gosec // testdata fixture
 		if err != nil {
-			tb.Skip("fixture missing:", err)
+			tb.Fatal("fixture missing:", err)
 		}
 
 		if err := os.WriteFile(filepath.Join(root, dst), b, 0o600); err != nil { //nolint:gosec // fixed names under the temp dir

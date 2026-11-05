@@ -10,7 +10,7 @@ func TestParseDeviceXML(t *testing.T) {
 
 	b, err := os.ReadFile("testdata/GarminDevice.xml")
 	if err != nil {
-		t.Skip("no sample")
+		t.Fatal(err)
 	}
 
 	d, err := ParseDeviceXML(b)
@@ -32,7 +32,7 @@ func TestParseDeviceXMLApps(t *testing.T) {
 
 	b, err := os.ReadFile("testdata/GarminDevice.xml")
 	if err != nil {
-		t.Skip("no fixture")
+		t.Fatal(err)
 	}
 
 	d, err := ParseDeviceXML(b)

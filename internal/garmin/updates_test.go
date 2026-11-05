@@ -24,7 +24,7 @@ func dumpWithDeviceXML(t *testing.T) *device.DirFS {
 
 	xmlBytes, err := os.ReadFile("testdata/GarminDevice.xml")
 	if err != nil {
-		t.Skip("no sample")
+		t.Fatal(err)
 	}
 
 	root := t.TempDir()

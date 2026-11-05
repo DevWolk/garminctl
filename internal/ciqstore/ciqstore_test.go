@@ -10,7 +10,7 @@ func loadEasyPlus(t *testing.T) *Schema {
 
 	b, err := os.ReadFile("testdata/easyplus-v24-vivoactive5.html")
 	if err != nil {
-		t.Skip("no sample page")
+		t.Fatal(err)
 	}
 
 	s, err := Parse(b)

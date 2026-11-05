@@ -11,7 +11,7 @@ func TestDefaultSettings(t *testing.T) {
 
 	b, err := os.ReadFile("testdata/easyplus.prg")
 	if err != nil {
-		t.Skip("no sample PRG")
+		t.Fatal(err)
 	}
 
 	d, err := DefaultSettings(b)
