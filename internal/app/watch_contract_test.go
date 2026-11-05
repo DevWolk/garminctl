@@ -1,62 +1,31 @@
-package web
+package app
 
 import (
 	"bytes"
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func newWatchContractServer(t *testing.T) *httptest.Server {
+func newWatchContractServer(t *testing.T) *contractServer {
 	t.Helper()
+	isolateContractAccount(t)
 
 	dev, root := testdump.Watch(t)
 	if err := dev.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return testdump.OpenWatch(root) }, false)
-	s.cloud = gc.New(filepath.Join(t.TempDir(), "account.json"))
-	ts := httptest.NewUnstartedServer(nil)
-
-	h, err := s.handler(ts.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ts.Config.Handler = h
-	ts.Start()
-	t.Cleanup(func() {
-		ts.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		if err := s.mcp.Close(ctx); err != nil {
-			t.Error(err)
-		}
-
-		if err := s.runtime.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	})
-
-	return ts
+	return serveContractRoot(t, func(context.Context) (device.Device, error) { return testdump.OpenWatch(root) })
 }
 
-func TestWatchHTTPContracts(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
+func TestWatchHTTPContracts(t *testing.T) { //nolint:paralleltest // the real entry point reads isolated process account paths.
+	for _, test := range []struct { //nolint:paralleltest // each case isolates process account paths.
 		name, method, path, body string
 		status                   int
 		hash                     string
@@ -73,8 +42,6 @@ func TestWatchHTTPContracts(t *testing.T) {
 		{name: "invalid delete", method: http.MethodDelete, path: "/api/file?path=../outside", status: http.StatusBadRequest, hash: "bd81575f7f5a970b099a407c54ca27a7aad3bb1690319a6542ad8f0d8c8cb86c"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			ts := newWatchContractServer(t)
 
 			req, err := http.NewRequestWithContext(t.Context(), test.method, ts.URL+test.path, strings.NewReader(test.body))
@@ -98,9 +65,7 @@ func TestWatchHTTPContracts(t *testing.T) {
 	}
 }
 
-func TestWatchHTTPDownloadBytesAndHeaders(t *testing.T) {
-	t.Parallel()
-
+func TestWatchHTTPDownloadBytesAndHeaders(t *testing.T) { //nolint:paralleltest // the real entry point reads isolated process account paths.
 	ts := newWatchContractServer(t)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/file?path=garmin/sample.bin", nil)
