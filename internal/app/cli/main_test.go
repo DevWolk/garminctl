@@ -13,7 +13,10 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-const rootFlag = "-root"
+const (
+	rootFlag    = "-root"
+	infoCommand = "info"
+)
 
 func TestRun_ListsADump(t *testing.T) {
 	t.Parallel()
