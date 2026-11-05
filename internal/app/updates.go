@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -34,6 +34,6 @@ func UpdatesRegistry(sess *watchsession.Session) updates.InstalledApps {
 	return func(ctx context.Context) ([]apps.App, error) { return (apps.ReadRegistryAction{}).Run(ctx, sess) }
 }
 
-func updateInvalidator(runtime *garmin.Runtime) func(*watchsession.Session) func(uint64) {
-	return func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset }
+func updateInvalidator(runtime *process.Runtime) func(*watchsession.Session) func(uint64) {
+	return func(sess *watchsession.Session) func(uint64) { return runtime.AppSchemaCacheFor(sess).Reset }
 }

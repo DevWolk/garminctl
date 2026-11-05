@@ -3,18 +3,18 @@ package app
 import (
 	"context"
 
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/containers/workouts"
 	"github.com/DevWolk/garminctl/internal/deviceinfo"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 // WorkoutDelivery binds the Connect queue provider to the existing owners.
 // Each result is used only while the supplied Session's lease remains held.
-func WorkoutDelivery(watch *garmin.Lazy, account *gc.Client) func(*watchsession.Session) workouts.Delivery {
-	cloudFor := ConnectFor(watch, account)
+func WorkoutDelivery(runtime *process.Runtime, account *gc.Client) func(*watchsession.Session) workouts.Delivery {
+	cloudFor := ConnectFor(runtime, account)
 	return func(sess *watchsession.Session) workouts.Delivery { return workoutQueue{cloud: cloudFor(sess)} }
 }
 

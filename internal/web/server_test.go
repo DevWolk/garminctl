@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
@@ -41,8 +42,8 @@ import (
 	workoutshttp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/http"
 	workoutsmcp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/deviceinfo"
 	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
@@ -135,20 +136,12 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 
 // newServer retains the test fixture's constructor while production wiring
 // supplies process owners through ServeRuntime.
-func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients ...*gc.Client) *Server {
-	runtime := garmin.NewRuntime(ctx, open)
+func newServer(ctx context.Context, open watchsession.Opener, autoSync bool, clients ...*gc.Client) *Server {
+	runtime := process.New(ctx, open)
 
 	account := gc.New(gc.DefaultStorePath())
 	if len(clients) > 0 {
 		account = clients[0]
-	}
-
-	access := func(sess *watchsession.Session) health.AccountAccess {
-		return runtime.Watch.HealthAccessFor(sess, account)
-	}
-
-	delivery := func(sess *watchsession.Session) workouts.Delivery {
-		return runtime.Watch.WorkoutDeliveryFor(sess, account)
 	}
 
 	appCount := func(ctx context.Context, sess *watchsession.Session) (int, error) {
@@ -168,37 +161,43 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 	updateRegistry := func(sess *watchsession.Session) updates.InstalledApps {
 		return updates.InstalledApps(storeRegistry(sess))
 	}
-	invalidateFor := func(sess *watchsession.Session) func(uint64) { return runtime.Watch.AppSchemaCacheFor(sess).Reset }
+	invalidateFor := func(sess *watchsession.Session) func(uint64) { return runtime.AppSchemaCacheFor(sess).Reset }
 
-	config := connect.Config{Invalidated: func(sess *watchsession.Session, gen uint64) { runtime.Watch.AppSchemaCacheFor(sess).Reset(gen) }}
+	config := connect.Config{Invalidated: func(sess *watchsession.Session, gen uint64) { runtime.AppSchemaCacheFor(sess).Reset(gen) }, Claims: runtime.MessageClaims()}
 	cloudFor := func(sess *watchsession.Session) *connect.Cloud { return connect.NewCloud(sess, account, config) }
+	// The provider adapters internal/app wires; this package cannot import it.
+	access := func(sess *watchsession.Session) health.AccountAccess {
+		cloud := cloudFor(sess)
+		return health.AccountAccess{Client: cloud.Client(), DisplayName: cloud.DisplayName, DeviceXML: cloud.DeviceXML, CacheDir: cloud.CacheDirectory()}
+	}
+	delivery := func(sess *watchsession.Session) workouts.Delivery { return workoutQueue{cloud: cloudFor(sess)} }
 	jobFor := func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
-		return connect.NewJobCloud(runtime.Watch.Manager(), epoch, account, config)
+		return connect.NewJobCloud(runtime.Manager(), epoch, account, config)
 	}
 
 	return serverWithRuntime(runtime, account, autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
-			&connecthttp.Handler{Manager: runtime.Watch.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor},
-			&healthhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access},
-			&workoutshttp.Handler{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery},
-			&musichttp.Handler{Manager: runtime.Watch.Manager()},
-			&settingshttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile()},
-			&appshttp.Handler{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor},
-			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: storeRegistry},
-			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
+			&connecthttp.Handler{Manager: runtime.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor},
+			&healthhttp.Handler{Manager: runtime.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access},
+			&workoutshttp.Handler{Manager: runtime.Manager(), Client: account, DeliveryFor: delivery},
+			&musichttp.Handler{Manager: runtime.Manager()},
+			&settingshttp.Handler{Manager: runtime.Manager(), Profile: fit.MustProfile()}, &watchhttp.Handler{Manager: runtime.Manager(), Profile: fit.MustProfile()},
+			&appshttp.Handler{Manager: runtime.Manager(), CacheFor: runtime.AppSchemaCacheFor},
+			&storehttp.Handler{Manager: runtime.Manager(), Registry: storeRegistry},
+			&updateshttp.Handler{Manager: runtime.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor},
 		},
 		MCP: []mcpx.ToolRegistrar{
-			&connectmcp.Tools{Manager: runtime.Watch.Manager(), Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor, BindContext: runtime.RequestContext},
-			&healthmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access, BindContext: runtime.RequestContext},
-			&workoutsmcp.Tools{Manager: runtime.Watch.Manager(), Client: account, DeliveryFor: delivery, BindContext: runtime.RequestContext},
-			&musicmcp.Tools{Manager: runtime.Watch.Manager(), BindContext: runtime.RequestContext},
-			&settingsmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
-			&watchmcp.Tools{Manager: runtime.Watch.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
-			&appsmcp.Tools{Manager: runtime.Watch.Manager(), CacheFor: runtime.Watch.AppSchemaCacheFor, BindContext: runtime.RequestContext},
-			&storemcp.Tools{Manager: runtime.Watch.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
-			&updatesmcp.Tools{Manager: runtime.Watch.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor, BindContext: runtime.RequestContext},
+			&connectmcp.Tools{Manager: runtime.Manager(), Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor, BindContext: runtime.RequestContext},
+			&healthmcp.Tools{Manager: runtime.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access, BindContext: runtime.RequestContext},
+			&workoutsmcp.Tools{Manager: runtime.Manager(), Client: account, DeliveryFor: delivery, BindContext: runtime.RequestContext},
+			&musicmcp.Tools{Manager: runtime.Manager(), BindContext: runtime.RequestContext},
+			&settingsmcp.Tools{Manager: runtime.Manager(), Profile: fit.MustProfile(), BindContext: runtime.RequestContext},
+			&watchmcp.Tools{Manager: runtime.Manager(), Profile: fit.MustProfile(), AppCount: appCount, BindContext: runtime.RequestContext},
+			&appsmcp.Tools{Manager: runtime.Manager(), CacheFor: runtime.AppSchemaCacheFor, BindContext: runtime.RequestContext},
+			&storemcp.Tools{Manager: runtime.Manager(), Registry: storeRegistry, BindContext: runtime.RequestContext},
+			&updatesmcp.Tools{Manager: runtime.Manager(), Config: updateConfig, Registry: updateRegistry, InvalidateFor: invalidateFor, BindContext: runtime.RequestContext},
 		},
-		Refresh: func(sess *watchsession.Session) { runtime.Watch.AppSchemaCacheFor(sess).Reset(sess.Refresh()) },
+		Refresh: func(sess *watchsession.Session) { runtime.AppSchemaCacheFor(sess).Reset(sess.Refresh()) },
 		WatchSummary: func(ctx context.Context, sess *watchsession.Session) (any, error) {
 			return watch.NewSummaryAction(fit.MustProfile(), appCount).Run(ctx, sess)
 		},
@@ -209,7 +208,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 func syncCoordinator(t *testing.T, s *Server) *connect.SyncCoordinator {
 	t.Helper()
 
-	runtime, ok := s.runtime.(*garmin.Runtime)
+	runtime, ok := s.runtime.(*process.Runtime)
 	if !ok {
 		t.Fatalf("test backend runtime is %T", s.runtime)
 	}
@@ -632,4 +631,15 @@ func getUIAsset(t *testing.T, ts *httptest.Server, path, contentType string) []b
 	}
 
 	return body
+}
+
+// workoutQueue narrows Connect delivery to the workouts consumer contract.
+type workoutQueue struct{ cloud *connect.Cloud }
+
+func (q workoutQueue) DeviceXML(ctx context.Context) (*deviceinfo.DeviceXML, error) {
+	return q.cloud.DeviceXML(ctx)
+}
+
+func (q workoutQueue) PullQueued(ctx context.Context) ([]connect.PulledFile, error) {
+	return q.cloud.PullQueued(ctx, "workouts")
 }

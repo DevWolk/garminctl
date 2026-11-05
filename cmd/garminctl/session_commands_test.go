@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
@@ -22,7 +22,7 @@ func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
 	}
 
 	opens := 0
-	runtime := garmin.NewRuntime(t.Context(), func(context.Context) (device.Device, error) {
+	runtime := app.NewRuntime(t.Context(), func(context.Context) (device.Device, error) {
 		opens++
 		return dev, nil
 	})
@@ -35,12 +35,12 @@ func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
 		}
 	})
 
-	legacy, err := runtime.Watch.Acquire(t.Context())
+	legacy, err := runtime.Manager().Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	expected, epoch := runtime.Watch.Manager().Snapshot()
+	expected, epoch := runtime.Manager().Snapshot()
 
 	if err := legacy.Release(); err != nil {
 		t.Fatal(err)
@@ -55,11 +55,11 @@ func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
 	err = c.runSession(t.Context(), func(ctx context.Context, sess *watchsession.Session, _ []string) error {
 		released = ctx.Done()
 
-		if sess != expected || runtime.Watch.Manager().CurrentEpoch() != epoch {
+		if sess != expected || runtime.Manager().CurrentEpoch() != epoch {
 			t.Fatal("extracted command acquired a different connection")
 		}
 
-		if resume, err := runtime.Watch.Gate().TryMaintenance(ctx); !errors.Is(err, lifecycle.ErrBusy) {
+		if resume, err := runtime.Manager().Gate().TryMaintenance(ctx); !errors.Is(err, lifecycle.ErrBusy) {
 			if resume != nil {
 				resume()
 			}
@@ -79,7 +79,7 @@ func TestRunSessionSharesLegacyOwnerAndAdmission(t *testing.T) {
 		t.Fatal("command lease context survived its release")
 	}
 
-	resume, err := runtime.Watch.Gate().TryMaintenance(t.Context())
+	resume, err := runtime.Manager().Gate().TryMaintenance(t.Context())
 	if err != nil {
 		t.Fatalf("command left admission reserved: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestRunSessionRetiresDisconnectedConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runtime := garmin.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return dev, nil })
+	runtime := app.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return dev, nil })
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
@@ -114,7 +114,7 @@ func TestRunSessionRetiresDisconnectedConnection(t *testing.T) {
 		t.Fatalf("disconnect cause lost: %v", err)
 	}
 
-	if sess, _ := runtime.Watch.Manager().Snapshot(); sess != nil {
+	if sess, _ := runtime.Manager().Snapshot(); sess != nil {
 		t.Fatal("disconnected Session remained current")
 	}
 

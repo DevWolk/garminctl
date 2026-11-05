@@ -8,7 +8,7 @@ import (
 )
 
 func (c *cli) appsCLI() *appscli.Commands {
-	return &appscli.Commands{Out: c.out, JSON: c.asJSON, CacheFor: c.runtime.Watch.AppSchemaCacheFor}
+	return &appscli.Commands{Out: c.out, JSON: c.asJSON, CacheFor: c.runtime.AppSchemaCacheFor}
 }
 
 func (c *cli) apps(ctx context.Context, sess *watchsession.Session, args []string) error {

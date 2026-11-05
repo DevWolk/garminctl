@@ -15,9 +15,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -186,11 +186,11 @@ func TestConnectCloudsShareRuntimeMessageClaims(t *testing.T) {
 	t.Parallel()
 
 	open := func(context.Context) (device.Device, error) { return nil, device.ErrDisconnected }
-	first, second := garmin.NewLazy(open), garmin.NewLazy(open)
+	first, second := NewRuntime(t.Context(), open), NewRuntime(t.Context(), open)
 
 	t.Cleanup(func() {
-		for _, watch := range []*garmin.Lazy{first, second} {
-			if err := watch.Close(context.WithoutCancel(t.Context())); err != nil {
+		for _, runtime := range []*process.Runtime{first, second} {
+			if err := runtime.Close(context.WithoutCancel(t.Context())); err != nil {
 				t.Error(err)
 			}
 		}
@@ -211,7 +211,7 @@ func TestConnectForAndJobConnectDeliverQueuedMessageOnce(t *testing.T) {
 	t.Parallel()
 
 	root := testdump.ConnectRoot(t)
-	watch := garmin.NewLazy(func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
+	watch := NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 	t.Cleanup(func() {
 		if err := watch.Close(context.WithoutCancel(t.Context())); err != nil {

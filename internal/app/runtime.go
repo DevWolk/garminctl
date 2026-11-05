@@ -5,11 +5,11 @@ package app
 import (
 	"context"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/app/process"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
-// NewRuntime creates one process's watch and job owners. Runtime temporarily
-// remains a legacy type until watchsession and connect have been extracted.
-func NewRuntime(ctx context.Context, open garmin.Opener) *garmin.Runtime {
-	return garmin.NewRuntime(ctx, open)
+// NewRuntime creates one process's watch and job owners.
+func NewRuntime(ctx context.Context, open watchsession.Opener) *process.Runtime {
+	return process.New(ctx, open)
 }

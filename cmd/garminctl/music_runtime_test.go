@@ -50,7 +50,7 @@ func newMusicJobFixture(t *testing.T, dropAfterWrite bool) *musicJobFixture {
 
 		return musicJobDevice{Device: dev, writes: &f.writes, after: func() {
 			if dropAfterWrite {
-				f.cli.runtime.Watch.Drop()
+				f.cli.runtime.Manager().Drop()
 			}
 		}}, err
 	})
@@ -119,7 +119,7 @@ func TestMusicJobsKeepPerFileLeaseAndProgressTiming(t *testing.T) {
 				args = append([]string{test.command}, musicJobInputs(t)...)
 			}
 
-			probe := &musicProgressProbe{t: t, gate: f.cli.runtime.Watch.Gate(), operations: test.operations}
+			probe := &musicProgressProbe{t: t, gate: f.cli.runtime.Manager().Gate(), operations: test.operations}
 
 			f.cli.out = newPrinter(probe)
 			if err := f.cli.runSessionJob(t.Context(), f.cli.musicJob, args); err != nil {
@@ -140,7 +140,7 @@ func TestMusicJobDoesNotContinueAfterEpochDrop(t *testing.T) {
 	args := append([]string{musicAddSubcommand}, musicJobInputs(t)...)
 	err := f.cli.runSessionJob(t.Context(), f.cli.musicJob, args)
 
-	state := f.cli.runtime.Watch.Gate().Snapshot()
+	state := f.cli.runtime.Manager().Gate().Snapshot()
 	if err == nil || f.writes.Load() != 1 || f.opens.Load() != 1 || state.Operations != 0 || state.Jobs != 0 {
 		t.Fatalf("error=%v writes=%d opens=%d gate=%+v", err, f.writes.Load(), f.opens.Load(), state)
 	}

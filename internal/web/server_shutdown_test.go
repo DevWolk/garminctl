@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 )
 
@@ -28,7 +28,7 @@ func TestServeRuntimeClosesUnreadConnections(t *testing.T) {
 	}
 
 	reading := make(chan struct{})
-	watch := garmin.NewRuntime(ctx, func(context.Context) (device.Device, error) {
+	watch := process.New(ctx, func(context.Context) (device.Device, error) {
 		t.Error("unread HTTP connection opened a watch")
 		return nil, errors.New("unexpected watch open")
 	})

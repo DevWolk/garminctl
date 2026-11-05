@@ -12,7 +12,7 @@ func (c *cli) updatesCLI(sess *watchsession.Session) *updatescli.Command {
 	return &updatescli.Command{
 		Config:      app.WatchUpdateConfig(),
 		Installed:   app.UpdatesRegistry(sess),
-		Invalidated: c.runtime.Watch.AppSchemaCacheFor(sess).Reset,
+		Invalidated: c.runtime.AppSchemaCacheFor(sess).Reset,
 		Out:         c.out,
 		JSON:        c.asJSON,
 	}

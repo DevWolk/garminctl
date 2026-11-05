@@ -43,7 +43,7 @@ func TestBackupRetainsJobWhileReleasingEachDeviceGroup(t *testing.T) {
 		}
 	}}
 	runtime := app.NewRuntime(t.Context(), func(context.Context) (device.Device, error) { return wrapped, nil })
-	gate = runtime.Watch.Gate()
+	gate = runtime.Manager().Gate()
 
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -54,7 +54,7 @@ func TestBackupRetainsJobWhileReleasingEachDeviceGroup(t *testing.T) {
 		}
 	})
 
-	lease, err := runtime.Watch.Manager().Acquire(t.Context())
+	lease, err := runtime.Manager().Acquire(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

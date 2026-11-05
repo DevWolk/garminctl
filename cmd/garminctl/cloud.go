@@ -26,7 +26,7 @@ func (c *cli) cloud(ctx context.Context, sess *watchsession.Session, args []stri
 
 	client := gc.New(gc.DefaultStorePath())
 	command := c.cloudCommand(client)
-	command.Cloud = app.ConnectFor(c.runtime.Watch, client)(sess)
+	command.Cloud = app.ConnectFor(c.runtime, client)(sess)
 
 	return command.Run(ctx, args)
 }
@@ -36,7 +36,7 @@ func (c *cli) cloud(ctx context.Context, sess *watchsession.Session, args []stri
 func (c *cli) cloudSync(ctx context.Context, args []string) error {
 	client := gc.New(gc.DefaultStorePath())
 	command := c.cloudCommand(client)
-	managed := app.JobConnect(c.runtime.Watch, client, c.epoch)
+	managed := app.JobConnect(c.runtime, client, c.epoch)
 
 	command.RunSync = func(ctx context.Context, up, down bool, progress connect.Progress) (*connect.SyncResult, error) {
 		job, _, err := c.runtime.Sync.Start(ctx, connect.SyncOptions{Upload: up, Download: down, Epoch: c.epoch}, func(ctx context.Context, _ connect.Progress) (*connect.SyncResult, error) {

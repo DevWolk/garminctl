@@ -84,7 +84,7 @@ func TestWatchCLIBackupContracts(t *testing.T) {
 				}
 			})
 
-			lease, err := runtime.Watch.Manager().Acquire(t.Context())
+			lease, err := runtime.Manager().Acquire(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}

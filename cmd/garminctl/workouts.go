@@ -11,7 +11,7 @@ import (
 
 func (c *cli) workouts(ctx context.Context, sess *watchsession.Session, args []string) error {
 	account := gc.New(gc.DefaultStorePath())
-	command := &workoutscli.Command{Out: c.out, ErrOut: c.errOut, JSON: c.asJSON, Client: account, Delivery: app.WorkoutDelivery(c.runtime.Watch, account)(sess)}
+	command := &workoutscli.Command{Out: c.out, ErrOut: c.errOut, JSON: c.asJSON, Client: account, Delivery: app.WorkoutDelivery(c.runtime, account)(sess)}
 
 	return command.Run(ctx, sess, args)
 }

@@ -26,5 +26,5 @@ func (c *cli) activity(ctx context.Context, sess *watchsession.Session, args []s
 
 func (c *cli) health(ctx context.Context, sess *watchsession.Session, args []string) error {
 	account := gc.New(gc.DefaultStorePath())
-	return c.healthCLI(app.HealthAccess(c.runtime.Watch, account)(sess)).Health(ctx, args)
+	return c.healthCLI(app.HealthAccess(c.runtime, account)(sess)).Health(ctx, args)
 }

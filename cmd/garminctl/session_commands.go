@@ -52,7 +52,7 @@ func (c *cli) runSession(ctx context.Context, command sessionCommand, args []str
 
 // withSessionAt scopes one bounded group to the existing Manager and epoch.
 func (c *cli) withSessionAt(ctx context.Context, epoch watchsession.ConnectionEpoch, body func(context.Context, *watchsession.Session) error) error {
-	manager := c.runtime.Watch.Manager()
+	manager := c.runtime.Manager()
 
 	lease, err := manager.AcquireAt(ctx, epoch)
 	if err != nil {
@@ -80,7 +80,7 @@ func (c *cli) sessionJob(cmd string, args []string) sessionJobCommand {
 // runSessionJob connects once, then releases the initial lease before job/epoch
 // admission. Host I/O and per-file operations retain the original batch order.
 func (c *cli) runSessionJob(ctx context.Context, command sessionJobCommand, args []string) error {
-	lease, err := c.runtime.Watch.Manager().Acquire(ctx)
+	lease, err := c.runtime.Manager().Acquire(ctx)
 	if err != nil {
 		return err
 	}

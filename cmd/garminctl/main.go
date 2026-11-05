@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/app"
+	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -99,7 +99,7 @@ var version = "dev"
 const cloudCommand = "cloud"
 
 type cli struct {
-	runtime *garmin.Runtime
+	runtime *process.Runtime
 	epoch   watchsession.ConnectionEpoch
 	root    string
 	devID   string
@@ -193,7 +193,7 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn jobCommand, args []s
 		return c.runSession(runtime.Context(), command, args)
 	}
 
-	lease, err := runtime.Watch.Manager().Acquire(runtime.Context())
+	lease, err := runtime.Manager().Acquire(runtime.Context())
 	if err != nil {
 		return err
 	}
@@ -265,13 +265,13 @@ func (c *cli) runDeviceJob(ctx context.Context, cmd string, fn jobCommand, args 
 
 // runBoundJob retains admission and connection identity between operation leases.
 func (c *cli) runBoundJob(ctx context.Context, body func(context.Context) error) error {
-	release, err := c.runtime.Watch.Gate().EnterJob(ctx)
+	release, err := c.runtime.Manager().Gate().EnterJob(ctx)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	bound, releaseEpoch, err := c.runtime.Watch.BindEpoch(ctx, c.epoch)
+	bound, releaseEpoch, err := c.runtime.Manager().BindEpoch(ctx, c.epoch)
 	if err != nil {
 		return err
 	}
