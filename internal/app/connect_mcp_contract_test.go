@@ -37,7 +37,7 @@ func TestConnectMCPContracts(t *testing.T) { //nolint:paralleltest // isolates p
 		{name: "cloud changes forbidden", tool: connectSetTool, args: `{"changes":{"deviceId":9}}`, hash: "c34da262f929e1ae14da0a7f67d94d6fccb2afc3623a9d364539528e71c774a0"},
 		{name: "full sync", tool: connectSyncTool, args: `{}`, normalize: true, hash: "27f8452c340e448acc97865285dfc23e5d96e9bbe7be492ba0b854159a8d817e"},
 		{name: "no directions", tool: connectSyncTool, args: `{"upload":false,"download":false}`, hash: "13d40621f6479d2351dc83d15e87a3eac71cab338e2e7c684c4cbb8c3267ac3c"},
-		{name: "ack error retained", tool: connectSyncTool, args: `{"upload":false}`, mode: "ack failure", normalize: true, hash: "a3f3231f4a3a09cee2df41dd86619f842aaa077a948dacbdf878b44c4628d9e1"},
+		{name: "ack error retained", tool: connectSyncTool, args: `{"upload":false}`, mode: ackFailureMode, normalize: true, hash: "a3f3231f4a3a09cee2df41dd86619f842aaa077a948dacbdf878b44c4628d9e1"},
 		{name: "upload duplicate", tool: connectSyncTool, args: `{"download":false}`, mode: "duplicate upload", hash: "ad6e3143e6938695b291a7e8f91d1f4982f353e88e27133fcbe5b881173846e0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

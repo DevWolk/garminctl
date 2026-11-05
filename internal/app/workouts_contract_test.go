@@ -31,7 +31,7 @@ func TestWorkoutsHTTPContracts(t *testing.T) { //nolint:paralleltest // cases is
 		{name: "partial create", method: http.MethodPost, path: workoutsAPI, body: `{"spec":` + testdump.WorkoutSpecJSON + `,"send":true}`, mode: contractQueueFailure, status: 200, hash: "3f368951b8569048e5eec8c32ab3dfc2d8362c023144296efd7e4c22f5dbea52"},
 		{name: "zero id", method: http.MethodPost, path: workoutsAPI, body: `{"spec":` + testdump.WorkoutSpecJSON + `}`, mode: "zero", status: 500, hash: "51968c6d7d517eb5fa375f67718ceb9d7c88a130dfd35de133e1959fe236b8f5"},
 		{name: "send", method: http.MethodPost, path: "/api/workouts/42/send?name=Fixture", status: 200, normalize: true, hash: "da0d254c407f86f042e17f21fc28429d68a4c0a15eff37f4ae0cc8bac64285dd"},
-		{name: "ack failure", method: http.MethodPost, path: "/api/workouts/42/send", mode: "ack failure", status: 200, normalize: true, hash: "7ae7e7f78707777b6e10bc4a80c48e8f628030fc31bb91eafb5692c0cbefaef1"},
+		{name: "ack failure", method: http.MethodPost, path: "/api/workouts/42/send", mode: ackFailureMode, status: 200, normalize: true, hash: "7ae7e7f78707777b6e10bc4a80c48e8f628030fc31bb91eafb5692c0cbefaef1"},
 		{name: "send failure", method: http.MethodPost, path: "/api/workouts/42/send", mode: contractQueueFailure, status: 500, hash: "ca76c7c42120061cbcdd4ed9090547982474c2efca355061cf8822c5fcf748c0"},
 		{name: "bad send id", method: http.MethodPost, path: "/api/workouts/no/send", status: 400, hash: "9ed27c99b693f4627830cb243ccb7b1d1ee42d2fb1f1c2fe17bb02032e1e75ba"},
 		{name: "delete workout", method: http.MethodDelete, path: "/api/workouts/42", status: 200, hash: ""},
