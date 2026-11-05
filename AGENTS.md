@@ -38,7 +38,9 @@ See CLAUDE.md for the working rules. Module map:
   version formatting. `internal/garmin/devicexml.go` retains compatibility aliases
   while Session and feature containers are extracted.
 - `internal/app` assembles runtime/account owners for entry points and supplies
-  them to HTTP/MCP shells. `internal/ship/clix` owns CLI printing, errors and
+  them to HTTP/MCP shells. One MCP registrar list serves HTTP and stdio;
+  protocol contracts use the production composition with fixture transports.
+  `internal/ship/clix` owns CLI printing, errors and
   parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
   and shared status mapping, watch lease responses, mutating admission and the
@@ -169,9 +171,11 @@ See CLAUDE.md for the working rules. Module map:
   MCP requires object output schemas, so the feature `ui/mcp` packages wrap
   lists (`filesResult` and friends in containers/watch) and flatten recursive
   inputs (`workoutIn` in containers/workouts: one level of repeat groups).
-  `server_test.go` registers everything over an in-memory transport and calls
-  the read tools against a dump, so a type the schema inferrer rejects fails
-  the test instead of crashing `garminctl mcp`. `internal/ship/mcpx/http.go`
+  Contract tests in `internal/app` run the stdio composition over an in-memory
+  transport and the HTTP composition through `app.ServeListener`. They retain
+  result/schema/annotation digests and compare all 33 tool definitions between
+  transports. The shell keeps a compatibility guard unit test until facade
+  removal. `internal/ship/mcpx/http.go`
   exposes the same tools over local Streamable HTTP with bounded
   session/tool-call metadata for the web UI's AI & MCP tab.
 

@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	contractVersion          = "test"
 	contractOKHash           = "f9e952a6078dd131bab1fc9c7c94a923ee48bc2d0b2ebb670349397efcf5e1bb"
 	contractTrailingJSONHash = "a91149e68d1e9075873e9379fce36cec342265fe2ce7993a85c1e0bd2bfee77f"
 )
@@ -101,7 +102,7 @@ func serveContractRoot(t *testing.T, open watchsession.Opener) *contractServer {
 	go func() {
 		defer close(done)
 
-		serveErr = ServeListener(ctx, listener, open, false, "test")
+		serveErr = ServeListener(ctx, listener, open, false, contractVersion)
 	}()
 
 	client := &http.Client{Transport: new(http.Transport), Timeout: 10 * time.Second}
@@ -139,7 +140,7 @@ func newContractClientWithOpener(t *testing.T, open watchsession.Opener) *mcp.Cl
 
 	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
 
-	client, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "test"}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()}, nil)
+	client, err := mcp.NewClient(&mcp.Implementation{Name: contractVersion, Version: contractVersion}, nil).Connect(ctx, &mcp.StreamableClientTransport{Endpoint: server.URL + "/mcp", HTTPClient: server.Client()}, nil)
 	if err != nil {
 		cancel()
 		t.Fatal(err)

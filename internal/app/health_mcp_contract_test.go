@@ -1,20 +1,21 @@
-package mcpserver
+package app
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const activityDetailTool = "activity_detail"
 
-func TestHealthMCPToolContracts(t *testing.T) {
-	t.Parallel()
+func TestHealthMCPToolContracts(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
 	checkToolContracts(t, map[string]string{"activities_list": "fdac9bb1338bdb9dd294429d92b277f609355203677afa7f2725d5b88c982c50", activityDetailTool: "50e9487963d02cc18aee47f5ca7fc08aff2dfe3c2b19782142bda2d5c645cecd", "health_daily": "07254d2d2773764cfcb6bece47c80a882da50ac0073ba4a4e0ea298338e8b15c", "health_history": "6915a3e1f6d570f7ccfde9e0fca3a441aa4c7aa131cd6d2f7b02196ff16053be", "health_extras": "46273524089714d3b948d043423509495fd6dae6c01db60419bca283f72c7436", "health_log_weight": "5c0f68b7625e9f366a301b53cb4d1937c215dece87e12822cd74e2837bfb1ca9", "health_day": "a1e0f39416f1becca5f4732c5c46dfa0ccaf244b04b12e751a84ad31a9abc37e"})
 }
 
@@ -38,6 +39,7 @@ func TestHealthMCPContracts(t *testing.T) { //nolint:paralleltest // isolates pr
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			testdump.HealthEnvironment(t)
+			testdump.HealthCLIEnvironment(t, test.mode)
 			root := testdump.HealthRoot(t)
 
 			fs, err := device.NewDirFS(root)
@@ -45,7 +47,7 @@ func TestHealthMCPContracts(t *testing.T) { //nolint:paralleltest // isolates pr
 				t.Fatal(err)
 			}
 
-			if _, err := garmin.New(fs).Activities(t.Context(), true); err != nil {
+			if _, err := (health.ListActivitiesAction{Profile: fit.MustProfile()}).Run(t.Context(), watchsession.New(fs), true); err != nil {
 				t.Fatal(err)
 			}
 
@@ -53,7 +55,7 @@ func TestHealthMCPContracts(t *testing.T) { //nolint:paralleltest // isolates pr
 				t.Fatal(err)
 			}
 
-			client := newClientWithAccount(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, testdump.HealthClient(t, test.mode))
+			client := newMCPContractClientWithOpener(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })
 
 			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: test.tool, Arguments: json.RawMessage(test.args)})
 			if err != nil {

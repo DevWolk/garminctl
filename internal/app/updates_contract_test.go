@@ -23,7 +23,7 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 		{name: "inventory", method: http.MethodGet, path: "/api/software", status: http.StatusOK, hash: "edf78db57bfb47cdfb2b44a6aa77bef0ff8b6deccb67a4ce072144cc9a1a9abe"},
 		{name: "install", method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, status: http.StatusOK, hash: "5ddf1ab973ef354b2a98715fd78a3701d495186a12004775d8597575a5dfc12e"},
 		{name: "missing part", method: http.MethodPost, path: "/api/updates/software/install", body: `{}`, status: http.StatusBadRequest, hash: "3e2e35f88dcdb03e6e24fd1b384464449b0bd61ea6a932ee139941523bab746d"},
-		{name: "checksum", method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, mode: "checksum", status: http.StatusInternalServerError, hash: "411fcc8047caec1e2040b422448692b554e0e7768968bb97a7a2f76f66adf2fc"},
+		{name: updateChecksumMode, method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, mode: updateChecksumMode, status: http.StatusInternalServerError, hash: "411fcc8047caec1e2040b422448692b554e0e7768968bb97a7a2f76f66adf2fc"},
 		{name: "software failure", method: http.MethodGet, path: "/api/updates/software", mode: "software", status: http.StatusInternalServerError, hash: "3dcd8896c34045c6daa139b5111586c5347f051f57a741eef40a61907b41ba1e"},
 		{name: "app failure", method: http.MethodGet, path: "/api/updates/apps", mode: "app", status: http.StatusOK, hash: "aef77e342753b5dc2dc6fc9bc3bf56c327c9883495ab5781d92b03c6507d99d0"},
 	} {

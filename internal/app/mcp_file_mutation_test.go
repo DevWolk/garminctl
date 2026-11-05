@@ -1,4 +1,4 @@
-package mcpserver
+package app
 
 import (
 	"encoding/json"
@@ -7,10 +7,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestDeleteToolInvalidatesWatchMetadata(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
+func TestDeleteToolInvalidatesWatchMetadata(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	client := newMCPContractClient(t)
 
 	info, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "watch_info"})
 	if err != nil || info.IsError {
@@ -20,7 +18,7 @@ func TestDeleteToolInvalidatesWatchMetadata(t *testing.T) {
 	const path = "GARMIN/GarminDevice.xml"
 
 	deleted, err := client.CallTool(t.Context(), &mcp.CallToolParams{
-		Name: "watch_delete_file", Arguments: map[string]any{"path": path},
+		Name: "watch_delete_file", Arguments: map[string]any{watchPathKey: path},
 	})
 	if err != nil || deleted.IsError {
 		t.Fatalf("delete tool failed: %+v, %v", deleted, err)

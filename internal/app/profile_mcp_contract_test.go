@@ -1,4 +1,4 @@
-package mcpserver
+package app
 
 import (
 	"crypto/sha256"
@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-func TestCloudStatusSchemaAndAnnotations(t *testing.T) {
-	t.Parallel()
-
-	tools, err := newClient(t).ListTools(t.Context(), nil)
+func TestCloudStatusSchemaAndAnnotations(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	tools, err := newMCPContractClient(t).ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

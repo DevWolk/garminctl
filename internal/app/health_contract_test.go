@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	healthFixtureDayURL    = "/api/health/day?date=2000-01-02"
-	emptyHealthFixtureMode = "empty"
+	healthFixtureDayURL = "/api/health/day?date=2000-01-02"
+	emptyFixtureMode    = "empty"
 )
 
 func TestHealthHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isolate the process cache directory
@@ -33,11 +33,11 @@ func TestHealthHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isol
 		{name: "daily row errors", method: http.MethodGet, path: "/api/health/daily?days=2", mode: "daily error", status: 200, hash: "84ddebf4013ed78e9f3ad29f9886f0eb051ab49645c43069ee1dcc74c4e307e3"},
 		{name: "day series", method: http.MethodGet, path: healthFixtureDayURL, status: 200, hash: "c306a3ecc8eae2bce601d26a5cb7a8eece4719a82ee111fb3792fb8fd435389a"},
 		{name: "day partial", method: http.MethodGet, path: healthFixtureDayURL, mode: "partial day", status: 200, hash: "7afb16639049fdb356ade503c587c6bb6d03df868efca164142177df9a92c12c"},
-		{name: "day empty", method: http.MethodGet, path: healthFixtureDayURL, mode: emptyHealthFixtureMode, status: 200, hash: "6b2ae963a7ff65e66f2a08da1907680d8656b47f09a5959e26f0d33f60b6313c"},
+		{name: "day empty", method: http.MethodGet, path: healthFixtureDayURL, mode: emptyFixtureMode, status: 200, hash: "6b2ae963a7ff65e66f2a08da1907680d8656b47f09a5959e26f0d33f60b6313c"},
 		{name: "invalid day", method: http.MethodGet, path: "/api/health/day?date=wrong", status: 500, hash: "a551dbdf82a03543736bf9e164a8461860c777e62761d358df28f9176e7581f0"},
 		{name: "missing profile", method: http.MethodGet, path: healthFixtureDayURL, mode: "missing profile", status: 500, hash: "73b49bf2d7d55b00db3a291eb40e96636c877aa406539943c13858eb6e122813"},
 		{name: "fitness extras", method: http.MethodGet, path: "/api/health/extras", status: 200, hash: "937a74d970b0873f987fb09bec0503191edb700512ddea175c00742af958157f"},
-		{name: "empty extras", method: http.MethodGet, path: "/api/health/extras", mode: emptyHealthFixtureMode, status: 200, hash: "0d9ebc2a930c0e9c94663feaa92691ef4490285fedce5f82120a05c56edc1d37"},
+		{name: "empty extras", method: http.MethodGet, path: "/api/health/extras", mode: emptyFixtureMode, status: 200, hash: "0d9ebc2a930c0e9c94663feaa92691ef4490285fedce5f82120a05c56edc1d37"},
 		{name: "partial extras", method: http.MethodGet, path: "/api/health/extras", mode: "partial extras", status: 200, hash: "8e4b47e71d825566fce1266b468ffadb0198c625c61aadc6dfae5c912251ec3e"},
 		{name: "log weight", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":70.5}`, status: 200, hash: "0be5db28e3e9d802f2b7d1b995c5e33b74ad2f0855307b7d944705ab24d47cd8"},
 		{name: "invalid weight", method: http.MethodPost, path: "/api/health/weight", body: `{"kg":19}`, status: 500, hash: "a40a21987eac1147b5babfe9b22c115eecfb391299d2b73ae6dfc8ea09a0b422"},

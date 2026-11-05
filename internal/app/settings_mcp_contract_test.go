@@ -1,4 +1,4 @@
-package mcpserver
+package app
 
 import (
 	"encoding/json"
@@ -19,10 +19,8 @@ const (
 	settingsMessage    = "deviceSettings"
 )
 
-func TestSettingsMCPContracts(t *testing.T) {
-	t.Parallel()
-
-	client := newClient(t)
+func TestSettingsMCPContracts(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	client := newMCPContractClient(t)
 	for _, test := range []struct {
 		name, tool string
 		args       map[string]any
@@ -33,13 +31,11 @@ func TestSettingsMCPContracts(t *testing.T) {
 		{name: "named message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "7e5a71e3c202787cce36e28a4bc8641aa2077be0dd8ae56821f33396980ced99"},
 		{name: "numeric message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "2"}, hash: "7e5a71e3c202787cce36e28a4bc8641aa2077be0dd8ae56821f33396980ced99"},
 		{name: "message case", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "DEVICESETTINGS"}, hash: "498f1e8b975f4ae9496188a40a34a7088467f1458d55572cea4faf2a9717d516"},
-		{name: "schema", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "fcf4dbf35ce94bca4aae499a365b1448705bf7708fd1781872c280bece33d032"},
+		{name: "settings schema", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "fcf4dbf35ce94bca4aae499a365b1448705bf7708fd1781872c280bece33d032"},
 		{name: "schema error", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: contractMissing}, hash: "deb119063faeefac3af4d5f9a51c291777de3a271f056c37c4f577b2e1518eb4"},
 		{name: "empty apply", tool: settingsApplyTool, args: map[string]any{"changes": []any{}}, hash: "24a17f542817b9155900f527cac1f51d544818b179d03c77f195469f6a448fc8"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
 			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: test.tool, Arguments: test.args})
 			if err != nil {
 				t.Fatal(err)
@@ -67,15 +63,14 @@ func TestSettingsMCPContracts(t *testing.T) {
 	}
 }
 
-func TestSettingsMCPApplyContract(t *testing.T) {
-	t.Parallel()
-
+func TestSettingsMCPApplyContract(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
 	root := testdump.Root(t)
 	if err := os.Mkdir(filepath.Join(root, "GARMIN", "NewFiles"), 0o750); err != nil {
 		t.Fatal(err)
 	}
 
-	client := newClientForRoot(t, root)
+	isolateContractAccount(t)
+	client := newMCPContractClientForRoot(t, root)
 
 	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: settingsApplyTool, Arguments: map[string]any{
 		"changes": []any{map[string]any{"mesg": "2", "field": "58", "value": 1500}},

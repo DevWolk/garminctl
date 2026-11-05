@@ -218,7 +218,7 @@ func checkRootMusic(ctx context.Context, t *testing.T, base string) {
 
 	defer func() { _ = session.Close() }()
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "music_list", Arguments: map[string]any{}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: musicListTool, Arguments: map[string]any{}})
 	if err != nil || result.IsError {
 		t.Fatalf("music tool=%+v error=%v", result, err)
 	}
@@ -295,7 +295,7 @@ func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected 
 
 	defer func() { _ = session.Close() }()
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "watch_list_files", Arguments: map[string]any{"path": "GARMIN"}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "watch_list_files", Arguments: map[string]any{watchPathKey: "GARMIN"}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP list=%+v error=%v", result, err)
 	}
@@ -343,7 +343,7 @@ func checkRootMCPReads(ctx context.Context, t *testing.T, base string, expected 
 func checkRootMCPAppSettings(ctx context.Context, t *testing.T, session *mcp.ClientSession, expected map[string]any) {
 	t.Helper()
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "watch_app_settings", Arguments: map[string]any{"app": testdump.AppRef}})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: appSettingsTool, Arguments: map[string]any{"app": testdump.AppRef}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP app settings=%+v error=%v", result, err)
 	}
@@ -384,7 +384,7 @@ func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
 	runtime := NewRuntime(ctx, nil)
 
 	account := gc.New(filepath.Join(t.TempDir(), "account.json"))
-	if err := web.ServeRuntime(listener, runtime, account, false, "test", web.Features{}); !errors.Is(err, net.ErrClosed) {
+	if err := web.ServeRuntime(listener, runtime, account, false, contractVersion, web.Features{}); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("closed listener error=%v", err)
 	}
 

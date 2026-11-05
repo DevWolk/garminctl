@@ -51,9 +51,9 @@ func (s *server) requestContext(ctx context.Context) (context.Context, context.C
 	return ctx, func() {}
 }
 
-// ServeRuntime runs the stdio shell with process owners supplied by app wiring.
+// ServeRuntime runs the supplied MCP transport with process owners from app wiring.
 // It closes the supplied runtime before returning.
-func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string, registrars ...mcpx.ToolRegistrar) (err error) {
+func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, transport mcp.Transport, version string, registrars ...mcpx.ToolRegistrar) (err error) {
 	s := &server{svc: runtime.Watch, runtime: runtime}
 
 	defer func() {
@@ -65,7 +65,7 @@ func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, version string, r
 
 	srv := newServer(s, version, account, registrars...)
 
-	return srv.Run(runtime.Context(), &mcp.StdioTransport{})
+	return srv.Run(runtime.Context(), transport)
 }
 
 func newServer(_ *server, version string, _ *gc.Client, registrars ...mcpx.ToolRegistrar) *mcp.Server {

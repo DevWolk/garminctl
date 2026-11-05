@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	appshttp "github.com/DevWolk/garminctl/internal/containers/apps/ui/http"
 	appsmcp "github.com/DevWolk/garminctl/internal/containers/apps/ui/mcp"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
@@ -65,7 +67,7 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 			&storehttp.Handler{Manager: runtime.Watch.Manager(), Registry: StoreRegistry},
 			&updateshttp.Handler{Manager: runtime.Watch.Manager(), Config: WatchUpdateConfig, Registry: UpdatesRegistry, InvalidateFor: updateInvalidator(runtime)},
 		},
-		MCP:          []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime), musicTools(runtime), workoutsTools(runtime, account), healthTools(runtime, account), connectTools(runtime, account)},
+		MCP:          mcpTools(runtime, account),
 		WatchSummary: WatchSummary,
 		SyncRunner:   connectRunner(runtime.Watch, account),
 	})
@@ -73,10 +75,18 @@ func ServeListener(ctx context.Context, listener net.Listener, open garmin.Opene
 
 // ServeMCP assembles a standalone stdio backend, with its own process owners.
 func ServeMCP(ctx context.Context, open garmin.Opener, version string) error {
+	return serveMCPTransport(ctx, open, version, &mcp.StdioTransport{})
+}
+
+func serveMCPTransport(ctx context.Context, open garmin.Opener, version string, transport mcp.Transport) error {
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, version, settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime), musicTools(runtime), workoutsTools(runtime, account), healthTools(runtime, account), connectTools(runtime, account))
+	return mcpserver.ServeRuntime(runtime, account, transport, version, mcpTools(runtime, account)...)
+}
+
+func mcpTools(runtime *garmin.Runtime, account *gc.Client) []mcpx.ToolRegistrar {
+	return []mcpx.ToolRegistrar{settingsTools(runtime), watchTools(runtime), appsTools(runtime), storeTools(runtime), updatesTools(runtime), musicTools(runtime), workoutsTools(runtime, account), healthTools(runtime, account), connectTools(runtime, account)}
 }
 
 func settingsTools(runtime *garmin.Runtime) *settingsmcp.Tools {

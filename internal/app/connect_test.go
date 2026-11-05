@@ -54,7 +54,7 @@ func TestServeListenerConnectSharesAccountWatchAndSync(t *testing.T) {
 	var settings []connect.CloudSetting
 	rootGetJSON(t.Context(), t, base, "/api/cloud/settings", &settings)
 
-	session, err := mcp.NewClient(&mcp.Implementation{Name: "root-connect", Version: "test"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "root-connect", Version: contractVersion}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: base + "/mcp"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

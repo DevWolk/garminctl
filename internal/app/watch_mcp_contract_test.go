@@ -13,7 +13,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
-func TestWatchHTTPMCPDecodeRetains400MessageLimit(t *testing.T) { //nolint:paralleltest // the real entry point reads isolated process account paths.
+func TestWatchMCPDecodeRetains400MessageLimit(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
 	dev, root := testdump.Watch(t)
 
 	builder := fit.NewBuilder(217, true)
@@ -33,7 +33,8 @@ func TestWatchHTTPMCPDecodeRetains400MessageLimit(t *testing.T) { //nolint:paral
 		t.Fatal(err)
 	}
 
-	client := newContractClientWithOpener(t, func(context.Context) (device.Device, error) { return dev, nil })
+	isolateContractAccount(t)
+	client := newMCPContractClientWithOpener(t, func(context.Context) (device.Device, error) { return dev, nil })
 
 	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: watchDecodeTool, Arguments: map[string]any{watchPathKey: "GARMIN/Activity/many.fit"}})
 	if err != nil || result.IsError {
@@ -66,60 +67,42 @@ const (
 	watchPathKey    = "path"
 )
 
-// These whole-result digests describe the production stateful HTTP transport
-// (protocol 2025-11-25). The original in-memory protocol 2026-07-28 digests
-// remain in mcpserver; the SDK adds serverInfo/resultType only for that protocol.
-func TestWatchHTTPMCPContracts(t *testing.T) { //nolint:paralleltest // the real entry point reads isolated process account paths.
-	for _, test := range []struct { //nolint:paralleltest // each case isolates process account paths.
-		name, tool string
-		args       map[string]any
-		hash       string
-	}{
-		{name: "info", tool: watchInfoTool, args: map[string]any{}, hash: "ebbbccfa42e8967881446a0cf8b77b3d6eb9ad55fa67fa88eaac355b1be03315"},
-		{name: "files", tool: watchFilesTool, args: map[string]any{watchPathKey: "GARMIN"}, hash: "73e01a5e57a9bc8677967d25b7d0563f618684191123f72f228f908d4a05653d"},
-		{name: "decode", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/Settings/Settings.fit"}, hash: "22f35b9200cf7185279193baec78540046beb0fa092ab60368758f30887c50bf"},
-		{name: "delete", tool: watchDeleteTool, args: map[string]any{watchPathKey: "GARMIN/notes.txt"}, hash: "d610c5b2576af8a72b93457af29d9549b76bb14491e383fb54856e55b643e564"},
-		{name: "missing file", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/missing"}, hash: "0a845689ef8475140179d09e209e053f52d896405d214bf35c27cde33de04c4c"},
-	} {
+type watchMCPContractCase struct {
+	name, tool           string
+	args                 map[string]any
+	memoryHash, httpHash string
+}
+
+func watchMCPContractCases() []watchMCPContractCase {
+	return []watchMCPContractCase{
+		{name: "info", tool: watchInfoTool, args: map[string]any{}, memoryHash: "9266cea06781c02f0d205e5d3106cb25ac8489095608ffa9e6db76703e5522fa", httpHash: "ebbbccfa42e8967881446a0cf8b77b3d6eb9ad55fa67fa88eaac355b1be03315"},
+		{name: "files", tool: watchFilesTool, args: map[string]any{watchPathKey: "GARMIN"}, memoryHash: "346166290d61d4f4aa3ceccd82be012cee41a0493d21556cff69a85f63526048", httpHash: "73e01a5e57a9bc8677967d25b7d0563f618684191123f72f228f908d4a05653d"},
+		{name: "decode", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/Settings/Settings.fit"}, memoryHash: "836b19afe1fead561d8faa9a45f3ecd36139ab069c21a3ef77aaeb78cb8b33b0", httpHash: "22f35b9200cf7185279193baec78540046beb0fa092ab60368758f30887c50bf"},
+		{name: "delete", tool: watchDeleteTool, args: map[string]any{watchPathKey: "GARMIN/notes.txt"}, memoryHash: "ca5544f6a3d4139b6eaa2efb7382c8c952f4fcb19fe2a1b89e55a8805bb73424", httpHash: "d610c5b2576af8a72b93457af29d9549b76bb14491e383fb54856e55b643e564"},
+		{name: "missing file", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/missing"}, memoryHash: "b3c26b29f4b96e21d66b751f35f25a7c3f81e5a93247f7042fe5745bc0ab333a", httpHash: "0a845689ef8475140179d09e209e053f52d896405d214bf35c27cde33de04c4c"},
+	}
+}
+
+func TestWatchMCPContracts(t *testing.T) { //nolint:paralleltest // cases use isolated process account paths.
+	for _, test := range watchMCPContractCases() { //nolint:paralleltest // each case configures its account path.
 		t.Run(test.name, func(t *testing.T) {
 			dev, _ := testdump.Watch(t)
-			client := newContractClientWithOpener(t, func(context.Context) (device.Device, error) { return dev, nil })
-
-			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: test.tool, Arguments: test.args})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			testdump.CheckJSON(t, result, test.hash)
+			isolateContractAccount(t)
+			client := newMCPContractClientWithOpener(t, func(context.Context) (device.Device, error) { return dev, nil })
+			checkMCPResultContract(t, client, test.tool, test.args, test.memoryHash)
 		})
 	}
 }
 
-func TestWatchHTTPMCPToolContracts(t *testing.T) { //nolint:paralleltest // the real entry point reads isolated process account paths.
-	client := newContractClient(t)
+func TestWatchMCPToolContracts(t *testing.T) { //nolint:paralleltest // the production backend reads isolated process account paths.
+	checkClientToolContracts(t, newMCPContractClient(t), watchMCPMetadata())
+}
 
-	tools, err := client.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := map[string]string{
+func watchMCPMetadata() map[string]string {
+	return map[string]string{
 		watchInfoTool:   "f0ece6b31a514b32c874fde0b17583013f490e5abc040707add93e9670fe8778",
 		watchFilesTool:  "0d64210ee78dbbfb32781d5b7852198386ecc5f39a6aa135470d8391383cf91a",
 		watchDecodeTool: "3a556560ed4462558acfc42d4a59dc9af1b6233783822d8ec10b771ba23d423b",
 		watchDeleteTool: "219e81c232ce6e7166b55aebe1b992212d09103b58245216b5c02739f5b0be52",
-	}
-	seen := 0
-
-	for _, tool := range tools.Tools {
-		if hash, ok := want[tool.Name]; ok {
-			seen++
-
-			t.Run(tool.Name, func(t *testing.T) { t.Parallel(); testdump.CheckJSON(t, tool, hash) })
-		}
-	}
-
-	if seen != len(want) {
-		t.Fatalf("registered watch tools=%d want=%d", seen, len(want))
 	}
 }
