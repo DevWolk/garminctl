@@ -27,6 +27,7 @@ var ErrSessionChanged = watchsession.ErrSessionChanged
 type Lazy struct {
 	manager *watchsession.Manager
 	claims  connect.MessageClaims
+	schemas apps.SessionSchemas
 
 	mu           sync.Mutex
 	facadeClosed bool
@@ -71,7 +72,7 @@ func (l *Lazy) AppSchemaCacheFor(session *watchsession.Session) *apps.SchemaCach
 		epoch = 0 // a retiring Session must not replace a newer facade
 	}
 
-	return &l.facade(session, epoch).schemas
+	return l.facade(session, epoch).schemas
 }
 
 // facade retains only the newest observed connection. A delayed unleased
@@ -88,7 +89,7 @@ func (l *Lazy) facade(session *watchsession.Session, epoch ConnectionEpoch) *Ser
 		return l.facadeValue
 	}
 
-	value := NewFromSession(session)
+	value := newService(session, l.schemas.For(session, epoch))
 	if !l.facadeClosed && epoch > l.facadeEpoch {
 		l.facadeEpoch, l.facadeSource, l.facadeValue = epoch, session, value
 	}
@@ -115,6 +116,7 @@ func (l *Lazy) DropAt(epoch ConnectionEpoch) error { return l.manager.DropAt(epo
 // Close cancels and joins the Manager's existing cleanup worker.
 func (l *Lazy) Close(ctx context.Context) error {
 	err := l.manager.Close(ctx)
+	l.schemas.Close()
 	l.mu.Lock()
 	l.facadeClosed = true
 	l.facadeSource, l.facadeValue = nil, nil

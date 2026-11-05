@@ -12,5 +12,5 @@ type AppSettingItem = apps.AppSettingItem
 
 // AppSchema delegates app lookup and cached schema loading to apps.
 func (s *Service) AppSchema(ctx context.Context, ref string) (*ciqstore.Schema, error) {
-	return apps.NewSchemaAction(&s.schemas).Run(ctx, s.session, ref)
+	return apps.NewSchemaAction(s.schemas).Run(ctx, s.session, ref)
 }

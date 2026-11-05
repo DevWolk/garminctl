@@ -22,7 +22,7 @@ type Service struct {
 	UpdatesURL string
 
 	session *watchsession.Session
-	schemas apps.SchemaCache
+	schemas *apps.SchemaCache
 }
 
 // New wraps a device.
@@ -31,10 +31,16 @@ func New(dev device.Device) *Service { return NewFromSession(watchsession.New(de
 // NewFromSession adds feature caches/profile to an existing Session without
 // taking transport ownership or creating another admission/close worker.
 func NewFromSession(session *watchsession.Session) *Service {
+	return newService(session, new(apps.SchemaCache))
+}
+
+// newService shares a schema cache owned by the connection's watch owner.
+func newService(session *watchsession.Session, schemas *apps.SchemaCache) *Service {
 	return &Service{
 		profile:    fit.MustProfile(),
 		UpdatesURL: DefaultUpdatesURL,
 		session:    session,
+		schemas:    schemas,
 	}
 }
 
@@ -97,10 +103,10 @@ func (s *Service) FindApp(ctx context.Context, ref string) (*App, error) {
 
 // AppSettings reads settings through the apps owner and this facade's cache.
 func (s *Service) AppSettings(ctx context.Context, ref string) (*AppSettings, error) {
-	return apps.NewReadSettingsAction(&s.schemas).Run(ctx, s.session, ref)
+	return apps.NewReadSettingsAction(s.schemas).Run(ctx, s.session, ref)
 }
 
 // SetAppSettings delegates validation, write and readback with the same cache.
 func (s *Service) SetAppSettings(ctx context.Context, ref string, updates map[string]any) (*AppSettings, error) {
-	return apps.NewApplySettingsAction(&s.schemas).Run(ctx, s.session, ref, updates)
+	return apps.NewApplySettingsAction(s.schemas).Run(ctx, s.session, ref, updates)
 }

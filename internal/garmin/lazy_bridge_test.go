@@ -122,7 +122,7 @@ func TestExtractedAdaptersShareOneEpochSchemaCache(t *testing.T) {
 	firstSession, firstEpoch := core.Session(), core.Epoch()
 
 	cache := l.AppSchemaCacheFor(firstSession)
-	if cache != l.AppSchemaCacheFor(firstSession) || cache != &l.Current().schemas {
+	if cache != l.AppSchemaCacheFor(firstSession) || cache != l.Current().schemas {
 		t.Fatal("extracted adapter did not use the canonical current-epoch cache")
 	}
 
@@ -131,7 +131,7 @@ func TestExtractedAdaptersShareOneEpochSchemaCache(t *testing.T) {
 	}
 
 	legacy := acquireLease(t, l)
-	if cache != &legacy.Service().schemas {
+	if cache != legacy.Service().schemas {
 		t.Fatal("legacy and extracted adapters acquired separate caches")
 	}
 
@@ -154,12 +154,12 @@ func TestExtractedAdaptersShareOneEpochSchemaCache(t *testing.T) {
 	}()
 
 	fresh := l.AppSchemaCacheFor(next.Session())
-	if fresh == cache || fresh != &l.Current().schemas {
+	if fresh == cache || fresh != l.Current().schemas {
 		t.Fatal("new Session reused the previous epoch's schema cache")
 	}
 
 	_ = l.AppSchemaCacheFor(firstSession)
-	if fresh != &l.Current().schemas {
+	if fresh != l.Current().schemas {
 		t.Fatal("late state lookup displaced the current epoch's cache")
 	}
 }

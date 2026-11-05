@@ -43,7 +43,7 @@ func TestHealthAccessBorrowsFacadeAndKeepsIdentityPerCaller(t *testing.T) {
 	access := watch.HealthAccessFor(lease.Session(), client)
 
 	cache := watch.AppSchemaCacheFor(lease.Session())
-	if access.Client != client || cache != &watch.Current().schemas {
+	if access.Client != client || cache != watch.Current().schemas {
 		t.Fatal("health access replaced the canonical account/facade cache")
 	}
 
@@ -66,7 +66,7 @@ func TestHealthAccessBorrowsFacadeAndKeepsIdentityPerCaller(t *testing.T) {
 		t.Fatalf("scoped metadata=%+v error=%v", dx, err)
 	}
 
-	if opens != 1 || cache != &watch.Current().schemas {
+	if opens != 1 || cache != watch.Current().schemas {
 		t.Fatal("health access reopened the watch or replaced its facade cache")
 	}
 }

@@ -57,7 +57,7 @@ const AppFolder = apps.AppFolder
 
 // InstallPRG delegates validation/staging and shares this Session's feature cache.
 func (s *Service) InstallPRG(ctx context.Context, data []byte) (string, error) {
-	return apps.NewInstallPRGAction(&s.schemas).Run(ctx, s.session, data)
+	return apps.NewInstallPRGAction(s.schemas).Run(ctx, s.session, data)
 }
 
 // WriteAppFile delegates named queue/binary delivery through the same Session.
@@ -67,7 +67,7 @@ func (s *Service) WriteAppFile(ctx context.Context, name string, data []byte) (s
 
 // RemoveApp delegates app-file removal with the existing shared schema cache.
 func (s *Service) RemoveApp(ctx context.Context, ref string) ([]string, error) {
-	return apps.NewRemoveAction(&s.schemas).Run(ctx, s.session, ref)
+	return apps.NewRemoveAction(s.schemas).Run(ctx, s.session, ref)
 }
 
 // AppFiles delegates listing through the visible/hidden capability policy.

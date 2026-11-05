@@ -176,7 +176,7 @@ func TestWorkoutDeliveryForBorrowsCanonicalFacade(t *testing.T) {
 	}
 
 	cache := watch.AppSchemaCacheFor(lease.Session())
-	if cache != &provider.cloud.svc.schemas {
+	if cache != provider.cloud.svc.schemas {
 		t.Fatal("queue provider bypassed canonical schema cache")
 	}
 
