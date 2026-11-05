@@ -1,5 +1,5 @@
 //go:build !desktop
 
-package app
+package architecture
 
 const architectureBuildTags = ""
