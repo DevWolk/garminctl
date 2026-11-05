@@ -101,7 +101,15 @@ jobs:
           SIGNING_MODE: ${{ inputs.signing_mode }}
         run: |
           $setup = (Get-ChildItem dist/smoke/*_setup.exe).FullName
+          $env:NATIVE_RESULTS_DIR = Join-Path $pwd 'dist/native-results'
           ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+      - name: Retain native acceptance traces
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-acceptance-windows
+          path: dist/native-results/
+          retention-days: 7
 
   linux:
     name: Install and run on ${{ matrix.distribution }}
@@ -130,5 +138,15 @@ jobs:
           TEST_IMAGE: ${{ matrix.image }}
         run: |
           package=$(find dist/smoke -maxdepth 1 -name "*.$PACKAGE_FORMAT" -print -quit)
-          docker run --rm --init --mount "type=bind,src=$PWD,target=/src,readonly" "$TEST_IMAGE" \
+          mkdir -p dist/native-results
+          docker run --rm --init --mount "type=bind,src=$PWD,target=/src,readonly" \
+            --mount "type=bind,src=$PWD/dist/native-results,target=/evidence" \
+            -e NATIVE_RESULTS_DIR=/evidence "$TEST_IMAGE" \
             bash /src/scripts/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION"
+      - name: Retain native acceptance traces
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-acceptance-${{ matrix.format }}
+          path: dist/native-results/
+          retention-days: 7

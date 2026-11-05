@@ -15,7 +15,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 
-def check_package(desktop, cli, repo, version, work):
+def check_package(desktop, cli, repo, version, work, native_ui=False):
     dump = work / "watch"
     for folder in ("Apps", "Settings", "Activity", "Music"):
         (dump / "GARMIN" / folder).mkdir(parents=True, exist_ok=True)
@@ -46,7 +46,8 @@ def check_package(desktop, cli, repo, version, work):
         return result["result"]
 
     log_path = work / "desktop.log"
-    env = dict(os.environ, XDG_CONFIG_HOME=str(work / "config"), XDG_CACHE_HOME=str(work / "cache"))
+    env = dict(os.environ, XDG_CONFIG_HOME=str(work / "config"), XDG_CACHE_HOME=str(work / "cache"),
+               APPDATA=str(work / "appdata"), LOCALAPPDATA=str(work / "localappdata"))
     with log_path.open("wb") as log:
         app = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
     try:
@@ -94,7 +95,11 @@ def check_package(desktop, cli, repo, version, work):
             raise AssertionError("App-owned server remained running after normal close")
         stop_app(app)
         check_reused_backend(desktop, cli, dump, port, request, env, work)
-        return {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model, "nativeClose": True, "singleInstance": True, "reusedBackendRetained": True}
+        result = {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model, "nativeClose": True, "singleInstance": True, "reusedBackendRetained": True}
+        if native_ui:
+            from native_acceptance import run_native_acceptance
+            result["nativeAcceptance"] = run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app)
+        return result
     finally:
         try:
             stop_app(app)
@@ -250,6 +255,7 @@ if __name__ == "__main__":
     parser.add_argument("--cli", required=True, type=Path)
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--native-ui", action="store_true", help="Run dialog/edit/origin checks on an isolated CI desktop")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="garminctl-package-") as directory:
-        print(json.dumps(check_package(args.desktop, args.cli, args.repo, args.version, Path(directory)), ensure_ascii=False))
+        print(json.dumps(check_package(args.desktop, args.cli, args.repo, args.version, Path(directory), args.native_ui), ensure_ascii=False))

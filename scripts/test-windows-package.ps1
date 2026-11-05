@@ -33,7 +33,10 @@ foreach ($name in @('garmin-desktop.exe','garminctl.exe','uninstall.exe')) {
   }
 }
 try {
-  python scripts/test-package.py --repo . --version $Version --desktop (Join-Path $installed 'garmin-desktop.exe') --cli (Join-Path $installed 'garminctl.exe')
+  $parseErrors = $null
+  [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-ui-windows.ps1'), [ref]$null, [ref]$parseErrors)
+  if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+  python scripts/test-package.py --repo . --version $Version --desktop (Join-Path $installed 'garmin-desktop.exe') --cli (Join-Path $installed 'garminctl.exe') --native-ui
   if ($LASTEXITCODE -ne 0) { throw 'Installed native application/MCP check failed.' }
 } finally {
   $uninstaller = Join-Path $installed 'uninstall.exe'
