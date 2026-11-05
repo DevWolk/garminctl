@@ -92,11 +92,14 @@ separate data directories, so switching between them can require another
 Connect sign-in.
 
 Before staging an app-list visibility change, garminctl saves and reads back
-`OUT.BIN` in a unique `OUT.BIN-<timestamp>-<suffix>/OUT.BIN` snapshot under the
-cache directory. Directory/file access is restricted to the current user.
-If that backup fails, the visibility change is not written. Successful copies
-remain available even if the subsequent device write fails; cache removal also
-removes these recovery copies.
+`OUT.BIN`, and the pending `IN.BIN` when one exists, in a unique
+`OUT.BIN-<timestamp>-<suffix>/` snapshot under the cache directory. Before
+rewriting a Connect IQ app's settings it saves the current file in
+`<NAME>.SET-<timestamp>-<suffix>/<NAME>.SET`. Directory/file access is
+restricted to the current user. If a backup fails, the change is not written.
+Successful copies remain available even if the subsequent device write fails;
+nothing removes them automatically, and cache removal also removes these
+recovery copies.
 
 ### Update an installed package
 

@@ -88,12 +88,15 @@ garminctl settings set 'hrZone[5].highBpm=180' 'deviceSettings.104[4]=8'
 
 Device settings write change files to `GARMIN/NewFiles`; they never rewrite
 `GARMIN/Settings/Settings.fit`. `app-hide` and `app-show` write
-`GARMIN/Apps/IN.BIN` only after writing and reading back a private registry
-backup in the [cache directory](desktop.md#data-updates-and-uninstall). If the
-backup fails, the command returns an error without changing `IN.BIN`.
-`app-restore` writes the given file to `IN.BIN` without a backup.
+`GARMIN/Apps/IN.BIN` only after writing and reading back a private copy of
+`OUT.BIN` and any pending `IN.BIN` in the
+[cache directory](desktop.md#data-updates-and-uninstall). If the backup fails,
+or a pending `IN.BIN` cannot be read for a reason other than its absence, the
+command returns an error without changing `IN.BIN`. `app-restore` writes the
+given file to `IN.BIN` without a backup.
 The watch applies queued changes and completes app removal after USB
-disconnection. App `.SET` files are rewritten immediately. Fields marked `managedByConnect`
+disconnection. App `.SET` files are rewritten immediately, after a private copy
+of the current file; if that copy fails, the file is not changed. Fields marked `managedByConnect`
 also need changing in [Connect settings](cloud-sync.md#manual-sync).
 
 Updates check the MD5 when Garmin supplies one, then write Garmin's indicated
@@ -205,4 +208,4 @@ need no watch. Complete MFA in the interactive `cloud login` prompt or use
 verification lifetime, account storage and sync behavior.
 
 Sources: [command help and global flags](../cmd/garminctl/main.go),
-[command implementations](../cmd/garminctl), [workout schema](../internal/garmin/workouts.go).
+[command implementations](../cmd/garminctl), [workout schema](../internal/containers/workouts/models.go).

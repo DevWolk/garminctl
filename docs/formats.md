@@ -1,12 +1,13 @@
 # File formats and transport
 
 This reference describes the codecs and transfer rules in `internal/fit`,
-`internal/ciq`, `internal/device` and `internal/garmin`. Fixture tests cover the
+`internal/ciq`, `internal/device`, `internal/deviceinfo` and the feature
+containers under `internal/containers`. Fixture tests cover the
 included samples; device contents and firmware behavior can differ.
 
 ## Device paths and transport
 
-Paths are relative to device storage. [`GarminDevice.xml`](../internal/garmin/devicexml.go)
+Paths are relative to device storage. [`GarminDevice.xml`](../internal/deviceinfo/xml.go)
 describes data types, folders and transfer directions; use those capabilities
 rather than assuming that every device has the same files.
 
@@ -73,7 +74,7 @@ These mutation checks do not reinterpret untouched unknown field bytes.
 
 ## Settings-change files
 
-[`ApplyChanges`](../internal/garmin/settings.go) writes
+[`ApplyAction`](../internal/containers/settings/actions.go) writes
 `GARMIN/NewFiles/<uuid>.FIT` without rewriting `Settings.fit`. End the USB
 session and check the setting on the watch; a directory dump only records the
 pending file.
@@ -126,9 +127,10 @@ Dictionaries preserve insertion order; encoding interns strings in order of
 first appearance. The [fixture tests](../internal/ciq/ciq_test.go) require
 byte-identical round trips. Converting a dictionary to a JSON object loses order.
 
-[`SetAppSettings`](../internal/garmin/service.go) edits existing keys, preserves
-stored value types, rewrites the `.SET` file and reads it back. When a
-[settings schema](../internal/garmin/appschema.go) is available, it resolves
+[`ApplySettingsAction`](../internal/containers/apps/settings.go) edits existing
+keys, preserves stored value types, saves a private copy of the `.SET` file,
+rewrites it and reads it back. A failed copy prevents the device write. When a
+[settings schema](../internal/containers/apps/schema.go) is available, it resolves
 option labels and checks read-only fields, numeric bounds and text length.
 Without a schema, it coerces values to the existing types.
 
@@ -140,7 +142,7 @@ results. A missing schema does not imply a missing `.SET` file.
 
 ## App registry and binaries
 
-[`ParseAppsConfig`](../internal/garmin/appsconfig.go) reads protobuf nesting
+[`ParseAppsConfig`](../internal/containers/apps/registry.go) reads protobuf nesting
 `root.3 -> config.2 -> repeated list.3`. Each app contains:
 
 | Field | Encoding | Meaning |
@@ -154,15 +156,16 @@ results. A missing schema does not imply a missing `.SET` file.
 | 7 | Varint | Size. |
 | 8 | Varint | Native app ID. |
 
-[`SetAppHidden`](../internal/garmin/appsconfig_write.go) uses pending `IN.BIN`
-as its base when present, otherwise `OUT.BIN`. It refuses writes if identity
-re-encoding changes any bytes, changes field 4 for the matched entry, writes
-and reads back a private `OUT.BIN` backup, then writes `IN.BIN`. Backup failure
+[`VisibilityAction`](../internal/containers/apps/registry_write.go) uses pending
+`IN.BIN` as its base when present, otherwise `OUT.BIN`; a read error other than
+absence stops it. It refuses writes if identity re-encoding changes any bytes,
+changes field 4 for the matched entry, writes and reads back a private backup
+of `OUT.BIN` and the pending `IN.BIN`, then writes `IN.BIN`. Backup failure
 prevents the device write. Finish the USB session before checking
 visibility on the watch.
 
-[`InstallPRG`](../internal/garmin/updates.go) performs a minimal header check
-and writes a randomly named `.PRG` through `WriteAppFile`; it does not parse
+[`InstallPRGAction`](../internal/containers/apps/binary.go) performs a minimal header check
+and writes a randomly named `.PRG` through `WriteFileAction`; it does not parse
 or validate every PRG section. A visible app folder uses ordinary writes;
 otherwise the service requires `device.HiddenFS`. Installation does not add
 an `IN.BIN` entry.
@@ -197,8 +200,8 @@ The implementation makes these network requests:
 | Authentication | [`internal/gc`](../internal/gc/client.go) uses mobile SSO with MFA, OAuth1 preauthorization and OAuth2 bearer exchange. Token responses supply expiry times. |
 | Software updates | [`updates/tasks.go`](../internal/containers/updates/tasks.go) POSTs `{"GarminDeviceXml": "..."}` to `https://omt.garmin.com/api/device-software/v1/updates`. Downloads check supplied size and MD5 before writing the manifest's installation path. |
 | Store | [`ciqstore/store.go`](../internal/ciqstore/store.go) requests public app metadata, search, device types and reviews under `apps.garmin.com/api/appsLibraryExternalServices/api/asw`. `startPageIndex` is a record offset. Store type IDs differ from registry type IDs. |
-| Cloud sync | [`cloud.go`](../internal/garmin/cloud.go) reads and updates device settings, downloads device messages, and uploads supported data types using `uploadTargets`. |
-| Health and workouts | [`health.go`](../internal/garmin/health.go), [`health_more.go`](../internal/garmin/health_more.go) and [`workouts.go`](../internal/garmin/workouts.go) define the Connect endpoints and payloads. |
+| Cloud sync | [`cloud.go`](../internal/containers/connect/cloud.go) reads and updates device settings, downloads device messages, and uploads supported data types using `uploadTargets`. |
+| Health and workouts | [`daily.go`](../internal/containers/health/daily.go), [`history.go`](../internal/containers/health/history.go) and [`workouts/actions.go`](../internal/containers/workouts/actions.go) define the Connect endpoints and payloads. |
 | Audio providers | [`music/tasks.go`](../internal/containers/music/tasks.go) reports provider names and cache sizes from device XML separately from local audio files. |
 
 Cloud downloads route `FIT` to `NewFiles`, `BRAIN`/`PRG` to the app folder,

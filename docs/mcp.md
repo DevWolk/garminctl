@@ -59,5 +59,5 @@ an application's existing USB connection.
 Tools advertise input/output schemas and read-only, destructive, and open-world
 hints. List outputs are objects with keys such as `entries`, `rows`, or `apps`.
 
-Sources: [tool schemas](../internal/mcpserver/server.go),
-[HTTP sessions](../internal/mcpserver/http.go).
+Sources: [tool schemas](../internal/containers) (each feature's `ui/mcp`),
+[HTTP sessions](../internal/ship/mcpx/http.go).

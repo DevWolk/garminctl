@@ -72,4 +72,4 @@ From WSL it requires a Windows CLI binary beside the WSL binary. It does not
 open the desktop window; see [CLI server commands](cli.md#servers).
 
 Sources: [sign-in and token storage](../internal/gc/client.go),
-[sync](../internal/garmin/cloud.go), [USB watcher](../internal/web/auto.go).
+[sync](../internal/containers/connect/cloud.go), [USB watcher](../internal/web/auto.go).

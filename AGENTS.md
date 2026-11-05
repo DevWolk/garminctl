@@ -69,8 +69,8 @@ See CLAUDE.md for the working rules. Module map:
   compatibility test fixture. Find/SET/schema Actions and SchemaCache logic are
   apps-owned; the legacy per-Session facade still holds one cache value and
   delegates, including Refresh/reset. PRG staging/named delivery/list/removal
-  Actions are apps-owned and use the same Session/cache; updates.go retains
-  delegates alongside its watch-firmware/update-check logic. `ui/cli` owns eight
+  Actions are apps-owned and use the same Session/cache; `internal/garmin/updates.go`
+  retains only Service delegates. `ui/cli` owns eight
   app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
   supplies canonical current-epoch state without acquiring/opening again; this
   temporary bridge is removed with the facade. `ui/http` registers nine app
@@ -166,12 +166,13 @@ See CLAUDE.md for the working rules. Module map:
   feature tool registrars from app. Temporary withWatch/Service compatibility
   helpers remain for regression tests until facade removal. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
-  MCP requires object output schemas, so lists are wrapped (`filesResult`
-  and friends) and recursive inputs are flattened (`workoutIn`: one level of
-  repeat groups). `server_test.go` registers everything over an in-memory
-  transport and calls the read tools against a dump, so a type the schema
-  inferrer rejects fails the test instead of crashing `garminctl mcp`.
-  `http.go` exposes the same tools over local Streamable HTTP with bounded
+  MCP requires object output schemas, so the feature `ui/mcp` packages wrap
+  lists (`filesResult` and friends in containers/watch) and flatten recursive
+  inputs (`workoutIn` in containers/workouts: one level of repeat groups).
+  `server_test.go` registers everything over an in-memory transport and calls
+  the read tools against a dump, so a type the schema inferrer rejects fails
+  the test instead of crashing `garminctl mcp`. `internal/ship/mcpx/http.go`
+  exposes the same tools over local Streamable HTTP with bounded
   session/tool-call metadata for the web UI's AI & MCP tab.
 
 Quality gate: `make check` (module metadata, golangci-lint with govet,
