@@ -2,8 +2,9 @@
 
 See CLAUDE.md for the working rules. Module map:
 
-- `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
-  writers so `main_test.go` can run commands over a dump) and dispatches through
+- `cmd/garminctl`: `main.go` holds the build version (`-X main.version`) and
+  calls `cli.Run` in `internal/app/cli`, which parses global flags (output goes
+  to the `cli` writers so tests can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
   `sessionCommands` (settings, apps, store, updates/software, cloud, bounded music and watch commands) and `jobCommands`
   (`cloud sync` and the activities and backup jobs).
@@ -45,7 +46,7 @@ See CLAUDE.md for the working rules. Module map:
   list serves HTTP and stdio; protocol contracts use the production composition
   with fixture transports.
   `internal/ship/clix` owns CLI printing, errors and
-  parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
+  parsing; `internal/app/cli/clix_compat.go` temporarily delegates existing commands.
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
   and shared status mapping, watch lease responses, mutating admission and the
   route registrar contract. `internal/web/httpx_compat.go` temporarily delegates
@@ -168,8 +169,9 @@ See CLAUDE.md for the working rules. Module map:
   MCP requires object output schemas, so the feature `ui/mcp` packages wrap
   lists (`filesResult` and friends in containers/watch) and flatten recursive
   inputs (`workoutIn` in containers/workouts: one level of repeat groups).
-  Contract tests in `internal/app` run the stdio composition over an in-memory
-  transport and the HTTP composition through `app.ServeListener`. They retain
+  Contract tests in `tests/contracts` run the stdio composition through
+  `app.ServeMCPTransport` over an in-memory transport and the HTTP composition
+  through `app.ServeListener`. They retain
   result/schema/annotation digests and compare all 33 tool definitions between
   transports. Guard classification tests live beside mcpx; the shell checks
   protocol shutdown and joined runtime cleanup errors. `internal/ship/mcpx/http.go`
@@ -188,7 +190,9 @@ pulls the current branch first. The web and HTTP MCP servers share one
 `watchsession.Manager` (one lazily opened watch), the sync and activity jobs
 and the app schema cache. `internal/paths` names the cache directory; tests
 over a dump use `internal/testdump`, which owns the shared XML and
-app-registry fixtures.
+app-registry fixtures. Unit tests stay beside their package; application
+contract suites live in `tests/contracts` (HTTP and MCP) and
+`tests/contracts/cli`, and the architecture gate in `tests/architecture`.
 `tools/expresswatch` monitors upstream release notes
 (state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.

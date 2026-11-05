@@ -207,5 +207,5 @@ need no watch. Complete MFA in the interactive `cloud login` prompt or use
 `cloud mfa CODE` in a later invocation. See [Garmin Connect](cloud-sync.md) for
 verification lifetime, account storage and sync behavior.
 
-Sources: [command help and global flags](../cmd/garminctl/main.go),
-[command implementations](../cmd/garminctl), [workout schema](../internal/containers/workouts/codec.go).
+Sources: [command help and global flags](../internal/app/cli/cli.go),
+[command implementations](../internal/app/cli), [workout schema](../internal/containers/workouts/codec.go).
