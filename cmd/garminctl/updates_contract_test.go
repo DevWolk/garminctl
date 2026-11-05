@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -30,9 +30,9 @@ func TestUpdatesCLIContracts(t *testing.T) { //nolint:paralleltest // replaces p
 		{name: "inventory JSON", command: "software", json: true, hash: "1ec62acbde9549bb40340db8662bd6d4cb88506313f26c17f2b1fde1c2fde666"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			previous := garmin.HTTPClient
-			garmin.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
-			t.Cleanup(func() { garmin.HTTPClient = previous })
+			previous := updates.HTTPClient
+			updates.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
+			t.Cleanup(func() { updates.HTTPClient = previous })
 			root := testdump.UpdateRoot(t)
 
 			args := []string{rootFlag, root}

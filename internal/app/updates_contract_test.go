@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -28,9 +28,9 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 		{name: "app failure", method: http.MethodGet, path: "/api/updates/apps", mode: "app", status: http.StatusOK, hash: "aef77e342753b5dc2dc6fc9bc3bf56c327c9883495ab5781d92b03c6507d99d0"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			previous := garmin.HTTPClient
-			garmin.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
-			t.Cleanup(func() { garmin.HTTPClient = previous })
+			previous := updates.HTTPClient
+			updates.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
+			t.Cleanup(func() { updates.HTTPClient = previous })
 			isolateContractAccount(t)
 			root := testdump.UpdateRoot(t)
 			ts := serveContractRoot(t, func(context.Context) (device.Device, error) { return device.NewDirFS(root) })

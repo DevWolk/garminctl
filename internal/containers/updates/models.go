@@ -3,12 +3,17 @@ package updates
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 )
 
 // DefaultURL is Garmin's device software update service.
 const DefaultURL = "https://omt.garmin.com/api/device-software/v1/updates"
+
+// HTTPClient checks and downloads updates for the default Config; tests may
+// replace it. Firmware downloads can take minutes.
+var HTTPClient = &http.Client{Timeout: 10 * time.Minute}
 
 // Config supplies this feature's update endpoint and shared network client.
 type (

@@ -9,10 +9,9 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
-// WatchUpdateConfig supplies the default watch endpoint and compatibility client.
-// The mutable client injection point is removed with the legacy facade.
+// WatchUpdateConfig supplies the default watch endpoint and the updates client.
 func WatchUpdateConfig() updates.Config {
-	return updates.Config{URL: updates.DefaultURL, Client: garmin.HTTPClient}
+	return updates.Config{URL: updates.DefaultURL, Client: updates.HTTPClient}
 }
 
 // UpdatesRegistry supplies app entries for the current operation scope.

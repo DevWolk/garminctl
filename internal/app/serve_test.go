@@ -23,7 +23,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/garmin"
 	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/testdump"
 	"github.com/DevWolk/garminctl/internal/web"
@@ -241,9 +240,9 @@ func checkRootMusic(ctx context.Context, t *testing.T, base string) {
 func checkRootUpdates(ctx context.Context, t *testing.T, base string) {
 	t.Helper()
 
-	previous := garmin.HTTPClient
-	garmin.HTTPClient = testdump.UpdateEnvironment(t, "")
-	t.Cleanup(func() { garmin.HTTPClient = previous })
+	previous := updates.HTTPClient
+	updates.HTTPClient = testdump.UpdateEnvironment(t, "")
+	t.Cleanup(func() { updates.HTTPClient = previous })
 
 	var expected struct {
 		Software []updates.SoftwareUpdate `json:"software"`

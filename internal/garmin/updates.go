@@ -2,8 +2,6 @@ package garmin
 
 import (
 	"context"
-	"net/http"
-	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
@@ -12,10 +10,6 @@ import (
 
 // DefaultUpdatesURL preserves the watch update endpoint during migration.
 const DefaultUpdatesURL = updates.DefaultURL
-
-// HTTPClient is the compatibility injection point for update checks/downloads.
-// App wiring supplies this same client to extracted adapters until facade removal.
-var HTTPClient = &http.Client{Timeout: 10 * time.Minute}
 
 // SoftwareUpdate preserves the updates-owned manifest model.
 type (
@@ -29,7 +23,7 @@ type (
 )
 
 func (s *Service) updateConfig() updates.Config {
-	return updates.Config{URL: s.UpdatesURL, Client: HTTPClient}
+	return updates.Config{URL: s.UpdatesURL, Client: updates.HTTPClient}
 }
 
 // CheckSoftwareUpdates delegates to the watch updates owner.

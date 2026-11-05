@@ -163,7 +163,7 @@ func newServer(ctx context.Context, open garmin.Opener, autoSync bool, clients .
 		return garmin.NewFromSession(sess).Apps
 	}
 
-	updateConfig := func() updates.Config { return updates.Config{URL: updates.DefaultURL, Client: garmin.HTTPClient} }
+	updateConfig := func() updates.Config { return updates.Config{URL: updates.DefaultURL, Client: updates.HTTPClient} }
 	updateRegistry := func(sess *watchsession.Session) updates.InstalledApps {
 		return updates.InstalledApps(storeRegistry(sess))
 	}

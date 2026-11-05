@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/DevWolk/garminctl/internal/containers/updates"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -26,9 +26,9 @@ func TestUpdatesMCPContracts(t *testing.T) { //nolint:paralleltest // replaces p
 		{name: updateChecksumMode, tool: "watch_install_update", mode: updateChecksumMode, args: map[string]any{"partNumber": testdump.UpdatePart}, hash: "8992d81046c6bf43fbe3648ee2f82731b678973d75cd1701ee6be4d6036e14e9"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			previous := garmin.HTTPClient
-			garmin.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
-			t.Cleanup(func() { garmin.HTTPClient = previous })
+			previous := updates.HTTPClient
+			updates.HTTPClient = testdump.UpdateEnvironment(t, test.mode)
+			t.Cleanup(func() { updates.HTTPClient = previous })
 			isolateContractAccount(t)
 			client := newMCPContractClientForRoot(t, testdump.UpdateRoot(t))
 
