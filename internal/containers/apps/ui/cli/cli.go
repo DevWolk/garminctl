@@ -78,11 +78,7 @@ func (c *Commands) Restore(ctx context.Context, sess *watchsession.Session, args
 		return err
 	}
 
-	if _, err := apps.ParseAppsConfig(b); err != nil {
-		return fmt.Errorf("%s is not an app registry: %w", args[0], err)
-	}
-
-	if err := sess.WriteFile(ctx, apps.PathAppsIn, b); err != nil {
+	if err := (apps.RestoreRegistryAction{}).Run(ctx, sess, args[0], b); err != nil {
 		return err
 	}
 

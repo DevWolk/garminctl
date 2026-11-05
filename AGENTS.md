@@ -62,7 +62,7 @@ See CLAUDE.md for the working rules. Module map:
   App supplies route/tool registrars to HTTP and stdio shells with the same
   runtime owners. `garmin` retains model aliases/Service delegates.
 - `internal/containers/apps` owns App/AppChange, registry parsing/rewriting,
-  verified private registry backups and ReadRegistry/Visibility/Pending Actions
+  verified private registry backups and ReadRegistry/Visibility/Pending/Restore/Cancel Actions
   over the caller's Session. Legacy App/AppChange aliases and Service delegates
   preserve existing callers. SET/item/hint DTOs and immutable CIQ Knowledge also
   belong to apps; legacy names are aliases/delegates and the old JSON is only a

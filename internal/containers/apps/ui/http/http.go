@@ -77,7 +77,7 @@ func (h *Handler) appPending(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) appPendingCancel(w http.ResponseWriter, r *http.Request) {
 	httpx.WithWatch(w, r, h.Manager, func(ctx context.Context, lease *watchsession.Lease) (any, error) {
-		if err := lease.Session().DeleteFile(ctx, apps.PathAppsIn); err != nil {
+		if err := (apps.CancelRegistryAction{}).Run(ctx, lease.Session()); err != nil {
 			return nil, err
 		}
 

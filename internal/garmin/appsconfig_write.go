@@ -24,5 +24,5 @@ func (s *Service) PendingAppChanges(ctx context.Context) ([]AppChange, error) {
 
 // CancelAppChanges deletes the pending registry through the same Session.
 func (s *Service) CancelAppChanges(ctx context.Context) error {
-	return s.session.DeleteFile(ctx, PathAppsIn)
+	return (apps.CancelRegistryAction{}).Run(ctx, s.session)
 }
