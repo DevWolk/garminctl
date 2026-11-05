@@ -50,7 +50,8 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
   watch lease handlers, tool registration and annotation helpers. Its narrow owner/lease contracts
   accept Session Manager directly and legacy leases without a garmin import.
-  `internal/mcpserver` supplies Garmin bodies/runtime context and keeps delegates.
+  `internal/mcpserver` supplies protocol instructions and registered-tool
+  construction; app binds feature bodies to the shared runtime.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
   capabilities, scoped diagnostics, watch paths and metadata reads. Its Manager
   owns leases/epochs/probe/retirement/close. Legacy Lazy/Lease delegate to that
@@ -166,8 +167,10 @@ See CLAUDE.md for the working rules. Module map:
   that `index.html` declares as a `data-tab`. `auto.go` is the USB watcher
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: MCP instructions and stdio/HTTP shells receive all
-  feature tool registrars from app. Temporary withWatch/Service compatibility
-  helpers remain for regression tests until facade removal. Every tool has
+  feature tool registrars from app. Stdio borrows the narrow Context/Close
+  runtime contract; HTTP borrows its parent context. No legacy facade or account
+  dependency remains in this shell. Lease/error handling belongs to mcpx and
+  the feature adapters. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so the feature `ui/mcp` packages wrap
   lists (`filesResult` and friends in containers/watch) and flatten recursive
@@ -175,8 +178,8 @@ See CLAUDE.md for the working rules. Module map:
   Contract tests in `internal/app` run the stdio composition over an in-memory
   transport and the HTTP composition through `app.ServeListener`. They retain
   result/schema/annotation digests and compare all 33 tool definitions between
-  transports. The shell keeps a compatibility guard unit test until facade
-  removal. `internal/ship/mcpx/http.go`
+  transports. Guard classification tests live beside mcpx; the shell checks
+  protocol shutdown and joined runtime cleanup errors. `internal/ship/mcpx/http.go`
   exposes the same tools over local Streamable HTTP with bounded
   session/tool-call metadata for the web UI's AI & MCP tab.
 

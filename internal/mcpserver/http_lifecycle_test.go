@@ -1,20 +1,20 @@
 package mcpserver
 
 import (
+	"context"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/DevWolk/garminctl/internal/garmin"
-	"github.com/DevWolk/garminctl/internal/gc"
 )
 
-func TestHTTPFactorySharesRuntimeAndClosesProtocol(t *testing.T) {
+func TestHTTPFactorySharesLifetimeAndClosesProtocol(t *testing.T) {
 	t.Parallel()
-	runtime := garmin.NewRuntime(t.Context(), nil)
-	h := NewHTTPServer(runtime, gc.New(filepath.Join(t.TempDir(), "account.json")), "test")
+
+	parent, cancelParent := context.WithCancel(t.Context())
+	defer cancelParent()
+
+	h := NewHTTPServer(parent, "test")
 
 	ts := httptest.NewServer(h)
 	defer ts.Close()
@@ -28,13 +28,9 @@ func TestHTTPFactorySharesRuntimeAndClosesProtocol(t *testing.T) {
 
 	defer func() { _ = session.Close() }()
 
-	runtime.Stop()
+	cancelParent()
 
 	if err := h.Close(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := runtime.Close(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 

@@ -8,15 +8,13 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/garmin"
-	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 )
 
-// server holds the lazily connected watch the tools share.
-type server struct {
-	svc     *garmin.Lazy
-	runtime *garmin.Runtime
+// Runtime supplies the lifetime and joined shutdown of an app-owned backend.
+type Runtime interface {
+	Context() context.Context
+	Close(context.Context) error
 }
 
 const instructions = `Manage a Garmin watch over USB and access Garmin Connect after sign-in.
@@ -36,26 +34,9 @@ Use IDs returned by the tools: watch_apps for app tools; watch_check_updates sof
 watch_install_update; activities_list.file for activity_detail; workouts_list.id for workout_send;
 music_list track paths for music_playlist; store_search.id for store_app.`
 
-// withWatch adapts a tool body that needs the connected watch.
-func withWatch[In, Out any](s *server, body func(ctx context.Context, svc *garmin.Service, in In) (Out, error)) mcp.ToolHandlerFor[In, Out] {
-	return mcpx.WithWatch(s.svc, s.requestContext, func(ctx context.Context, lease *garmin.Lease, in In) (Out, error) {
-		return body(ctx, lease.Service(), in)
-	})
-}
-
-func (s *server) requestContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if s.runtime != nil {
-		return s.runtime.RequestContext(ctx)
-	}
-
-	return ctx, func() {}
-}
-
 // ServeRuntime runs the supplied MCP transport with process owners from app wiring.
 // It closes the supplied runtime before returning.
-func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, transport mcp.Transport, version string, registrars ...mcpx.ToolRegistrar) (err error) {
-	s := &server{svc: runtime.Watch, runtime: runtime}
-
+func ServeRuntime(runtime Runtime, transport mcp.Transport, version string, registrars ...mcpx.ToolRegistrar) (err error) {
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.WithoutCancel(runtime.Context()), 3*time.Second)
 		defer cancel()
@@ -63,12 +44,12 @@ func ServeRuntime(runtime *garmin.Runtime, account *gc.Client, transport mcp.Tra
 		err = errors.Join(err, runtime.Close(closeCtx))
 	}()
 
-	srv := newServer(s, version, account, registrars...)
+	srv := newServer(version, registrars...)
 
 	return srv.Run(runtime.Context(), transport)
 }
 
-func newServer(_ *server, version string, _ *gc.Client, registrars ...mcpx.ToolRegistrar) *mcp.Server {
+func newServer(version string, registrars ...mcpx.ToolRegistrar) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "garminctl", Version: version}, &mcp.ServerOptions{Instructions: instructions})
 
 	for _, registrar := range registrars {

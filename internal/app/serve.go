@@ -82,7 +82,7 @@ func serveMCPTransport(ctx context.Context, open garmin.Opener, version string, 
 	runtime := NewRuntime(ctx, open)
 	account := gc.New(gc.DefaultStorePath())
 
-	return mcpserver.ServeRuntime(runtime, account, transport, version, mcpTools(runtime, account)...)
+	return mcpserver.ServeRuntime(runtime, transport, version, mcpTools(runtime, account)...)
 }
 
 func mcpTools(runtime *garmin.Runtime, account *gc.Client) []mcpx.ToolRegistrar {

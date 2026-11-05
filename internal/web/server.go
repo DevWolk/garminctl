@@ -198,7 +198,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 		registrar.RegisterRoutes(mux)
 	}
 
-	s.mcp = mcpserver.NewHTTPServer(s.runtime, s.cloud, s.version, s.features.MCP...)
+	s.mcp = mcpserver.NewHTTPServer(s.runtime.Context(), s.version, s.features.MCP...)
 	mux.Handle("GET /mcp", s.mcp)
 	mux.Handle("POST /mcp", s.mcp)
 	mux.Handle("DELETE /mcp", s.mcp)

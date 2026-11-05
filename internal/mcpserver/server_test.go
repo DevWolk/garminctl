@@ -5,52 +5,75 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/garmin"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func TestWithWatchDropsOnlyDisconnectedSessions(t *testing.T) {
+type shellRuntime struct {
+	lifetime func() context.Context
+	close    func(context.Context) error
+}
+
+func (r shellRuntime) Context() context.Context        { return r.lifetime() }
+func (r shellRuntime) Close(ctx context.Context) error { return r.close(ctx) }
+
+type failedTransport struct {
+	failure error
+	cancel  context.CancelFunc
+}
+
+func (t failedTransport) Connect(context.Context) (mcp.Connection, error) {
+	t.cancel()
+	return nil, t.failure
+}
+
+func TestServeRuntimeJoinsTransportAndShutdownErrors(t *testing.T) {
 	t.Parallel()
 
-	for _, tt := range []struct {
-		name string
-		err  error
-		drop bool
+	connectFailure := errors.New("synthetic MCP connect failure")
+
+	closeFailure := errors.New("synthetic backend close failure")
+	for _, test := range []struct {
+		name       string
+		closeError error
 	}{
-		{name: "disconnected", err: device.ErrDisconnected, drop: true},
-		{name: "busy", err: device.ErrBusy},
-		{name: "cancelled before I/O", err: context.Canceled},
-		{name: "domain error mentioning bridge", err: errors.New("invalid bridge label")},
+		{name: "transport failure"},
+		{name: "transport and shutdown failure", closeError: closeFailure},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			root := t.TempDir()
-			opens := 0
-			lazy := garmin.NewLazy(func(context.Context) (device.Device, error) {
-				opens++
-				return device.NewDirFS(root)
-			})
-			t.Cleanup(lazy.Drop)
+			parent, cancel := context.WithCancel(t.Context())
+			defer cancel()
 
-			s := &server{svc: lazy}
+			closes := 0
+			runtime := shellRuntime{
+				lifetime: func() context.Context { return parent },
+				close: func(ctx context.Context) error {
+					closes++
 
-			handler := withWatch(s, func(context.Context, *garmin.Service, struct{}) (struct{}, error) { return struct{}{}, tt.err })
-			if _, _, err := handler(t.Context(), nil, struct{}{}); !errors.Is(err, tt.err) {
-				t.Fatalf("MCP changed the tool error: %v", err)
+					if ctx.Err() != nil {
+						t.Errorf("shutdown inherited canceled runtime context: %v", ctx.Err())
+					}
+
+					if _, ok := ctx.Deadline(); !ok {
+						t.Error("runtime close has no deadline")
+					}
+
+					return test.closeError
+				},
 			}
 
-			if _, err := lazy.Get(t.Context()); err != nil {
-				t.Fatal(err)
+			err := ServeRuntime(runtime, failedTransport{failure: connectFailure, cancel: cancel}, "test")
+			if !errors.Is(err, connectFailure) {
+				t.Fatalf("lost transport error: %v", err)
 			}
 
-			wantOpens := 1
-			if tt.drop {
-				wantOpens = 2
+			if test.closeError != nil && !errors.Is(err, test.closeError) {
+				t.Fatalf("lost shutdown error: %v", err)
 			}
 
-			if opens != wantOpens {
-				t.Fatalf("connection opens=%d, want=%d", opens, wantOpens)
+			if closes != 1 {
+				t.Fatalf("runtime closes=%d want=1", closes)
 			}
 		})
 	}
