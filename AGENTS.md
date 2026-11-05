@@ -5,8 +5,8 @@ See CLAUDE.md for the working rules. Module map:
 - `cmd/garminctl`: `main.go` parses global flags (output goes to the `cli`
   writers so `main_test.go` can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
-  `sessionCommands` (settings, apps, store, updates/software, bounded music and watch commands) and `deviceCommands`
-  (legacy features and the backup job compatibility entry).
+  `sessionCommands` (settings, apps, store, updates/software, cloud, bounded music and watch commands) and `deviceCommands`
+  (`cloud sync` and the activities and backup jobs).
   `sessionJob` routes music add/rm through the same job/epoch guard with direct
   per-file Session leases. Both watch paths use the same runtime/Manager lifecycle; extracted commands
   receive a scoped Session directly, and legacy commands receive Service.
@@ -70,7 +70,7 @@ See CLAUDE.md for the working rules. Module map:
   apps-owned; the legacy per-Session facade still holds one cache value and
   delegates, including Refresh/reset. PRG staging/named delivery/list/removal
   Actions are apps-owned and use the same Session/cache; `internal/garmin/updates.go`
-  retains only Service delegates. `ui/cli` owns eight
+  retains Service delegates, aliases and the update URL/client variables. `ui/cli` owns eight
   app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
   supplies canonical current-epoch state without acquiring/opening again; this
   temporary bridge is removed with the facade. `ui/http` registers nine app

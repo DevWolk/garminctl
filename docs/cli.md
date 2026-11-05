@@ -208,4 +208,4 @@ need no watch. Complete MFA in the interactive `cloud login` prompt or use
 verification lifetime, account storage and sync behavior.
 
 Sources: [command help and global flags](../cmd/garminctl/main.go),
-[command implementations](../cmd/garminctl), [workout schema](../internal/containers/workouts/models.go).
+[command implementations](../cmd/garminctl), [workout schema](../internal/containers/workouts/codec.go).
