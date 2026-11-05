@@ -187,7 +187,8 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn deviceCommand, args 
 		return c.runSessionJob(runtime.Context(), job, args)
 	}
 
-	if command := c.sessionCommands()[cmd]; command != nil {
+	// cloud sync is a device job; the other cloud commands borrow a session.
+	if command := c.sessionCommands()[cmd]; command != nil && (cmd != cloudCommand || !deviceJob(cmd, args)) {
 		return c.runSession(runtime.Context(), command, args)
 	}
 
@@ -232,7 +233,7 @@ func (c *cli) version(_ context.Context, _ []string) error {
 
 func (c *cli) deviceCommands() map[string]deviceCommand {
 	return map[string]deviceCommand{
-		"cloud":      c.cloud,
+		cloudCommand: c.cloudSync,
 		"activities": c.activities,
 		"backup":     c.backup,
 	}
