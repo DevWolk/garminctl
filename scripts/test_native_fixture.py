@@ -1,7 +1,10 @@
 """Network-level checks for the CI fixture proxy and command receipts."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import ctypes
+import http.client
 import json
+from pathlib import Path
 import threading
 import unittest
 import urllib.error
@@ -11,6 +14,29 @@ from native_fixture import Commands, fixture_proxy
 
 
 class NativeFixtureTests(unittest.TestCase):
+    def test_browser_module_syntax_with_headless_javascriptcore(self):
+        engine = ctypes.CDLL('libjavascriptcoregtk-4.1.so.0')
+        objects = ctypes.CDLL('libgobject-2.0.so.0')
+        objects.g_object_unref.argtypes = [ctypes.c_void_p]
+        engine.jsc_context_new.restype = ctypes.c_void_p
+        engine.jsc_context_check_syntax.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_ssize_t, ctypes.c_int,
+            ctypes.c_char_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p),
+        ]
+        source = Path(__file__).with_name('native-acceptance.js').read_bytes()
+        for code, valid in ((source, True), (source + b'\nconst =', False)):
+            with self.subTest(valid=valid):
+                context = engine.jsc_context_new()
+                exception = ctypes.c_void_p()
+                try:
+                    result = engine.jsc_context_check_syntax(context, code, len(code), 1,
+                                                             b'/__native/probe.js', 1, ctypes.byref(exception))
+                    self.assertEqual(result == 0, valid)
+                finally:
+                    if exception.value:
+                        objects.g_object_unref(exception)
+                    objects.g_object_unref(context)
+
     def test_channel_preserves_server_errors_and_injects_only_html(self):
         seen = []
 
@@ -43,7 +69,7 @@ class NativeFixtureTests(unittest.TestCase):
                     html = response.read()
                     self.assertEqual(len(html), int(response.headers['Content-Length']))
                     self.assertIn(b'<body>real SPA', html)
-                    self.assertEqual(html.count(b'/__native/probe.js'), 1)
+                    self.assertEqual(html.count(b'src="/__native/probe.js"'), 1)
                 with self.assertRaises(urllib.error.HTTPError) as raised:
                     urllib.request.urlopen(base + '/error', timeout=5)
                 error = raised.exception
@@ -94,6 +120,20 @@ class NativeFixtureTests(unittest.TestCase):
         commands = Commands()
         with self.assertRaises(TimeoutError):
             commands.wait(lambda: None, timeout=0)
+
+    def test_chunked_browser_receipt_is_decoded(self):
+        commands = Commands()
+        with fixture_proxy(1, commands) as port:
+            connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            try:
+                connection.request('POST', '/__native/ready', body=iter([b'{"boot":', b'"chunked-page"}']),
+                                   headers={'Content-Type': 'text/plain'}, encode_chunked=True)
+                response = connection.getresponse()
+                response.read()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(commands.boots, ['chunked-page'])
+            finally:
+                connection.close()
 
 
 if __name__ == '__main__':

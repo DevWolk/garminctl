@@ -17,6 +17,7 @@ class Commands:
         self.results = {}
         self.boots = []
         self.events = []
+        self.errors = []
         self.changed = threading.Condition()
 
     def send(self, action, **values):
@@ -72,14 +73,21 @@ def fixture_proxy(upstream, commands):
                 self.forward()
 
         def do_POST(self):
-            if self.path in ('/__native/ready', '/__native/result'):
-                size = int(self.headers.get('Content-Length', '0'))
-                if not 0 < size <= 65536:
-                    self.reply(400)
+            if self.path in ('/__native/ready', '/__native/result', '/__native/error'):
+                commands.events.append({'event': 'body-framing', 'path': self.path,
+                                        'transfer': self.headers.get('Transfer-Encoding'),
+                                        'length': self.headers.get('Content-Length')})
+                try:
+                    body = self.read_body()
+                    result = json.loads(body)
+                except (ValueError, EOFError) as error:
+                    self.reply(400, {'error': str(error)})
                     return
-                result = json.loads(self.rfile.read(size))
                 with commands.changed:
-                    if self.path == '/__native/ready':
+                    if self.path == '/__native/error':
+                        commands.errors.append(result)
+                        commands.events.append({'event': 'page-error', **result})
+                    elif self.path == '/__native/ready':
                         commands.boots.append(result['boot'])
                         commands.events.append({'event': 'page-ready', 'boot': result['boot']})
                     else:
@@ -93,12 +101,45 @@ def fixture_proxy(upstream, commands):
         def do_DELETE(self):
             self.forward()
 
-        def forward(self):
-            headers = dict(self.headers)
-            for name in ('Host', 'Origin', 'Sec-Fetch-Site', 'Connection'):
-                headers.pop(name, None)
+        def read_body(self):
+            transfer = self.headers.get('Transfer-Encoding', '').lower()
+            if transfer:
+                if transfer != 'chunked' or self.headers.get('Content-Length') is not None:
+                    raise ValueError('Unsupported body framing')
+                body = bytearray()
+                while True:
+                    line = self.rfile.readline(8193)
+                    if not line.endswith(b'\r\n') or len(line) > 8192:
+                        raise ValueError('Invalid chunk header')
+                    size = int(line.split(b';', 1)[0], 16)
+                    if size < 0 or len(body) + size > 65536:
+                        raise ValueError('Native fixture body exceeds its limit')
+                    if size == 0:
+                        # The command channel sends no trailers.
+                        if self.rfile.readline(8193) != b'\r\n':
+                            raise ValueError('Unexpected chunk trailer')
+                        return bytes(body)
+                    chunk = self.rfile.read(size)
+                    if len(chunk) != size or self.rfile.read(2) != b'\r\n':
+                        raise EOFError('Truncated native fixture body')
+                    body.extend(chunk)
             size = int(self.headers.get('Content-Length', '0'))
-            body = self.rfile.read(size) if size else None
+            if not 0 <= size <= 65536:
+                raise ValueError('Native fixture body exceeds its limit')
+            body = self.rfile.read(size)
+            if len(body) != size:
+                raise EOFError('Truncated native fixture body')
+            return body
+
+        def forward(self):
+            headers = {name: value for name, value in self.headers.items()
+                       if name.lower() not in ('host', 'origin', 'sec-fetch-site', 'connection',
+                                               'content-length', 'transfer-encoding')}
+            try:
+                body = self.read_body()
+            except (ValueError, EOFError) as error:
+                self.reply(400, {'error': str(error)})
+                return
             connection = http.client.HTTPConnection('127.0.0.1', upstream, timeout=20)
             try:
                 connection.request(self.command, self.path, body=body, headers=headers)
@@ -114,7 +155,15 @@ def fixture_proxy(upstream, commands):
                     return
                 data = response.read()
                 if kind.startswith('text/html'):
-                    script = b'<script type="module" src="/__native/probe.js"></script>'
+                    script = b'''<script>
+const reportNativeError = message => fetch('/__native/error', {method:'POST',body:JSON.stringify({message})});
+addEventListener('error', event => {
+  if ((event.filename || event.target?.src || '').includes('/__native/probe.js')) reportNativeError(event.message || 'Native probe failed to load');
+}, true);
+addEventListener('unhandledrejection', event => {
+  if (String(event.reason?.stack || '').includes('/__native/probe.js')) reportNativeError(String(event.reason));
+});
+</script><script type="module" src="/__native/probe.js"></script>'''
                     data = data.replace(b'</body>', script + b'</body>')
                 self.send_response(response.status)
                 for name, value in response.getheaders():

@@ -41,7 +41,11 @@ def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app):
                 app = subprocess.Popen([
                     str(desktop), '-root', str(dump), '-addr', f'127.0.0.1:{port}',
                 ], stdout=log, stderr=log, env=env, start_new_session=os.name != 'nt')
-            commands.wait(lambda: commands.boots[0] if commands.boots else None, timeout=45)
+            def page_ready():
+                if commands.errors:
+                    raise AssertionError(commands.errors[-1])
+                return commands.boots[0] if commands.boots else None
+            commands.wait(page_ready, timeout=45)
             wait_for(lambda: 'desktop window ready' in log_path.read_text(errors='replace'))
             driver = driver_for(app.pid)
             scenarios(commands, driver, app, dump, work, log_path, result)
