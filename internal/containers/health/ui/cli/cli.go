@@ -204,10 +204,46 @@ func (c *Command) healthHistory(ctx context.Context, cloud health.AccountAccess,
 	}
 
 	for _, r := range rows {
-		c.Out.Printf("%s steps %6d  rhr %3d  stress %3d  bb %3d-%3d  sleep %s\n", r.Date, r.Steps, r.RestingHR, r.AvgStress, r.BodyBatteryLow, r.BodyBatteryHigh, health.FormatDuration(float64(r.SleepSec)))
+		c.Out.Printf("%s\n", historyLine(r))
 	}
 
 	return nil
+}
+
+// historyLine formats one history row; a field the source did not provide
+// prints as "-" and a day without data prints its error.
+func historyLine(r health.DailyHealth) string {
+	if r.Error != "" {
+		return r.Date + " " + r.Error
+	}
+
+	battery := fmt.Sprintf("%3d-%3d", r.BodyBatteryLow, r.BodyBatteryHigh)
+
+	return fmt.Sprintf("%s steps %6s  rhr %3s  stress %3s  bb %s  sleep %s", r.Date, healthInt(r, "steps", r.Steps), healthInt(r, "restingHr", r.RestingHR), healthInt(r, "avgStress", r.AvgStress), healthCell(r, "bodyBatteryHigh", battery), healthCell(r, "sleepSec", health.FormatDuration(float64(r.SleepSec))))
+}
+
+// dailyLine formats one row of the daily table with the same rules.
+func dailyLine(d health.DailyHealth) string {
+	if d.Error != "" {
+		return fmt.Sprintf("%-10s %s", d.Date, d.Error)
+	}
+
+	battery := fmt.Sprintf("%3d-%-3d", d.BodyBatteryLow, d.BodyBatteryHigh)
+
+	return fmt.Sprintf("%-10s %6s %5s %4s %6s %7s %7s %5s", d.Date, healthInt(d, "steps", d.Steps), healthInt(d, "stepGoal", d.StepGoal), healthInt(d, "restingHr", d.RestingHR), healthInt(d, "avgStress", d.AvgStress), healthCell(d, "bodyBatteryHigh", battery), healthCell(d, "sleepSec", health.FormatDuration(float64(d.SleepSec))), healthInt(d, "calories", d.Calories))
+}
+
+// healthCell returns value, or "-" when the row lacks the named JSON field.
+func healthCell(d health.DailyHealth, field, value string) string {
+	if d.Lacks(field) {
+		return "-"
+	}
+
+	return value
+}
+
+func healthInt(d health.DailyHealth, field string, value int) string {
+	return healthCell(d, field, strconv.Itoa(value))
 }
 
 func (c *Command) healthDay(ctx context.Context, cloud health.AccountAccess, date string) error {
@@ -269,17 +305,7 @@ func (c *Command) healthDaily(ctx context.Context, cloud dailyHealthReader, args
 	c.Out.Printf("%-10s %6s %5s %4s %6s %8s %7s %5s\n", "date", "steps", "goal", "rHR", "stress", "battery", "sleep", "kcal")
 
 	for _, d := range rows {
-		if d.Error != "" {
-			c.Out.Printf("%-10s %s\n", d.Date, d.Error)
-			continue
-		}
-
-		kcal := strconv.Itoa(d.Calories)
-		if d.Lacks("calories") {
-			kcal = "-"
-		}
-
-		c.Out.Printf("%-10s %6d %5d %4d %6d %3d-%-3d %7s %5s\n", d.Date, d.Steps, d.StepGoal, d.RestingHR, d.AvgStress, d.BodyBatteryLow, d.BodyBatteryHigh, health.FormatDuration(float64(d.SleepSec)), kcal)
+		c.Out.Printf("%s\n", dailyLine(d))
 	}
 
 	return nil

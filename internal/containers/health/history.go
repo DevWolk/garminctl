@@ -25,8 +25,12 @@ const historyWindow = 28
 // provide; History rows carry them as zero.
 var historyUnavailable = []string{"minHr", "maxHr", "calories", "activeCalories", "floors", "intensityMinutes", "activeSec", "highlyActiveSec"}
 
-// historyFailure records one failed range fetch of a window (inclusive dates).
-type historyFailure struct{ from, to, message string }
+// historyFailure records one failed range fetch of a window (inclusive dates)
+// and the DailyHealth fields that fetch fills.
+type historyFailure struct {
+	from, to, message string
+	fields            []string
+}
 
 // historyBuild collects the rows of one History call; the fetchers run
 // concurrently and write under mu.
@@ -51,27 +55,28 @@ func (h *historyBuild) row(date string) *DailyHealth {
 	return r
 }
 
-func (h *historyBuild) fail(from, to, what string, err error) {
+func (h *historyBuild) fail(from, to, what string, fields []string, err error) {
 	message := what + ": " + err.Error()
 
 	h.mu.Lock()
 	h.errs = append(h.errs, message)
-	h.failed = append(h.failed, historyFailure{from: from, to: to, message: message})
+	h.failed = append(h.failed, historyFailure{from: from, to: to, message: message, fields: fields})
 	h.mu.Unlock()
 }
 
-// failure joins the fetch errors of the window holding date; empty when the
-// window is complete.
-func (h *historyBuild) failure(date string) string {
+// failure joins the fetch errors of the window holding date and names the
+// fields those fetches fill; both are empty when the window is complete.
+func (h *historyBuild) failure(date string) (message string, fields []string) {
 	var messages []string
 
 	for _, f := range h.failed {
 		if date >= f.from && date <= f.to {
 			messages = append(messages, f.message)
+			fields = append(fields, f.fields...)
 		}
 	}
 
-	return strings.Join(messages, "; ")
+	return strings.Join(messages, "; "), fields
 }
 
 // cachedWindow copies the cached rows of ws..we into the build and reports
@@ -95,8 +100,9 @@ func (h *historyBuild) cachedWindow(cache map[string]DailyHealth, ws, we time.Ti
 }
 
 // rows lays the collected days out in order and refreshes the cache with the
-// days that no longer change. Days of a window with a failed fetch report the
-// error and are not cached, so a later call fetches them again.
+// days that no longer change. In a window with a failed fetch, a day with data
+// names the failed fields in Unavailable and a day without data reports the
+// error; neither is cached, so a later call fetches them again.
 func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, final string) []DailyHealth {
 	out := make([]DailyHealth, 0, len(h.byDate))
 
@@ -112,9 +118,14 @@ func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, 
 
 		row.Unavailable = slices.Clone(historyUnavailable)
 
-		if failure := h.failure(date); failure != "" {
-			row.Error = failure
-		} else if ok && date <= final {
+		message, fields := h.failure(date)
+
+		switch {
+		case message != "" && ok:
+			row.Unavailable = append(row.Unavailable, fields...)
+		case message != "":
+			row.Error = message
+		case ok && date <= final:
 			cache[date] = row
 		}
 
@@ -148,7 +159,8 @@ func (c *accountReader) history(ctx context.Context, days int) ([]DailyHealth, e
 
 	end := time.Now()
 	start := end.AddDate(0, 0, -(days - 1))
-	cache := c.loadHistoryCache(ctx)
+	cachePath := c.historyCachePath(ctx, dn)
+	cache := loadHistoryCache(cachePath)
 	final := end.AddDate(0, 0, -2).Format(time.DateOnly) // days up to this one no longer change
 	h := &historyBuild{displayName: dn, byDate: map[string]*DailyHealth{}}
 
@@ -177,7 +189,7 @@ func (c *accountReader) history(ctx context.Context, days int) ([]DailyHealth, e
 		return nil, errors.New(strings.Join(h.errs, "; "))
 	}
 
-	c.saveHistoryCache(ctx, cache)
+	saveHistoryCache(cachePath, cache)
 
 	return out, nil
 }
@@ -185,20 +197,21 @@ func (c *accountReader) history(ctx context.Context, days int) ([]DailyHealth, e
 // fetchWindow starts the five range fetches of one window, bounded by sem.
 func (c *accountReader) fetchWindow(ctx context.Context, wg *sync.WaitGroup, sem chan struct{}, h *historyBuild, from, to string) {
 	fetches := []struct {
-		what string
-		fn   historyFetch
+		what   string
+		fields []string
+		fn     historyFetch
 	}{
-		{"steps", c.fetchSteps},
-		{"resting heart rate", c.fetchRestingHR},
-		{"stress", c.fetchStress},
-		{"body battery", c.fetchBodyBattery},
-		{"sleep", c.fetchSleep},
+		{"steps", []string{"steps", "stepGoal", "distanceM"}, c.fetchSteps},
+		{"resting heart rate", []string{"restingHr"}, c.fetchRestingHR},
+		{"stress", []string{"avgStress"}, c.fetchStress},
+		{"body battery", []string{"bodyBatteryHigh", "bodyBatteryLow"}, c.fetchBodyBattery},
+		{"sleep", []string{"sleepSec"}, c.fetchSleep},
 	}
 
 	for _, f := range fetches {
 		wg.Go(func() {
 			if !acquire(ctx, sem) {
-				h.fail(from, to, f.what, ctx.Err())
+				h.fail(from, to, f.what, f.fields, ctx.Err())
 
 				return
 			}
@@ -206,7 +219,7 @@ func (c *accountReader) fetchWindow(ctx context.Context, wg *sync.WaitGroup, sem
 			defer func() { <-sem }()
 
 			if err := f.fn(ctx, h, from, to); err != nil {
-				h.fail(from, to, f.what, err)
+				h.fail(from, to, f.what, f.fields, err)
 			}
 		})
 	}
@@ -346,27 +359,23 @@ func (c *accountReader) fetchSleep(ctx context.Context, h *historyBuild, from, t
 }
 
 // historyCachePath names the cache of one watch and one account, so a later
-// sign-in with another account does not read the previous account's days.
-func (c *accountReader) historyCachePath(ctx context.Context) string {
+// sign-in with another account does not read the previous account's days. One
+// History call computes it once and loads and saves that same file.
+func (c *accountReader) historyCachePath(ctx context.Context, displayName string) string {
 	unit := uint64(0)
 	if dx, err := c.deviceXML(ctx); err == nil {
 		unit = dx.UnitID
 	}
 
-	account := ""
+	sum := sha256.Sum256([]byte(displayName))
 
-	if dn, err := c.displayName(ctx); err == nil && dn != "" {
-		sum := sha256.Sum256([]byte(dn))
-		account = "-" + hex.EncodeToString(sum[:4])
-	}
-
-	return filepath.Join(c.cacheDir, fmt.Sprintf("history-%d%s.json", unit, account))
+	return filepath.Join(c.cacheDir, fmt.Sprintf("history-%d-%s.json", unit, hex.EncodeToString(sum[:4])))
 }
 
-func (c *accountReader) loadHistoryCache(ctx context.Context) map[string]DailyHealth {
+func loadHistoryCache(path string) map[string]DailyHealth {
 	m := map[string]DailyHealth{}
 
-	b, err := os.ReadFile(c.historyCachePath(ctx))
+	b, err := os.ReadFile(path) //nolint:gosec // cache path built from the configured cache directory
 	if err == nil {
 		_ = json.Unmarshal(b, &m)
 	}
@@ -374,14 +383,32 @@ func (c *accountReader) loadHistoryCache(ctx context.Context) map[string]DailyHe
 	return m
 }
 
-func (c *accountReader) saveHistoryCache(ctx context.Context, m map[string]DailyHealth) {
+// saveHistoryCache replaces the cache file through a temporary file, so a
+// concurrent call or a crash never leaves a truncated cache. The cache is
+// best-effort: a failed save only means the days are fetched again.
+func saveHistoryCache(path string, m map[string]DailyHealth) {
 	b, err := json.Marshal(m)
 	if err != nil {
 		return
 	}
 
-	_ = os.MkdirAll(c.cacheDir, 0o750)
-	_ = os.WriteFile(c.historyCachePath(ctx), b, 0o600)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return
+	}
+
+	f, err := os.CreateTemp(filepath.Dir(path), ".history-*.tmp")
+	if err != nil {
+		return
+	}
+
+	defer func() { _ = os.Remove(f.Name()) }()
+
+	_, err = f.Write(b)
+	if closeErr := f.Close(); err != nil || closeErr != nil {
+		return
+	}
+
+	_ = os.Rename(f.Name(), path)
 }
 
 // Extras is the rest of what Garmin Connect knows: fitness metrics,

@@ -179,3 +179,25 @@ func TestHealthDailyRejectsInvalidDaysBeforeReading(t *testing.T) {
 		t.Fatalf("error=%v calls=%v", err, reader.calls)
 	}
 }
+
+func TestHealthTextMarksUnavailableFieldsAndErrors(t *testing.T) {
+	t.Parallel()
+
+	partial := health.DailyHealth{Date: "2026-01-02", Steps: 10, StepGoal: 20, RestingHR: 50, AvgStress: 7, BodyBatteryLow: 1, BodyBatteryHigh: 90, Unavailable: []string{"calories", "sleepSec"}}
+	failed := health.DailyHealth{Date: "2026-01-03", Error: "sleep: synthetic failure"}
+
+	for _, tt := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "daily partial", got: dailyLine(partial), want: "2026-01-02     10    20   50      7   1-90        -     -"},
+		{name: "daily error", got: dailyLine(failed), want: "2026-01-03 sleep: synthetic failure"},
+		{name: "history partial", got: historyLine(partial), want: "2026-01-02 steps     10  rhr  50  stress   7  bb   1- 90  sleep -"},
+		{name: "history error", got: historyLine(failed), want: "2026-01-03 sleep: synthetic failure"},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("%s = %q, want %q", tt.name, tt.got, tt.want)
+		}
+	}
+}
