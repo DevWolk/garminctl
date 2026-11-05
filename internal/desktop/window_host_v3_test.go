@@ -5,6 +5,7 @@ package desktop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -12,6 +13,41 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestNativeSaveFileResult(t *testing.T) {
+	t.Parallel()
+
+	const windowsPlatform = "windows"
+
+	cancelled := errors.New("cancelled by user")
+	failure := errors.New("dialog initialization failed")
+
+	for _, test := range []struct {
+		name     string
+		platform string
+		path     string
+		err      error
+		wantErr  error
+	}{
+		{name: "Windows user cancel", platform: windowsPlatform, err: cancelled},
+		{name: "Linux user cancel", platform: "linux"},
+		{name: "Windows selected file", platform: windowsPlatform, path: "export.fit"},
+		{name: "Windows system failure", platform: windowsPlatform, err: failure, wantErr: failure},
+		{name: "context cancellation", platform: windowsPlatform, err: context.Canceled, wantErr: context.Canceled},
+		{name: "not Windows", platform: "linux", err: cancelled, wantErr: cancelled},
+		{name: "nonempty path", platform: windowsPlatform, path: "export.fit", err: cancelled, wantErr: cancelled},
+		{name: "wrapped failure", platform: windowsPlatform, err: fmt.Errorf("initialize: %w", cancelled), wantErr: cancelled},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path, err := nativeSaveFileResult(test.platform, test.path, test.err)
+			if path != test.path || !errors.Is(err, test.wantErr) {
+				t.Fatalf("selection=(%q, %v), want=(%q, %v)", path, err, test.path, test.wantErr)
+			}
+		})
+	}
+}
 
 func TestNativeServiceBridgeContract(t *testing.T) {
 	t.Parallel()

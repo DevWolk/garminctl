@@ -150,7 +150,19 @@ func (h *v3WindowHost) SaveFile(ctx context.Context, name string) (string, error
 		return "", err
 	}
 
-	return h.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{Title: "Save file", Filename: name, Window: h.window.Load(), CanCreateDirectories: true}).PromptForSingleSelection()
+	path, err := h.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{Title: "Save file", Filename: name, Window: h.window.Load(), CanCreateDirectories: true}).PromptForSingleSelection()
+
+	return nativeSaveFileResult(runtime.GOOS, path, err)
+}
+
+func nativeSaveFileResult(platform, path string, err error) (string, error) {
+	// Wails returns an internal CFD sentinel on Windows Cancel. It is not
+	// exported, so normalize only its exact message with an empty selection.
+	if platform == "windows" && path == "" && err != nil && err.Error() == "cancelled by user" {
+		return "", nil
+	}
+
+	return path, err
 }
 
 // nativeAssets publishes immutable handlers once backend startup has resolved.
