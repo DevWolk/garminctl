@@ -3,7 +3,7 @@
 Garmin watch manager with a native desktop app, CLI, web UI and MCP server.
 
 - Read `docs/formats.md` before touching `internal/fit`, `internal/ciq`,
-  `internal/garmin` or the WPD bridge; it documents implemented formats and
+  `internal/containers` or the WPD bridge; it documents implemented formats and
   transport constraints.
 - Native Linux USB is experimental and needs hardware validation. From WSL
   the bridge spawns
@@ -11,7 +11,7 @@ Garmin watch manager with a native desktop app, CLI, web UI and MCP server.
   `-root DIR` for offline work; `DIR` must contain the copied `GARMIN/` tree.
 - Never rewrite `GARMIN/Settings/Settings.fit` directly; device settings go
   through a type-41 settings-change file in `GARMIN/NewFiles` (see
-  `garmin.BuildChangeFile`). The watch applies NewFiles on USB disconnect.
+  `settings.BuildChangeFile`). The watch applies NewFiles on USB disconnect.
 - Preserve unknown fields and record order when editing binary formats.
   Keep codec round-trip tests passing and add fixtures for new formats.
 - `make check` (module metadata, lint, race tests and govulncheck) must pass

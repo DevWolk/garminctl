@@ -36,11 +36,14 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/fit`: `Decode`/`Encode` keep raw records; `Profile.Describe`
   names fields; `Builder` writes new files Garmin-style (local slot 0).
 - `internal/deviceinfo`: pure GarminDevice.xml models, parsing and software
-  version formatting. `internal/garmin/devicexml.go` retains compatibility aliases
-  while Session and feature containers are extracted.
+  version formatting. watchsession and the connect, health, music and workouts
+  containers import it directly.
 - `internal/app` assembles runtime/account owners for entry points and supplies
-  them to HTTP/MCP shells. One MCP registrar list serves HTTP and stdio;
-  protocol contracts use the production composition with fixture transports.
+  them to HTTP/MCP shells. `internal/app/process` owns one process's watch
+  Manager, sync and activity jobs, Connect message claims and app schema cache;
+  shells receive it through their own Runtime interfaces. One MCP registrar
+  list serves HTTP and stdio; protocol contracts use the production composition
+  with fixture transports.
   `internal/ship/clix` owns CLI printing, errors and
   parsing; `cmd/garminctl/clix_compat.go` temporarily delegates existing commands.
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
@@ -48,36 +51,35 @@ See CLAUDE.md for the working rules. Module map:
   route registrar contract. `internal/web/httpx_compat.go` temporarily delegates
   existing routes; Wails-specific private-origin validation stays in desktop.
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
-  watch lease handlers, tool registration and annotation helpers. Its narrow owner/lease contracts
-  accept Session Manager directly and legacy leases without a garmin import.
+  watch lease handlers, tool registration and annotation helpers. Its narrow
+  owner/lease contracts accept the Session Manager directly.
   `internal/mcpserver` supplies protocol instructions and registered-tool
   construction; app binds feature bodies to the shared runtime.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
   capabilities, scoped diagnostics, watch paths and metadata reads. Its Manager
-  owns leases/epochs/probe/retirement/close. Legacy Lazy/Lease delegate to that
-  owner and preserve one current Service facade with feature schema/profile
-  caches. New adapters use Manager directly; no second owner is constructed.
+  owns leases/epochs/probe/retirement/close. The process runtime builds the one
+  Manager; adapters use it directly and construct no second owner.
 - `internal/containers/settings` owns settings models, read/apply/schema Actions,
-  private resolver/read tasks, FIT patch encoding and immutable settings Knowledge.
-  Actions use watchsession directly and import no legacy/transport package.
+  private resolver/read tasks, FIT patch encoding (`BuildChangeFile`) and
+  immutable settings Knowledge (`knowledge/device_settings.json`). Actions use
+  watchsession directly and import no transport package.
   `ui/cli` owns CLI settings flags/output and uses the entry point's leased
   Session. `ui/http` registers the settings/schema/apply API through the shared
   Manager. `ui/mcp` registers the three typed settings tools through mcpx.
   App supplies route/tool registrars to HTTP and stdio shells with the same
-  runtime owners. `garmin` retains model aliases/Service delegates.
-- `internal/containers/apps` owns App/AppChange, registry parsing/rewriting,
-  verified private registry backups and ReadRegistry/Visibility/Pending/Restore/Cancel Actions
-  over the caller's Session. Legacy App/AppChange aliases and Service delegates
-  preserve existing callers. SET/item/hint DTOs and immutable CIQ Knowledge also
-  belong to apps; legacy names are aliases/delegates and the old JSON is only a
-  compatibility test fixture. Find/SET/schema Actions and SchemaCache logic are
-  apps-owned; the legacy per-Session facade still holds one cache value and
-  delegates, including Refresh/reset. PRG staging/named delivery/list/removal
-  Actions are apps-owned and use the same Session/cache; `internal/garmin/updates.go`
-  retains Service delegates, aliases and the update URL/client variables. `ui/cli` owns eight
-  app commands and calls Actions over scoped Sessions. Lazy.AppSchemaCacheFor
-  supplies canonical current-epoch state without acquiring/opening again; this
-  temporary bridge is removed with the facade. `ui/http` registers nine app
+  runtime owners.
+- `internal/containers/apps` owns App/AppChange, registry (OUT.BIN protobuf)
+  parsing/rewriting, verified private registry backups and
+  ReadRegistry/Visibility/Pending/Restore/Cancel Actions over the caller's
+  Session. SET/item/hint DTOs and immutable CIQ Knowledge also belong to apps.
+  Find/SET/schema Actions and SchemaCache logic are apps-owned. SessionSchemas
+  retains one cache, for the newest connection that asked; the current
+  Session's first lookup replaces it, other lookups never do, and Close drops
+  it. PRG staging/named delivery/list/removal Actions are apps-owned and use
+  the same Session/cache. `ui/cli` owns eight app commands and calls Actions
+  over scoped Sessions. The process runtime's
+  AppSchemaCacheFor supplies the current connection's cache under the caller's
+  lease without acquiring/opening again. `ui/http` registers nine app
   routes and `ui/mcp` registers six typed app tools with that same Manager/cache
   provider. App supplies both registrars and watch's count from apps.
 - `internal/containers/watch` owns Summary/FIT Decode Actions over Session and
@@ -85,26 +87,26 @@ See CLAUDE.md for the working rules. Module map:
   Summary receives an AppCount capability from its caller; registry parsing
   stays with its existing owner. `ui/cli` owns discovery, ordinary file commands,
   summary/decode formatting and CLI-only scoped diagnostics. App supplies the
-  registry-count adapter without device ownership. Legacy Service
-  delegates and aliases keep HTTP/MCP stable. Backup CLI flags/output live in
+  registry-count adapter without device ownership. Backup CLI flags/output live in
   `ui/cli`; the existing CLI job wrapper owns admission/epoch binding, with each
   source call leasing Session separately and host writes outside that lease.
   `ui/http` owns file/list/decode/download handlers. App injects their registrar
   and a Session-based Summary reader into web's connection-state aggregation.
-  Watcher/auto/disconnect and aggregate feature-cache refresh remain shell-owned.
+  Watcher/auto/disconnect remain shell-owned; the shell's refresh route calls
+  app's Refresh, which drops the Session's file cache and its app schema cache.
   `ui/mcp` owns the four watch tools, including object result schemas and the
   400-message decode cap; app supplies the same registrar for HTTP and stdio.
 - `internal/containers/workouts` owns WorkoutSpec/StepSpec/CloudWorkout, pure
   FIT/Connect encoding and local/list/create/send/delete Actions. Account and
   workout-only Delivery ports are supplied by callers. Connect owns PulledFile;
-  garmin and workouts retain aliases. ui/cli owns list/create/send output over
+  workouts retains an alias. ui/cli owns list/create/send output over
   the entry point's scoped Session; ui/http owns five routes and ui/mcp three
   typed tools. App supplies a Connect-backed filtered queue port without a
   nested lease. HTTP note and MCP sendError policies remain adapter-specific.
 - `internal/containers/health` owns activity models/FIT decoding/cache, the shared
   ActivityCoordinator over Manager, and daily/history/day/extras/weight Actions.
   AccountAccess borrows protocol, caller-owned Connect identity/metadata and cache
-  path. Legacy types/coordinator constructors are aliases/delegates; no second
+  path. The process runtime builds the one ActivityCoordinator; no second
   decoder or watch owner is created. ui/cli owns health/activity output and the
   daily/history cutoff; activities keeps its initial connect/release dispatch.
   ui/http owns six routes and ui/mcp seven typed tools over the shared decoder.
@@ -116,42 +118,33 @@ See CLAUDE.md for the working rules. Module map:
   ui/cli owns account/raw/status/settings/messages/sync formatting. ui/http owns
   nine routes and ui/mcp four typed tools; app injects the same account and
   coordinator into HTTP/MCP/auto. HTTP keeps 202/409; compatible MCP waiters join
-  the runtime job. Legacy Cloud/Sync aliases/delegates remain for facade removal.
-- `internal/garmin`: `Service` (feature facade), `SettingsView.Rows`,
-  `Resolve`/`BuildChangeFile`/`ApplyChanges`, `AppSettings`/`SetAppSettings`,
-  `ParseAppsConfig` (OUT.BIN protobuf), `ParseDeviceXML`,
-  `CheckSoftwareUpdates`/`InstallSoftwareUpdate` (Garmin's OMT update
-  service), `CheckAppUpdates`, `InstallPRG`, `SoftwareInventory`,
-  `containers/settings/knowledge/device_settings.json` owns settings notes;
-  the old JSON remains a compatibility test fixture until facade removal.
+  the runtime job.
 - `internal/gc`: Garmin Connect protocol session (SSO/MFA, OAuth1 to OAuth2,
   protected token state, bearer helpers). CloudProfile/SocialProfile own the
   profile protocol and label mapping. Caller-scoped identity cache/error policy
-  and queue/upload workflows belong to containers/connect. Legacy health/workout
-  methods delegate to their feature Actions through the compatibility Cloud.
+  and queue/upload workflows belong to containers/connect.
 - `internal/containers/music` owns library/track/playlist/provider DTOs, four
   stateless Actions, ID3 codecs and media path/name helpers over Session.
   It reads provider metadata from device XML, with no apps registry dependency.
-  Legacy DTO/Tags aliases, ReadTags and Service delegates preserve callers.
-  Title formatting is privately duplicated unchanged while health still uses
-  the legacy helper; no music-to-health import is introduced. ui/cli owns list/
+  Music and health each keep an identical private title-case helper; music
+  does not import health. ui/cli owns list/
   playlist formatting and host reads with supplied per-file lease callbacks.
   CLI routing retains initial connect, job admission and epoch binding; add
   progress stays inside its lease and rm progress follows release. ui/http owns
   four guarded routes and ui/mcp two typed tools, supplied by app to both shells.
 - `internal/containers/updates` owns watch software manifest/staging/inventory
   and app-version comparison Actions, DTOs and private HTTP helpers. Config
-  supplies the existing endpoint/client; a scoped registry reader supplies apps.
-  Successful staging reports its invalidation generation to the shared feature
-  cache. Service aliases/delegates retain legacy URL/client injection and callers.
-  ui/cli owns check/install/inventory output and partial-error exit rules;
-  ui/http registers four guarded routes and ui/mcp two typed tools. App injects
-  the shared client, Session-scoped registry and canonical cache Reset callback.
-  The legacy client variable remains a temporary composition bridge.
+  supplies the endpoint (`DefaultURL`, Garmin's OMT update service) and client;
+  a scoped registry reader supplies apps. Successful staging reports its
+  invalidation generation to the shared app schema cache. ui/cli owns
+  check/install/inventory output and partial-error exit rules; ui/http
+  registers four guarded routes and ui/mcp two typed tools. App injects
+  `updates.HTTPClient` (tests may replace it), the Session-scoped registry and
+  the canonical cache Reset callback.
 - `internal/containers/store` owns catalog View/App/Detail, Browse/Detail Actions,
   installed-version decoration and the process device-type cache. A scoped
   InstalledApps callback supplies the apps registry; nil/error leaves records
-  undecorated. Legacy store DTO aliases and Service delegates retain callers. Three ui adapters
+  undecorated. Three ui adapters
   use the same Actions; app supplies Registry over the existing leased Session.
   HTTP borrows only a current watch, while CLI/MCP require its XML.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
@@ -168,8 +161,8 @@ See CLAUDE.md for the working rules. Module map:
   and the background sync job; `server_test.go` drives the API over a dump.
 - `internal/mcpserver`: MCP instructions and stdio/HTTP shells receive all
   feature tool registrars from app. Stdio borrows the narrow Context/Close
-  runtime contract; HTTP borrows its parent context. No legacy facade or account
-  dependency remains in this shell. Lease/error handling belongs to mcpx and
+  runtime contract; HTTP borrows its parent context. The shell imports no
+  feature package or account client. Lease/error handling belongs to mcpx and
   the feature adapters. Every tool has
   annotations (title, read-only/destructive, open-world) and a typed output;
   MCP requires object output schemas, so the feature `ui/mcp` packages wrap
@@ -190,9 +183,12 @@ host-UID toolchain container. `make package` builds native installers in `dist/`
 `make install` rebuilds the CLI and desktop binaries and rolls the CLI out on
 this machine (`scripts/install.sh`: restarts whichever server runs, WSL or
 the Windows autostart copy, keeping stopped servers stopped); `make update`
-pulls the current branch first. The web and HTTP MCP servers share the `garmin.Lazy` facade over one
-`watchsession.Manager` (one lazily opened watch); `internal/paths` names the cache directory; tests over a dump use
-`internal/testdump`, which owns the shared XML and app-registry fixtures.
+pulls the current branch first. The web and HTTP MCP servers share one
+`process.Runtime` and account client from `app.ServeListener`: one
+`watchsession.Manager` (one lazily opened watch), the sync and activity jobs
+and the app schema cache. `internal/paths` names the cache directory; tests
+over a dump use `internal/testdump`, which owns the shared XML and
+app-registry fixtures.
 `tools/expresswatch` monitors upstream release notes
 (state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.
