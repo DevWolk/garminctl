@@ -6,8 +6,10 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
-	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -23,31 +25,78 @@ const (
 )
 
 type architectureView struct {
-	name string
-	tags string
-	env  []string
+	name  string
+	tags  string
+	env   []string
+	tests bool
 }
 
+// architectureFeatureEdges declares the only feature-to-feature imports. A new
+// edge needs review here; UIs still import only their own feature.
+var architectureFeatureEdges = map[string][]string{
+	"connect":  {"apps"},    // delivers queued app packages and invalidates the app registry
+	"store":    {"apps"},    // marks installed store apps
+	"updates":  {"apps"},    // reports installed app versions
+	"workouts": {"connect"}, // returns the pulled workout file
+}
+
+// architectureOwner lists constructors of process-wide owners and the packages,
+// beside the defining one, that may call them. Any other caller would create a
+// second owner of the watch, its jobs or the account store.
+type architectureOwner struct {
+	pkg     string
+	names   []string
+	callers []string
+}
+
+const (
+	ownerApp    = "internal/app"
+	ownerFacade = "internal/" + architectureFacade
+)
+
+var architectureOwners = []architectureOwner{
+	{pkg: ownerFacade, names: []string{"NewRuntime"}, callers: []string{ownerApp}},
+	{pkg: ownerFacade, names: []string{"NewLazy", "NewLazyWithGate", "NewSyncCoordinator", "NewActivityCoordinator"}, callers: []string{ownerApp}},
+	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerFacade, ownerApp}},
+	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerFacade, ownerApp}},
+	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerFacade, ownerApp}},
+	{pkg: "internal/gc", names: []string{"New"}, callers: []string{"cmd", ownerApp, "internal/testdump"}},
+}
+
+// architectureRoot finds the module above the working directory, which go test
+// and the Windows runner set to the package directory; the source path recorded
+// at build time does not exist where a cross-compiled test runs. Loading
+// packages needs the go command, so a host without it skips the gate.
 func architectureRoot(t *testing.T) string {
 	t.Helper()
 
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate architecture test source")
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("architecture gate needs the go command: %v", err)
 	}
 
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
-	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+	dir, err := os.Getwd()
+	if err != nil {
 		t.Fatalf("module root: %v", err)
 	}
 
-	return root
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("module root: no go.mod above the working directory")
+		}
+
+		dir = parent
+	}
 }
 
 func loadArchitecture(ctx context.Context, t *testing.T, view architectureView, mode packages.LoadMode, patterns ...string) []*packages.Package {
 	t.Helper()
 
-	cfg := &packages.Config{Context: ctx, Dir: architectureRoot(t), Mode: mode, Env: append(os.Environ(), view.env...), BuildFlags: []string{"-mod=readonly"}}
+	cfg := &packages.Config{Context: ctx, Dir: architectureRoot(t), Mode: mode, Env: append(os.Environ(), view.env...), BuildFlags: []string{"-mod=readonly"}, Tests: view.tests}
 	if view.tags != "" {
 		cfg.BuildFlags = append(cfg.BuildFlags, "-tags="+view.tags)
 	}
@@ -71,7 +120,7 @@ func loadArchitecture(ctx context.Context, t *testing.T, view architectureView, 
 		t.FailNow()
 	}
 
-	t.Logf("%s: %d production packages", view.name, len(loaded))
+	t.Logf("%s: %d packages", view.name, len(loaded))
 
 	return loaded
 }
@@ -87,6 +136,15 @@ func TestArchitecture(t *testing.T) {
 	for _, pkg := range loadArchitecture(ctx, t, active, packages.LoadSyntax, patterns...) {
 		checkArchitecturePackage(t, pkg, true)
 	}
+
+	t.Run("tests", func(t *testing.T) {
+		t.Parallel()
+
+		view := architectureView{name: "tests", tags: architectureBuildTags, tests: true}
+		for _, pkg := range loadArchitecture(ctx, t, view, packages.NeedName|packages.NeedImports, patterns...) {
+			checkArchitectureTestPackage(t, pkg)
+		}
+	})
 
 	for _, view := range []architectureView{
 		{name: "linux portable", env: []string{"GOOS=linux", "CGO_ENABLED=0"}},
@@ -124,6 +182,64 @@ func checkArchitecturePackage(t *testing.T, pkg *packages.Package, typed bool) {
 	for _, issue := range violations {
 		t.Error(issue)
 	}
+}
+
+// checkArchitectureTestPackage applies the test rules to a package compiled
+// with its test files; the generated test main is skipped.
+func checkArchitectureTestPackage(t *testing.T, pkg *packages.Package) {
+	t.Helper()
+
+	if strings.HasSuffix(pkg.PkgPath, ".test") {
+		return
+	}
+
+	var violations []string
+
+	for imported := range pkg.Imports {
+		if reason := architectureTestImportViolation(pkg.PkgPath, imported); reason != "" {
+			violations = append(violations, pkg.ID+" -> "+imported+": "+reason)
+		}
+	}
+
+	sort.Strings(violations)
+
+	for _, issue := range violations {
+		t.Error(issue)
+	}
+}
+
+// architectureTestImportViolation keeps feature tests inside the production
+// feature boundaries. Shell tests assemble their own fixture composition and
+// are not checked here.
+func architectureTestImportViolation(from, to string) string {
+	feature := architectureFeature(strings.TrimSuffix(from, "_test"))
+	if feature == "" {
+		return ""
+	}
+
+	if architectureWithin(to, architectureModule+"/"+ownerApp) {
+		return "feature tests cannot import app"
+	}
+
+	if architectureInternal(to) == architectureFacade {
+		return "feature tests cannot import the legacy facade"
+	}
+
+	if other := architectureFeature(to); other != "" && other != feature && !architectureFeatureEdge(feature, other) {
+		return "feature tests may import another feature only through a declared edge"
+	}
+
+	return ""
+}
+
+func architectureFeatureEdge(from, to string) bool {
+	return slices.Contains(architectureFeatureEdges[from], to)
+}
+
+func architectureShell(path string) bool {
+	rel := architectureInternal(path)
+
+	return architectureWithin(rel, "web") || architectureWithin(rel, "mcpserver") || architectureWithin(rel, "desktop")
 }
 
 func architectureWithin(path, prefix string) bool {
@@ -176,12 +292,16 @@ func architectureCore(path string) bool {
 }
 
 func architectureImportViolation(from, to string) string {
-	if architectureWithin(to, architectureModule+"/internal/app") && !architectureWithin(from, architectureModule+"/cmd") && !architectureWithin(from, architectureModule+"/internal/app") {
+	if architectureWithin(to, architectureModule+"/"+ownerApp) && !architectureWithin(from, architectureModule+"/cmd") && !architectureWithin(from, architectureModule+"/"+ownerApp) {
 		return "only entry points and app wiring may import app"
 	}
 
 	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureInternal(to) == architectureFacade || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
 		return "infrastructure cannot depend on features or server/native shells"
+	}
+
+	if architectureShell(from) {
+		return architectureShellImportViolation(from, to)
 	}
 
 	if architectureCore(from) {
@@ -195,9 +315,27 @@ func architectureImportViolation(from, to string) string {
 	return ""
 }
 
+// architectureShellImportViolation keeps features behind the registrars app
+// supplies. The native shell reaches the server through its local backend.
+func architectureShellImportViolation(from, to string) string {
+	if architectureFeature(to) != "" {
+		return "shells receive feature registrations from app"
+	}
+
+	if architectureWithin(architectureInternal(from), "desktop") && architectureShell(to) && !architectureWithin(architectureInternal(to), "desktop") {
+		return "the native shell imports neither the web nor the MCP shell"
+	}
+
+	return ""
+}
+
 func architectureFeatureUIImportViolation(from, to string) string {
 	if architectureInternal(to) == architectureFacade {
 		return "a feature UI cannot import the legacy facade"
+	}
+
+	if architectureShell(to) {
+		return "a feature UI cannot import server or native shells"
 	}
 
 	if architectureFeature(to) != "" && architectureFeature(from) != architectureFeature(to) {
@@ -214,6 +352,10 @@ func architectureCoreImportViolation(from, to string) string {
 
 	if architectureFeature(from) != "" && architectureInternal(to) == architectureFacade {
 		return "new feature core cannot import the legacy facade"
+	}
+
+	if feature, other := architectureFeature(from), architectureFeature(to); feature != "" && other != "" && other != feature && !architectureFeatureEdge(feature, other) {
+		return "feature core may import another feature only through a declared edge"
 	}
 
 	if !strings.HasPrefix(to, architectureModule+"/") && strings.Contains(strings.Split(to, "/")[0], ".") && !architectureApprovedLibrary(from, to) {
@@ -259,6 +401,26 @@ func architectureHTTPRole(name string) bool {
 	}
 }
 
+// architectureOwnerViolation reports a call to an owner constructor outside
+// the packages allowed to build that owner.
+func architectureOwnerViolation(caller, pkg, name string) string {
+	for _, owner := range architectureOwners {
+		if pkg != architectureModule+"/"+owner.pkg || !slices.Contains(owner.names, name) || caller == pkg {
+			continue
+		}
+
+		for _, allowed := range owner.callers {
+			if architectureWithin(caller, architectureModule+"/"+allowed) {
+				return ""
+			}
+		}
+
+		return fmt.Sprintf("%s.%s builds a process-wide owner; only %s may call it", path.Base(owner.pkg), name, strings.Join(owner.callers, ", "))
+	}
+
+	return ""
+}
+
 func architectureTypedViolations(owner string, info *types.Info, positions *token.FileSet) []string {
 	var violations []string
 
@@ -268,8 +430,8 @@ func architectureTypedViolations(owner string, info *types.Info, positions *toke
 			continue
 		}
 
-		if pkg.Path() == architectureModule+"/internal/garmin" && object.Name() == "NewRuntime" && !architectureWithin(owner, architectureModule+"/internal/app") {
-			violations = append(violations, fmt.Sprintf("%s: production runtime construction belongs to app", positions.Position(id.Pos())))
+		if reason := architectureOwnerViolation(owner, pkg.Path(), object.Name()); reason != "" {
+			violations = append(violations, fmt.Sprintf("%s: %s", positions.Position(id.Pos()), reason))
 		}
 
 		if architectureCore(owner) && pkg.Path() == "net/http" && architectureHTTPRole(object.Name()) {
