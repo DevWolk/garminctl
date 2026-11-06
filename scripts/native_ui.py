@@ -107,6 +107,7 @@ class LinuxUI:
     def save(self, path):
         self.focus('Save file')
         subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+l'], check=True, timeout=5)
+        subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'], check=True, timeout=5)
         subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '0', str(path)], check=True, timeout=5)
         dialog = self.dialog('Save file')
         pending, observed = [dialog], []

@@ -254,6 +254,19 @@ def group_running(group):
     return False
 
 
+def cleanup_package_directory(directory):
+    """Wait briefly for Windows WebView cache handles, retaining cleanup failures."""
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            directory.cleanup()
+            return
+        except OSError as err:
+            if os.name != "nt" or getattr(err, "winerror", None) != 32 or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--desktop", required=True, type=Path)
@@ -262,5 +275,8 @@ if __name__ == "__main__":
     parser.add_argument("--version", required=True)
     parser.add_argument("--native-ui", action="store_true", help="Run dialog/edit/origin checks on an isolated CI desktop")
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix="garminctl-package-") as directory:
-        print(json.dumps(check_package(args.desktop, args.cli, args.repo, args.version, Path(directory), args.native_ui), ensure_ascii=False))
+    directory = tempfile.TemporaryDirectory(prefix="garminctl-package-")
+    try:
+        print(json.dumps(check_package(args.desktop, args.cli, args.repo, args.version, Path(directory.name), args.native_ui), ensure_ascii=False))
+    finally:
+        cleanup_package_directory(directory)

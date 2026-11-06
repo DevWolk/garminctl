@@ -7,6 +7,30 @@ import native_ui
 
 
 class NativeLinuxInputTests(unittest.TestCase):
+    def test_save_replaces_the_entire_filename_including_its_extension(self):
+        driver = object.__new__(native_ui.LinuxUI)
+        driver.focus = mock.Mock()
+        state = {'selected': False, 'text': 'GarminDevice.xml'}
+        entry = mock.Mock()
+        entry.__iter__ = mock.Mock(side_effect=lambda: iter([]))
+        entry.queryText.return_value.getText.side_effect = lambda *_: state['text']
+        dialog = mock.Mock()
+        dialog.__iter__ = mock.Mock(side_effect=lambda: iter([entry]))
+        dialog.queryText.side_effect = NotImplementedError
+        driver.dialog = mock.Mock(return_value=dialog)
+        driver.click = mock.Mock()
+
+        def input_event(command, **_):
+            if command[:3] == ['xdotool', 'key', '--clearmodifiers'] and command[-1] == 'ctrl+a':
+                state['selected'] = True
+            if command[:2] == ['xdotool', 'type']:
+                state['text'] = command[-1] + ('' if state['selected'] else '.xml')
+
+        with mock.patch.object(native_ui.subprocess, 'run', side_effect=input_event):
+            driver.save('/tmp/native-export.xml')
+        self.assertEqual(state['text'], '/tmp/native-export.xml')
+        driver.click.assert_called_once_with(dialog, 'Save')
+
     def test_save_activates_the_save_button_for_the_entered_location(self):
         driver = object.__new__(native_ui.LinuxUI)
         driver.focus = mock.Mock()

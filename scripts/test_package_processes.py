@@ -14,7 +14,47 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-stop_app = runpy.run_path(str(Path(__file__).with_name("test-package.py")))["stop_app"]
+package_tests = runpy.run_path(str(Path(__file__).with_name("test-package.py")))
+stop_app = package_tests["stop_app"]
+
+
+class WindowsCacheCleanupTests(unittest.TestCase):
+    def cleanup_with(self, directory, platform, ticks):
+        cleanup = package_tests["cleanup_package_directory"]
+        clock = SimpleNamespace(monotonic=mock.Mock(side_effect=ticks), sleep=mock.Mock())
+        with mock.patch.dict(cleanup.__globals__, os=SimpleNamespace(name=platform), time=clock):
+            cleanup(directory)
+        return clock
+
+    def test_delayed_webview_cache_release_is_retried(self):
+        blocked = PermissionError("WebView cache is still open")
+        blocked.winerror = 32
+        directory = mock.Mock()
+        directory.cleanup.side_effect = [blocked, None]
+        clock = self.cleanup_with(directory, 'nt', [10, 10.1])
+        self.assertEqual(directory.cleanup.call_count, 2)
+        clock.sleep.assert_called_once_with(0.1)
+
+    def test_permanent_cache_lock_still_fails(self):
+        blocked = PermissionError("WebView cache is still open")
+        blocked.winerror = 32
+        directory = mock.Mock()
+        directory.cleanup.side_effect = blocked
+        with self.assertRaises(PermissionError) as caught:
+            self.cleanup_with(directory, 'nt', [10, 10.1, 15])
+        self.assertIs(caught.exception, blocked)
+        self.assertEqual(directory.cleanup.call_count, 2)
+
+    def test_other_cleanup_errors_are_not_retried(self):
+        for platform, code in [('nt', 5), ('posix', 32)]:
+            with self.subTest(platform=platform, code=code):
+                blocked = PermissionError("Not a delayed Windows cache release")
+                blocked.winerror = code
+                directory = mock.Mock()
+                directory.cleanup.side_effect = blocked
+                with self.assertRaises(PermissionError):
+                    self.cleanup_with(directory, platform, [10])
+                directory.cleanup.assert_called_once()
 
 
 class WindowsProcessCleanupTests(unittest.TestCase):

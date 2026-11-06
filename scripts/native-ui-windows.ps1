@@ -71,9 +71,14 @@ switch ($request.action) {
     Focus-Control $dialog
     $inputBox = Find-Control '^File name' 'Edit'
     $value = $inputBox.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-    $value.SetValue([string]$request.path)
-    if ($value.Current.Value -ne [string]$request.path) { throw 'Native Save filename did not retain the requested path' }
+    Focus-Control $inputBox
+    [System.Windows.Forms.Clipboard]::SetText([string]$request.path)
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait('^v')
+    if ($value.Current.Value -ne [string]$request.path) { throw "Native Save filename differs: '$($value.Current.Value)'" }
     $response = @{ enteredPath = $value.Current.Value; saveButton = $true }
+    [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
+    $response.committedName = $value.Current.Value
     Click-Control (Find-Control '^Save$' 'Button')
   }
   'cancel-save' {
