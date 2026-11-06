@@ -184,8 +184,7 @@ func (a *nativeAssets) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ConfirmReplace asks on Linux, where the GTK Save dialog does not; the
-// Windows Save dialog already confirmed the replacement. Closing the question
-// without an answer leaves the download pending until the window closes.
+// Windows Save dialog already confirmed the replacement.
 func (h *v3WindowHost) ConfirmReplace(ctx context.Context, target string) (bool, error) {
 	if runtime.GOOS != "linux" {
 		return true, nil
