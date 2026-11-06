@@ -53,7 +53,7 @@ class WindowsUI:
         self.command('cancel-save')
 
     def replace(self, choice):
-        self.command('replace', choice=choice)
+        return self.command('replace', choice=choice)
 
     def menu_reload(self):
         self.command('menu-reload')

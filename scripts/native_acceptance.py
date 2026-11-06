@@ -177,14 +177,9 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
     check('native-save-bytes', save)
 
     def replacement(choice):
-        target.write_bytes(b'keep existing export')
-        identifier = start_download()
-        driver.save(target)
-        driver.replace(choice)
-        finished(identifier)
-        wanted = expected if choice == 'yes' else b'keep existing export'
-        assert target.read_bytes() == wanted, 'Replacement consent did not protect the existing file'
-    for choice in ('no', 'yes', 'escape', 'close'):
+        observation = replace_export(commands, driver, target, expected, choice, finished)
+        result.setdefault('replacementOutcomes', {})[choice] = observation or {'confirmation': 'dismissed'}
+    for choice in ('no', 'yes'):
         check('native-replacement-' + choice, lambda choice=choice: replacement(choice))
 
     def edit_guard():
@@ -209,6 +204,9 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
     if os.name == 'nt':
         result['passed'].append('windows-application-menu-reload')
 
+    for choice in ('escape', 'close'):
+        check('native-replacement-' + choice, lambda choice=choice: replacement(choice))
+
     def final_close():
         assert commands.call('edit')['pending']
         driver.close()
@@ -216,3 +214,20 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
         commands.send('confirm', accept=True)
         assert app.wait(timeout=10) == 0, 'Confirmed native close failed'
     check('native-confirmed-edit-close', final_close)
+
+
+def replace_export(commands, driver, target, expected, choice, finished):
+    protected = b'keep existing export'
+    target.write_bytes(protected)
+    identifier = commands.call('download')['id']
+    driver.save(target)
+    observation = driver.replace(choice)
+    if observation and observation.get('confirmation') == 'remained-open':
+        assert choice in ('escape', 'close'), 'Unexpected retained confirmation'
+        assert target.read_bytes() == protected, 'Unanswered confirmation replaced the existing file'
+        assert not commands.call('download-result', download=identifier)['done'], 'Visible confirmation lost its pending download'
+        driver.replace('no')
+    finished(identifier)
+    wanted = expected if choice == 'yes' else protected
+    assert target.read_bytes() == wanted, 'Replacement consent did not protect the existing file'
+    return observation

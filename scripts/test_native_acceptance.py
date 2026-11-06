@@ -14,6 +14,63 @@ from native_fixture import Commands
 
 
 class NativeAcceptanceTests(unittest.TestCase):
+    def test_visible_confirmation_requires_an_explicit_no(self):
+        for choice in ('escape', 'close'):
+            with self.subTest(choice=choice), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / 'export.xml'
+                commands = mock.Mock()
+                commands.call.side_effect = [{'id': 'export'}, {'done': False}]
+                driver = mock.Mock()
+                observation = {'confirmation': 'remained-open', 'choice': choice}
+                driver.replace.side_effect = [observation, None]
+
+                def finished(identifier):
+                    self.assertEqual(identifier, 'export')
+                    self.assertEqual(driver.replace.call_args_list, [mock.call(choice), mock.call('no')])
+
+                result = native_acceptance.replace_export(commands, driver, target, b'new bytes', choice, finished)
+                self.assertEqual(result, observation)
+                self.assertEqual(target.read_bytes(), b'keep existing export')
+
+    def test_visible_confirmation_cannot_have_already_overwritten_the_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'export.xml'
+            commands = mock.Mock()
+            commands.call.return_value = {'id': 'export'}
+            driver = mock.Mock()
+            def wrong_replacement(_):
+                target.write_bytes(b'wrong overwrite')
+                return {'confirmation': 'remained-open'}
+            driver.replace.side_effect = wrong_replacement
+            finished = mock.Mock()
+            with self.assertRaisesRegex(AssertionError, 'Unanswered confirmation'):
+                native_acceptance.replace_export(commands, driver, target, b'new bytes', 'escape', finished)
+            driver.replace.assert_called_once_with('escape')
+            finished.assert_not_called()
+
+    def test_visible_confirmation_cannot_lose_its_pending_download(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = mock.Mock()
+            commands.call.side_effect = [{'id': 'export'}, {'done': True}]
+            driver = mock.Mock()
+            driver.replace.return_value = {'confirmation': 'remained-open'}
+            finished = mock.Mock()
+            with self.assertRaisesRegex(AssertionError, 'lost its pending download'):
+                native_acceptance.replace_export(commands, driver, Path(directory) / 'export.xml', b'new bytes', 'close', finished)
+            driver.replace.assert_called_once_with('close')
+            finished.assert_not_called()
+
+    def test_a_dismissed_dialog_with_a_pending_download_still_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = mock.Mock()
+            commands.call.return_value = {'id': 'export'}
+            driver = mock.Mock()
+            driver.replace.return_value = None
+            finished = mock.Mock(side_effect=TimeoutError('Download stayed pending'))
+            with self.assertRaisesRegex(TimeoutError, 'stayed pending'):
+                native_acceptance.replace_export(commands, driver, Path(directory) / 'export.xml', b'new bytes', 'escape', finished)
+            driver.replace.assert_called_once_with('escape')
+
     def test_origin_failure_does_not_prevent_a_fresh_ui_window_or_pass_the_gate(self):
         processes = []
 
