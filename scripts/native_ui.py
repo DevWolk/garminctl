@@ -31,11 +31,20 @@ class WindowsUI:
 
     def command(self, action, **values):
         script = Path(__file__).with_name('native-ui-windows.ps1')
-        result = subprocess.run([
-            'powershell.exe', '-NoProfile', '-NonInteractive', '-STA',
-            '-File', str(script), '-AppProcessId', str(self.pid),
-            '-RequestBase64', base64.b64encode(json.dumps(dict(values, action=action)).encode()).decode(),
-        ], capture_output=True, text=True, encoding='utf-8-sig', timeout=25)
+        try:
+            result = subprocess.run([
+                'powershell.exe', '-NoProfile', '-NonInteractive', '-STA',
+                '-File', str(script), '-AppProcessId', str(self.pid),
+                '-RequestBase64', base64.b64encode(json.dumps(dict(values, action=action)).encode()).decode(),
+            ], capture_output=True, text=True, encoding='utf-8-sig', timeout=25)
+        except subprocess.TimeoutExpired as error:
+            output = []
+            for stream in (error.stdout, error.stderr):
+                if isinstance(stream, bytes):
+                    stream = stream.decode('utf-8-sig', errors='replace')
+                if stream:
+                    output.append(stream[:2048])
+            raise AssertionError(f'Native {action} timed out after {error.timeout}s: ' + '\n'.join(output)) from error
         if result.returncode:
             raise AssertionError(result.stdout + result.stderr)
         return json.loads(result.stdout)
@@ -56,7 +65,7 @@ class WindowsUI:
         return self.command('replace', choice=choice)
 
     def menu_reload(self):
-        self.command('menu-reload')
+        return self.command('menu-reload')
 
 
 class LinuxUI:

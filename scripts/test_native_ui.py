@@ -106,5 +106,15 @@ class NativeLinuxInputTests(unittest.TestCase):
         kill.assert_not_called()
 
 
+class NativeWindowsInputTests(unittest.TestCase):
+    def test_menu_timeout_keeps_the_native_stage_diagnostics(self):
+        driver = native_ui.WindowsUI(321)
+        error = native_ui.subprocess.TimeoutExpired(['powershell.exe'], 25,
+                                                  output=b'partial result', stderr=b'native-menu-stage: view-clicked')
+        with mock.patch.object(native_ui.subprocess, 'run', side_effect=error):
+            with self.assertRaisesRegex(AssertionError, 'native-menu-stage: view-clicked'):
+                driver.menu_reload()
+
+
 if __name__ == '__main__':
     unittest.main()

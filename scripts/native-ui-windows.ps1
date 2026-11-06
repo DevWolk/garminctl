@@ -11,6 +11,33 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class NativeInput {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseInput {
+        public int dx, dy;
+        public uint mouseData, flags, time;
+        public UIntPtr extra;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MouseEvent {
+        public uint type;
+        public MouseInput data;
+    }
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint count, MouseEvent[] inputs, int size);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetCursorPos(int x, int y);
+    private static MouseEvent ButtonEvent(uint flags) {
+        return new MouseEvent { type = 0, data = new MouseInput {
+            dx = 0, dy = 0, mouseData = 0, flags = flags, time = 0, extra = UIntPtr.Zero
+        }};
+    }
+    public static uint Click(int x, int y) {
+        if (!SetCursorPos(x, y)) { throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
+        MouseEvent[] inputs = { ButtonEvent(0x0002), ButtonEvent(0x0004) };
+        uint sent = SendInput(2, inputs, Marshal.SizeOf(typeof(MouseEvent)));
+        if (sent != 2) { throw new InvalidOperationException("Native click injected " + sent + " of 2 events; Win32 error " + Marshal.GetLastWin32Error()); }
+        return sent;
+    }
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
@@ -70,6 +97,11 @@ function Focus-Control($element) {
 
 function Click-Control($element) {
   $element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+}
+
+function Click-MenuControl($element) {
+  $point = $element.GetClickablePoint()
+  return [NativeInput]::Click([int]$point.X, [int]$point.Y)
 }
 
 switch ($request.action) {
@@ -136,9 +168,17 @@ switch ($request.action) {
     } else { throw 'Unsupported replacement choice' }
   }
   'menu-reload' {
+    Focus-Control (Find-Control '^garminctl$' 'Window')
+    [Console]::Error.WriteLine('native-menu-stage: window-focused')
     $view = Find-Control '^View$' 'MenuItem'
-    $view.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
-    Click-Control (Find-Control '^Reload$' 'MenuItem')
+    [Console]::Error.WriteLine('native-menu-stage: view-found')
+    $viewEvents = Click-MenuControl $view
+    [Console]::Error.WriteLine('native-menu-stage: view-clicked')
+    $reload = Find-Control '^Reload(?:\s+F5)?$' 'MenuItem'
+    [Console]::Error.WriteLine('native-menu-stage: reload-found')
+    $reloadEvents = Click-MenuControl $reload
+    [Console]::Error.WriteLine('native-menu-stage: reload-clicked')
+    $response.menuEvents = @($viewEvents, $reloadEvents)
   }
   default { throw 'Unsupported native UI command' }
 }

@@ -195,7 +195,10 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
         commands.call('confirm', accept=False)
         assert app.poll() is None, 'Cancel closed the native window'
         assert commands.call('snapshot')['pending'], 'Close cancellation discarded edits'
-        driver.menu_reload() if os.name == 'nt' else driver.key('F5')
+        if os.name == 'nt':
+            result['menuInput'] = driver.menu_reload()
+        else:
+            driver.key('F5')
         wait_for(lambda: commands.call('snapshot')['dialog'])
         commands.send('confirm', accept=True)
         commands.wait(lambda: commands.boots[-1] if commands.boots[-1] != edited['boot'] else None)
