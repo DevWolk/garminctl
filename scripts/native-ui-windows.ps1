@@ -16,6 +16,7 @@ public static class NativeInput {
 }
 '@
 $request = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($RequestBase64)) | ConvertFrom-Json
+$response = @{}
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 $all = [System.Windows.Automation.Condition]::TrueCondition
 $owner = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $AppProcessId)
@@ -69,9 +70,11 @@ switch ($request.action) {
     $dialog = Find-Control '^Save file$' 'Window'
     Focus-Control $dialog
     $inputBox = Find-Control '^File name' 'Edit'
-    $inputBox.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue([string]$request.path)
-    $inputBox.SetFocus()
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    $value = $inputBox.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $value.SetValue([string]$request.path)
+    if ($value.Current.Value -ne [string]$request.path) { throw 'Native Save filename did not retain the requested path' }
+    $response = @{ enteredPath = $value.Current.Value; saveButton = $true }
+    Click-Control (Find-Control '^Save$' 'Button')
   }
   'cancel-save' {
     [void](Find-Control '^Save file$' 'Window')
@@ -101,4 +104,4 @@ switch ($request.action) {
   }
   default { throw 'Unsupported native UI command' }
 }
-'{}'
+$response | ConvertTo-Json -Compress

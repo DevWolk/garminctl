@@ -165,8 +165,14 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
 
     def save():
         identifier = start_download()
-        driver.save(target)
+        result['saveInput'] = driver.save(target)
         finished(identifier)
+        locations = (work, Path.cwd(), Path.home(), Path.home() / 'Documents',
+                     Path.home() / 'Desktop', Path.home() / 'Downloads')
+        candidates = [str(folder / name) for folder in locations for name in ('GarminDevice.xml', 'native-export.xml')
+                      if (folder / name).is_file()]
+        assert target.is_file(), {'expectedExport': str(target), 'candidateExports': candidates,
+                                  'nativeInput': result['saveInput']}
         assert target.read_bytes() == expected, 'Native Save changed export bytes'
     check('native-save-bytes', save)
 

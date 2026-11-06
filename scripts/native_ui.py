@@ -47,7 +47,7 @@ class WindowsUI:
         self.command('close')
 
     def save(self, path):
-        self.command('save', path=str(path))
+        return self.command('save', path=str(path))
 
     def cancel_save(self):
         self.command('cancel-save')
@@ -95,19 +95,34 @@ class LinuxUI:
             'xdotool', 'search', '--onlyvisible', '--pid', str(self.pid), '--name', '^' + re.escape(title) + '$',
         ], text=True, timeout=5).splitlines()
         subprocess.run(['xdotool', 'windowfocus', '--sync', windows[-1]], check=True, timeout=5)
+        return int(windows[-1])
 
     def key(self, key):
         self.focus('garminctl')
         subprocess.run(['xdotool', 'key', '--clearmodifiers', key], check=True, timeout=5)
 
     def close(self):
-        os.kill(self.pid, 15)
+        send_delete_window(self.focus('garminctl'))
 
     def save(self, path):
         self.focus('Save file')
         subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+l'], check=True, timeout=5)
         subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '0', str(path)], check=True, timeout=5)
-        subprocess.run(['xdotool', 'key', '--clearmodifiers', 'Return'], check=True, timeout=5)
+        dialog = self.dialog('Save file')
+        pending, observed = [dialog], []
+        while pending:
+            element = pending.pop(0)
+            try:
+                value = element.queryText().getText(0, -1)
+            except Exception:
+                value = None
+            if value == str(path):
+                self.click(dialog, 'Save')
+                return {'enteredPath': value, 'saveButton': True}
+            if value and len(observed) < 10:
+                observed.append(value[:200])
+            pending.extend(list(element))
+        raise AssertionError(f'Save location {str(path)!r} not present in native dialog: {observed}')
 
     def cancel_save(self):
         self.click(self.dialog('Save file'), 'Cancel')
