@@ -13,6 +13,8 @@ using System.Runtime.InteropServices;
 public static class NativeInput {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern IntPtr GetSystemMenu(IntPtr window, bool revert);
+    [DllImport("user32.dll")] public static extern uint GetMenuState(IntPtr menu, uint item, uint flags);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
 }
 '@
@@ -108,10 +110,21 @@ switch ($request.action) {
     } elseif ($request.choice -in @('escape', 'close')) {
       $dialog = Find-Control '^Confirm Save As$' 'Window'
       Focus-Control $dialog
+      $menu = [NativeInput]::GetSystemMenu([IntPtr]$dialog.Current.NativeWindowHandle, $false)
+      $closeState = [uint32]::MaxValue
+      if ($menu -ne [IntPtr]::Zero) { $closeState = [NativeInput]::GetMenuState($menu, 0xF060, 0) }
       if ($request.choice -eq 'close') {
-        [void][NativeInput]::PostMessage([IntPtr]$dialog.Current.NativeWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
-      } else { [System.Windows.Forms.SendKeys]::SendWait('{ESC}') }
-      Focus-Control (Find-Control '^Save file$' 'Window')
+        if (![NativeInput]::PostMessage([IntPtr]$dialog.Current.NativeWindowHandle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'Confirmation WM_CLOSE failed' }
+      } else {
+        Focus-Control (Find-Control '^No$' 'Button')
+        [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+      }
+      try { Focus-Control (Find-Control '^Save file$' 'Window') }
+      catch {
+        $focused = [System.Windows.Automation.AutomationElement]::FocusedElement.Current
+        $state = @{ choice = $request.choice; closeMenuState = $closeState; focusedName = $focused.Name; focusedType = $focused.ControlType.ProgrammaticName }
+        throw "Native replacement confirmation did not dismiss: $($state | ConvertTo-Json -Compress)"
+      }
       [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
     } else { throw 'Unsupported replacement choice' }
   }
