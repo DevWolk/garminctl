@@ -12,6 +12,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class NativeInput {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
 }
 '@
@@ -33,7 +34,7 @@ function Find-Control([string]$Name, [string]$Kind = '') {
       foreach ($element in $elements) {
         try {
           $current = $element.Current
-          if ($current.Name -match $Name -and (!$Kind -or $current.ControlType.ProgrammaticName -eq "ControlType.$Kind") -and !$current.IsOffscreen) { return $element }
+          if ($current.Name -match $Name -and (!$Kind -or $current.ControlType.ProgrammaticName -eq "ControlType.$Kind") -and !$current.IsOffscreen -and $current.IsEnabled) { return $element }
         } catch [System.Windows.Automation.ElementNotAvailableException] { }
       }
     }
@@ -48,8 +49,20 @@ function Find-Control([string]$Name, [string]$Kind = '') {
 }
 
 function Focus-Control($element) {
-  [void][NativeInput]::SetForegroundWindow([IntPtr]$element.Current.NativeWindowHandle)
-  $element.SetFocus()
+  $current = $element.Current
+  if ($current.ControlType -eq [System.Windows.Automation.ControlType]::Window) {
+    $handle = [IntPtr]$current.NativeWindowHandle
+    if ($handle -eq [IntPtr]::Zero) { throw "Native window '$($current.Name)' has no handle" }
+    [void][NativeInput]::SetForegroundWindow($handle)
+    $deadline = (Get-Date).AddSeconds(3)
+    while ([NativeInput]::GetForegroundWindow() -ne $handle) {
+      if ((Get-Date) -ge $deadline) { throw "Native window '$($current.Name)' did not become foreground" }
+      Start-Sleep -Milliseconds 50
+    }
+  } else {
+    try { $element.SetFocus() }
+    catch { throw "Native control '$($current.Name)' ($($current.ControlType.ProgrammaticName)) cannot receive focus: $_" }
+  }
 }
 
 function Click-Control($element) {

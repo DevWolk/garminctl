@@ -141,17 +141,21 @@ class LinuxUI:
         raise AssertionError(f'Native {name} button not found in {root.name}')
 
     def replace(self, choice):
-        dialog = self.dialog(r'Replace file\?')
+        dialog = self.dialog(r'Replace file\?|Question')
+        pending, replacement = [dialog], False
+        while pending:
+            element = pending.pop(0)
+            if (element.name or '').endswith(' already exists. Replace it?'):
+                replacement = True
+            pending.extend(list(element))
+        assert replacement, 'Native dialog does not contain the replacement question'
         if choice in ('yes', 'no'):
             self.click(dialog, 'Replace' if choice == 'yes' else 'Cancel')
         elif choice == 'escape':
-            self.focus('Replace file?')
+            self.focus(dialog.name)
             subprocess.run(['xdotool', 'key', '--clearmodifiers', 'Escape'], check=True, timeout=5)
         elif choice == 'close':
-            window = subprocess.check_output([
-                'xdotool', 'search', '--onlyvisible', '--pid', str(self.pid), '--name', '^Replace file\\?$',
-            ], text=True, timeout=5).splitlines()[0]
-            send_delete_window(int(window))
+            send_delete_window(self.focus(dialog.name))
         else:
             raise ValueError(choice)
 

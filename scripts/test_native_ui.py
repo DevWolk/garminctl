@@ -2,11 +2,60 @@
 
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 
 import native_ui
 
 
 class NativeLinuxInputTests(unittest.TestCase):
+    def replacement_driver(self, message):
+        def element(name, children=()):
+            item = mock.Mock()
+            item.name = name
+            item.__iter__ = mock.Mock(side_effect=lambda: iter(children))
+            return item
+
+        label = element(message)
+        dialog = element('Question', [label])
+        application = element('garminctl', [dialog])
+        application.get_process_id.return_value = 321
+        driver = object.__new__(native_ui.LinuxUI)
+        driver.pid = 321
+        driver.atspi = SimpleNamespace(Registry=SimpleNamespace(getDesktop=lambda _: [application]))
+        driver.click = mock.Mock()
+        driver.focus = mock.Mock(return_value=12345)
+        return driver, dialog
+
+    def read_once(self, read, **_):
+        value = read()
+        if value is None:
+            raise TimeoutError('Dialog missing')
+        return value
+
+    def test_replacement_uses_the_actual_gtk_window_title(self):
+        for choice in ('no', 'yes', 'escape', 'close'):
+            with self.subTest(choice=choice):
+                driver, dialog = self.replacement_driver('native-export.xml already exists. Replace it?')
+                with mock.patch.object(native_ui, 'wait_for', side_effect=self.read_once), \
+                     mock.patch.object(native_ui.subprocess, 'run') as run, \
+                     mock.patch.object(native_ui, 'send_delete_window') as close:
+                    driver.replace(choice)
+                if choice in ('no', 'yes'):
+                    driver.click.assert_called_once_with(dialog, 'Cancel' if choice == 'no' else 'Replace')
+                else:
+                    driver.focus.assert_called_once_with('Question')
+                    if choice == 'escape':
+                        self.assertIn('Escape', run.call_args.args[0])
+                    else:
+                        close.assert_called_once_with(12345)
+
+    def test_unrelated_gtk_question_is_not_a_replacement_dialog(self):
+        driver, _ = self.replacement_driver('Unrelated question')
+        with mock.patch.object(native_ui, 'wait_for', side_effect=self.read_once):
+            with self.assertRaisesRegex(AssertionError, 'replacement question'):
+                driver.replace('yes')
+        driver.click.assert_not_called()
+
     def test_save_replaces_the_entire_filename_including_its_extension(self):
         driver = object.__new__(native_ui.LinuxUI)
         driver.focus = mock.Mock()
