@@ -11,6 +11,22 @@ import time
 import uuid
 
 
+# The CI fixture extends an already trusted script. It must not teach production
+# code to grant a nonce to arbitrary script tags inserted into an HTML response.
+PROBE_LOADER = b'''
+;(() => {
+  const reportNativeError = message => fetch('/__native/error', {method:'POST',body:JSON.stringify({message})});
+  addEventListener('error', event => {
+    if ((event.filename || event.target?.src || '').includes('/__native/probe.js')) reportNativeError(event.message || 'Native probe failed to load');
+  }, true);
+  addEventListener('unhandledrejection', event => {
+    if (String(event.reason?.stack || '').includes('/__native/probe.js')) reportNativeError(String(event.reason));
+  });
+  import('/__native/probe.js').catch(error => reportNativeError(String(error)));
+})();
+'''
+
+
 class Commands:
     def __init__(self):
         self.pending = queue.Queue()
@@ -154,17 +170,8 @@ def fixture_proxy(upstream, commands):
                         self.wfile.flush()
                     return
                 data = response.read()
-                if kind.startswith('text/html'):
-                    script = b'''<script>
-const reportNativeError = message => fetch('/__native/error', {method:'POST',body:JSON.stringify({message})});
-addEventListener('error', event => {
-  if ((event.filename || event.target?.src || '').includes('/__native/probe.js')) reportNativeError(event.message || 'Native probe failed to load');
-}, true);
-addEventListener('unhandledrejection', event => {
-  if (String(event.reason?.stack || '').includes('/__native/probe.js')) reportNativeError(String(event.reason));
-});
-</script><script type="module" src="/__native/probe.js"></script>'''
-                    data = data.replace(b'</body>', script + b'</body>')
+                if self.path == '/app.js' and kind.startswith(('text/javascript', 'application/javascript')):
+                    data += PROBE_LOADER
                 self.send_response(response.status)
                 for name, value in response.getheaders():
                     if name.lower() not in ('content-length', 'transfer-encoding', 'connection'):

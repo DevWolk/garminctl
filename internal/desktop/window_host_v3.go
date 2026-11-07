@@ -42,7 +42,7 @@ func Run(start func() (*Backend, error)) (runErr error) {
 	if startupErr != nil {
 		assets.set(startupErrorHandler(startupErr))
 	} else {
-		assets.set(Proxy(service.backend.URL, desktopScript))
+		assets.set(proxyWithPageFailure(service.backend.URL, desktopScript, func() { service.ready.Store(false) }))
 	}
 
 	window := host.app.Window.NewWithOptions(windowOptions(startupErr))

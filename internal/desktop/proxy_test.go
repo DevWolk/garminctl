@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DevWolk/garminctl/internal/ship/httpx"
 )
 
 const (
@@ -26,6 +28,7 @@ func TestProxy(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set(httpx.PageNonceHeader, r.Header.Get(httpx.PageNonceHeader))
 		_, _ = w.Write([]byte("<html><body>garminctl</body></html>"))
 	}))
 	t.Cleanup(backend.Close)
@@ -58,8 +61,10 @@ func TestProxy(t *testing.T) {
 				t.Fatalf("status %d, want %d", response.Code, test.status)
 			}
 
-			if test.status == http.StatusOK && !strings.Contains(response.Body.String(), `<script type="module" src="/desktop.js"></script>`) {
-				t.Fatal("native bridge was not injected")
+			if test.status == http.StatusOK {
+				if nonce, ok := nativePageScripts(t, response.Body.String())["/desktop.js"]; !ok || !httpx.ValidPageNonce(nonce) {
+					t.Fatal("native bridge was not injected with its nonce")
+				}
 			}
 		})
 	}

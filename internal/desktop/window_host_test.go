@@ -5,6 +5,8 @@ package desktop
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"testing"
@@ -74,6 +76,44 @@ func TestWindowCloseWaitsForReadyAndFrontendConsent(t *testing.T) {
 
 	if host.quits != 1 || app.beforeClose(t.Context()) {
 		t.Fatal("confirmed close was vetoed or did not quit")
+	}
+}
+
+func TestWindowCanCloseAfterNativePageFailureOnReload(t *testing.T) {
+	t.Parallel()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "text/html")
+		}
+	}))
+	t.Cleanup(backend.Close)
+
+	target, err := url.Parse(backend.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	host := new(fakeWindowHost)
+	app := &App{host: host}
+	app.Ready()
+
+	proxy := proxyWithPageFailure(target, nil, func() { app.ready.Store(false) })
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+windowsDesktopHost+"/", nil)
+	response := httptest.NewRecorder()
+	proxy.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway || app.beforeClose(t.Context()) || len(host.actions) != 0 {
+		t.Fatal("failed reload left the close guard waiting for the absent SPA")
+	}
+
+	// The reused backend still answers; the page failure did not stop it.
+	request.URL.Path = "/api/server"
+	response = httptest.NewRecorder()
+	proxy.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatal("page failure prevented reuse of the backend")
 	}
 }
 

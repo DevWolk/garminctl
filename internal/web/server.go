@@ -177,13 +177,34 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 		return nil, err
 	}
 
-	ui := http.FileServer(http.FS(sub))
-	mux.Handle("/", ui)
-
 	index, err := fs.ReadFile(sub, "index.html")
 	if err != nil {
 		return nil, err
 	}
+
+	native, err := nativeIndex(index)
+	if err != nil {
+		return nil, err
+	}
+
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(httpx.PageNonceHeader) != "" {
+			native.ServeHTTP(w, r)
+			return
+		}
+
+		http.ServeFileFS(w, r, sub, "index.html")
+	}
+	files := http.FileServer(http.FS(sub))
+	ui := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.URL.Path == "/" || r.URL.Path == "/index.html") && r.Header.Get(httpx.PageNonceHeader) != "" {
+			serveIndex(w, r)
+			return
+		}
+
+		files.ServeHTTP(w, r)
+	})
+	mux.Handle("/", ui)
 
 	tabs := map[string]bool{}
 	for _, m := range uiTab.FindAllSubmatch(index, -1) {
@@ -198,7 +219,7 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 			return
 		}
 
-		http.ServeFileFS(w, r, sub, "index.html")
+		serveIndex(w, r)
 	}
 	mux.HandleFunc("GET /{tab}", page)
 	mux.HandleFunc("GET /{tab}/{rest...}", page)

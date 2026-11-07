@@ -26,6 +26,43 @@ function snapshot() {
   };
 }
 
+function expectedEvent(target, name, accept) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      target.removeEventListener(name, receive);
+      reject(new Error(`Required native ${name} event did not arrive`));
+    }, 10000);
+    const receive = event => {
+      if (!accept(event)) return;
+      clearTimeout(timeout);
+      target.removeEventListener(name, receive);
+      resolve(event);
+    };
+    target.addEventListener(name, receive);
+  });
+}
+
+async function inheritedScriptViolation(attack) {
+  // An accessible srcdoc lets the parent observe the real inherited-policy
+  // violation. A blocked opaque frame cannot run its own reporting script.
+  const frame = document.createElement('iframe');
+  const loaded = expectedEvent(frame, 'load', () => true);
+  frame.srcdoc = '<!doctype html><html><body></body></html>';
+  document.body.append(frame);
+  try {
+    await loaded;
+    const child = frame.contentDocument;
+    if (child?.URL !== 'about:srcdoc') throw new Error('CSP probe did not load srcdoc');
+    const blocked = expectedEvent(child, 'securitypolicyviolation', event =>
+      event.blockedURI === 'inline' && event.effectiveDirective.startsWith('script-src'));
+    const script = child.createElement('script');
+    script.textContent = attack;
+    child.body.append(script);
+    const violation = await blocked;
+    return { documentURL: child.URL, directive: violation.effectiveDirective, blockedURI: violation.blockedURI };
+  } finally { frame.remove(); }
+}
+
 async function runtimeProbe() {
   const get = await fetch('/wails/runtime');
   const post = await fetch('/wails/runtime', { method: 'POST', body: '{}' });
@@ -38,23 +75,25 @@ async function runtimeProbe() {
   frame.setAttribute('sandbox', 'allow-scripts');
   const token = crypto.randomUUID();
   const url = new URL('/wails/runtime', location.href).href;
-  const foreign = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Foreign-origin probe did not finish')), 10000);
-    const receive = event => {
-      if (event.source !== frame.contentWindow || event.data?.token !== token) return;
-      clearTimeout(timeout);
-      window.removeEventListener('message', receive);
-      resolve(event.data.outcome);
-    };
-    window.addEventListener('message', receive);
-  });
-  frame.srcdoc = `<script>fetch(${JSON.stringify(url)}, {method:'POST',mode:'no-cors',body:${JSON.stringify(payload)}})
-    .then(r => parent.postMessage({token:${JSON.stringify(token)},outcome:r.type}, '*'))
-    .catch(() => parent.postMessage({token:${JSON.stringify(token)},outcome:'browser-blocked'}, '*'))</script>`;
+  let executed = false;
+  const receive = event => {
+    if (event.source === frame.contentWindow && event.data?.token === token) executed = true;
+  };
+  window.addEventListener('message', receive);
+  const loaded = expectedEvent(frame, 'load', () => true);
+  const attack = `fetch(${JSON.stringify(url)}, {method:'POST',mode:'no-cors',body:${JSON.stringify(payload)}});`;
+  frame.srcdoc = `<script>parent.postMessage({token:${JSON.stringify(token)}}, '*');${attack}</script>`;
   document.body.append(frame);
   try {
-    return { get: get.status, post: post.status, positive: positive.status, foreign: await foreign };
-  } finally { frame.remove(); }
+    await loaded;
+    const csp = await inheritedScriptViolation(attack);
+    // Drain queued postMessage tasks after both positive load/violation events.
+    await pause(0);
+    return { get: get.status, post: post.status, positive: positive.status, foreign: { loaded: true, executed }, csp };
+  } finally {
+    window.removeEventListener('message', receive);
+    frame.remove();
+  }
 }
 
 async function execute(command) {

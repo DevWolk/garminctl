@@ -10,7 +10,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-from native_fixture import Commands, fixture_proxy
+from native_fixture import Commands, PROBE_LOADER, fixture_proxy
 
 
 class NativeFixtureTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class NativeFixtureTests(unittest.TestCase):
             ctypes.c_char_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p),
         ]
         source = Path(__file__).with_name('native-acceptance.js').read_bytes()
-        for code, valid in ((source, True), (source + b'\nconst =', False)):
+        for code, valid in ((source, True), (source + b'\nconst =', False), (PROBE_LOADER, True)):
             with self.subTest(valid=valid):
                 context = engine.jsc_context_new()
                 exception = ctypes.c_void_p()
@@ -37,7 +37,7 @@ class NativeFixtureTests(unittest.TestCase):
                         objects.g_object_unref(exception)
                     objects.g_object_unref(context)
 
-    def test_channel_preserves_server_errors_and_injects_only_html(self):
+    def test_channel_preserves_html_and_loads_probe_from_trusted_app_script(self):
         seen = []
 
         class Backend(BaseHTTPRequestHandler):
@@ -50,6 +50,11 @@ class NativeFixtureTests(unittest.TestCase):
                     body = b'<html><body>real SPA</body></html>'
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html')
+                    self.send_header('X-Garminctl-Page-Nonce', self.headers.get('X-Garminctl-Page-Nonce', ''))
+                elif self.path == '/app.js':
+                    body = b'window.fixtureAppLoaded = true;'
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/javascript')
                 else:
                     body = b'{"error":"fixture failure"}'
                     self.send_response(409)
@@ -64,12 +69,18 @@ class NativeFixtureTests(unittest.TestCase):
         try:
             with fixture_proxy(backend.server_port, Commands()) as port:
                 base = f'http://127.0.0.1:{port}'
-                request = urllib.request.Request(base + '/settings', headers={'Origin': 'wails://localhost'})
+                request = urllib.request.Request(base + '/settings', headers={
+                    'Origin': 'wails://localhost', 'X-Garminctl-Page-Nonce': 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                })
                 with urllib.request.urlopen(request, timeout=5) as response:
                     html = response.read()
                     self.assertEqual(len(html), int(response.headers['Content-Length']))
-                    self.assertIn(b'<body>real SPA', html)
-                    self.assertEqual(html.count(b'src="/__native/probe.js"'), 1)
+                    self.assertEqual(html, b'<html><body>real SPA</body></html>')
+                    self.assertEqual(response.headers['X-Garminctl-Page-Nonce'], 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+                with urllib.request.urlopen(base + '/app.js', timeout=5) as response:
+                    script = response.read()
+                    self.assertTrue(script.startswith(b'window.fixtureAppLoaded = true;'))
+                    self.assertEqual(script.count(b"import('/__native/probe.js')"), 1)
                 with self.assertRaises(urllib.error.HTTPError) as raised:
                     urllib.request.urlopen(base + '/error', timeout=5)
                 error = raised.exception

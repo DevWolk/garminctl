@@ -132,6 +132,10 @@ def runtime_scenarios(commands, driver, app, dump, work, log_path, result):
         assert observed['get'] == 405, observed
         assert observed['post'] == 422, observed
         assert observed['positive'] == 200, observed
+        assert observed['foreign'] == {'loaded': True, 'executed': False}, observed
+        assert observed['csp']['documentURL'] == 'about:srcdoc', observed
+        assert observed['csp']['directive'].startswith('script-src'), observed
+        assert observed['csp']['blockedURI'] == 'inline', observed
         after = log_path.read_text(errors='replace').count('desktop window ready')
         assert after == before + 1, 'Foreign-origin Ready call reached the native service'
     check_scenario(result, 'native-runtime-origin-and-method', runtime)
