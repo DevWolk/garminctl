@@ -105,6 +105,25 @@ class NativeLinuxInputTests(unittest.TestCase):
         close.assert_called_once_with(12345)
         kill.assert_not_called()
 
+    def test_save_waits_for_complete_accessible_input_before_clicking(self):
+        driver = object.__new__(native_ui.LinuxUI)
+        driver.focus = mock.Mock()
+        driver.click = mock.Mock()
+        entry = mock.Mock()
+        entry.queryText.return_value.getText.side_effect = [
+            '/tmp/nativ', '/tmp/native-export.xml',
+        ]
+        entry.__iter__ = mock.Mock(side_effect=lambda: iter([]))
+        dialog = mock.Mock()
+        dialog.__iter__ = mock.Mock(side_effect=lambda: iter([entry]))
+        dialog.queryText.side_effect = NotImplementedError
+        driver.dialog = mock.Mock(return_value=dialog)
+        with mock.patch.object(native_ui.subprocess, 'run'):
+            receipt = driver.save('/tmp/native-export.xml')
+        self.assertEqual(receipt, {'enteredPath': '/tmp/native-export.xml', 'saveButton': True})
+        self.assertEqual(entry.queryText.return_value.getText.call_count, 2)
+        driver.click.assert_called_once_with(dialog, 'Save')
+
 
 class NativeWindowsInputTests(unittest.TestCase):
     def test_menu_timeout_keeps_the_native_stage_diagnostics(self):

@@ -42,7 +42,7 @@ function expectedEvent(target, name, accept) {
   });
 }
 
-async function inheritedScriptViolation(attack) {
+async function inheritedAttributeViolation(attack) {
   // An accessible srcdoc lets the parent observe the real inherited-policy
   // violation. A blocked opaque frame cannot run its own reporting script.
   const frame = document.createElement('iframe');
@@ -55,9 +55,12 @@ async function inheritedScriptViolation(attack) {
     if (child?.URL !== 'about:srcdoc') throw new Error('CSP probe did not load srcdoc');
     const blocked = expectedEvent(child, 'securitypolicyviolation', event =>
       event.blockedURI === 'inline' && event.effectiveDirective.startsWith('script-src'));
-    const script = child.createElement('script');
-    script.textContent = attack;
-    child.body.append(script);
+    // strict-dynamic permits non-parser-inserted scripts from trusted code.
+    // Event attributes stay untrusted even when that code creates the element.
+    const button = child.createElement('button');
+    button.setAttribute('onclick', attack);
+    child.body.append(button);
+    button.click();
     const violation = await blocked;
     return { documentURL: child.URL, directive: violation.effectiveDirective, blockedURI: violation.blockedURI };
   } finally { frame.remove(); }
@@ -86,7 +89,7 @@ async function runtimeProbe() {
   document.body.append(frame);
   try {
     await loaded;
-    const csp = await inheritedScriptViolation(attack);
+    const csp = await inheritedAttributeViolation(attack);
     // Drain queued postMessage tasks after both positive load/violation events.
     await pause(0);
     return { get: get.status, post: post.status, positive: positive.status, foreign: { loaded: true, executed }, csp };

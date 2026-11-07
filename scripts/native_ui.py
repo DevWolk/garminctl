@@ -119,20 +119,28 @@ class LinuxUI:
         subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+a'], check=True, timeout=5)
         subprocess.run(['xdotool', 'type', '--clearmodifiers', '--delay', '0', str(path)], check=True, timeout=5)
         dialog = self.dialog('Save file')
-        pending, observed = [dialog], []
-        while pending:
-            element = pending.pop(0)
-            try:
-                value = element.queryText().getText(0, -1)
-            except Exception:
-                value = None
-            if value == str(path):
-                self.click(dialog, 'Save')
-                return {'enteredPath': value, 'saveButton': True}
-            if value and len(observed) < 10:
-                observed.append(value[:200])
-            pending.extend(list(element))
-        raise AssertionError(f'Save location {str(path)!r} not present in native dialog: {observed}')
+        observed = []
+        def entered_path():
+            pending = [dialog]
+            observed.clear()
+            while pending:
+                element = pending.pop(0)
+                try:
+                    value = element.queryText().getText(0, -1)
+                except Exception:
+                    value = None
+                if value == str(path):
+                    return value
+                if value and len(observed) < 10:
+                    observed.append(value[:200])
+                pending.extend(list(element))
+            return None
+        try:
+            value = wait_for(entered_path, timeout=5)
+        except TimeoutError as error:
+            raise AssertionError(f'Save location {str(path)!r} not present in native dialog: {observed}') from error
+        self.click(dialog, 'Save')
+        return {'enteredPath': value, 'saveButton': True}
 
     def cancel_save(self):
         self.click(self.dialog('Save file'), 'Cancel')
