@@ -218,8 +218,14 @@ def stop_app(app):
         if app.poll() is None:
             if os.name == "nt":
                 result = subprocess.run(["taskkill", "/PID", str(app.pid), "/T", "/F"], capture_output=True, text=True, timeout=10)
-                if result.returncode and app.poll() is None:
-                    raise RuntimeError(result.stdout + result.stderr)
+                if result.returncode:
+                    # taskkill can report an already-exited child before the
+                    # parent's termination becomes observable to Popen.
+                    try:
+                        app.wait(timeout=5)
+                    except subprocess.TimeoutExpired as err:
+                        raise RuntimeError(result.stdout + result.stderr) from err
+                    return
             else:
                 app.terminate()
         try:

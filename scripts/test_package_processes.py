@@ -75,24 +75,33 @@ class WindowsProcessCleanupTests(unittest.TestCase):
         app.wait.assert_called_once_with(timeout=5)
 
     def test_cleanup_failure_is_not_reported_as_success(self):
-        for state, polls, fails in (
-            ('still running', [None, None], True),
-            ('exited during taskkill', [None, 0], False),
-        ):
-            with self.subTest(state=state):
-                app = mock.Mock(pid=321)
-                app.poll.side_effect = polls
-                runner = mock.Mock(return_value=subprocess.CompletedProcess([], 1, 'blocked', 'denied'))
-                platform = SimpleNamespace(run=runner, TimeoutExpired=subprocess.TimeoutExpired)
-                with mock.patch.dict(stop_app.__globals__, os=SimpleNamespace(name='nt'), subprocess=platform):
-                    if fails:
-                        with self.assertRaisesRegex(RuntimeError, 'blockeddenied'):
-                            stop_app(app)
-                        app.wait.assert_not_called()
-                    else:
-                        stop_app(app)
-                        app.wait.assert_called_once_with(timeout=5)
-                runner.assert_called_once()
+        app = mock.Mock(pid=321)
+        app.poll.return_value = None
+        app.wait.side_effect = subprocess.TimeoutExpired('desktop', 5)
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 1, 'blocked', 'denied'))
+        platform = SimpleNamespace(run=runner, TimeoutExpired=subprocess.TimeoutExpired)
+        with mock.patch.dict(stop_app.__globals__, os=SimpleNamespace(name='nt'), subprocess=platform):
+            with self.assertRaisesRegex(RuntimeError, 'blockeddenied') as caught:
+                stop_app(app)
+        app.wait.assert_called_once_with(timeout=5)
+        self.assertIsInstance(caught.exception.__cause__, subprocess.TimeoutExpired)
+        app.kill.assert_not_called()
+        runner.assert_called_once()
+
+    def test_nonzero_taskkill_waits_for_delayed_parent_exit(self):
+        app = mock.Mock(pid=321)
+        app.poll.return_value = None
+        app.wait.return_value = 0
+        runner = mock.Mock(return_value=subprocess.CompletedProcess(
+            [], 1, 'Parent terminated', 'Child has already exited',
+        ))
+        platform = SimpleNamespace(run=runner, TimeoutExpired=subprocess.TimeoutExpired)
+        with mock.patch.dict(stop_app.__globals__, os=SimpleNamespace(name='nt'), subprocess=platform):
+            stop_app(app)
+        app.wait.assert_called_once_with(timeout=5)
+        app.terminate.assert_not_called()
+        app.kill.assert_not_called()
+        runner.assert_called_once()
 
 
 @unittest.skipUnless(sys.platform == "linux", "Linux native-window process groups")
