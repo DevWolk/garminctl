@@ -357,11 +357,12 @@ func architectureCoreImportViolation(from, to string) string {
 
 func architectureApprovedLibrary(from, to string) bool {
 	allow := map[string][]string{
-		"device/mtp": {"github.com/google/gousb"},
-		"ciqstore":   {"golang.org/x/net/html"},
-		"gc":         {"golang.org/x/net/publicsuffix"},
-		"hostfile":   {"golang.org/x/sys/windows"},
-		"hostexec":   {"golang.org/x/sys/windows"},
+		"device/mtp":             {"github.com/google/gousb"},
+		"ciqstore":               {"golang.org/x/net/html"},
+		"gc":                     {"golang.org/x/net/publicsuffix"},
+		"hostfile":               {"golang.org/x/sys/windows"},
+		"hostexec":               {"golang.org/x/sys/windows"},
+		"containers/application": {"golang.org/x/mod/semver"}, // pinned SemVer policy without the Wails runtime
 	}
 	for owner, libraries := range allow {
 		if !architectureWithin(architectureInternal(from), owner) {

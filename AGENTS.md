@@ -155,6 +155,12 @@ See CLAUDE.md for the working rules. Module map:
   undecorated. Three ui adapters
   use the same Actions; app supplies Registry over the existing leased Session.
   HTTP borrows only a current watch, while CLI/MCP require its XML.
+- `internal/containers/application` owns release metadata, the consumer
+  ReleaseFeed port and stateless CheckReleasesAction. Stable is the default;
+  drafts are excluded and SemVer controls candidate/history order. Its scoped
+  x/mod/semver allowance introduces no Wails or watch dependency. The core is
+  not wired into entry points yet; network/cache, staging and native UI remain
+  separate UPD-04 steps. Available is metadata, never an installable package.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
