@@ -159,8 +159,15 @@ See CLAUDE.md for the working rules. Module map:
   ReleaseFeed port and stateless CheckReleasesAction. Stable is the default;
   drafts are excluded and SemVer controls candidate/history order. Its scoped
   x/mod/semver allowance introduces no Wails or watch dependency. The core is
-  not wired into entry points yet; network/cache, staging and native UI remain
-  separate UPD-04 steps. Available is metadata, never an installable package.
+  not wired into entry points yet. App's NewApplicationReleaseCheck maps the
+  Ship metadata client into the Feed without creating a watch runtime.
+  Cache, staging and native UI remain separate UPD-04 steps. Available is
+  metadata, never an installable package.
+- `internal/ship/updatetransport` owns bounded, cancellable GitHub release
+  metadata reads for the compiled repository. It retains raw channel flags;
+  Application owns selection policy. Requests use no cookies or redirects,
+  and pagination never follows response URLs. It imports no feature or Wails
+  runtime. There is no cache, asset downloader or installer in this client.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
