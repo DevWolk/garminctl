@@ -24,6 +24,8 @@ const (
 	secondRelease   = `[{"tag_name":"v1.2.0","name":"Stable","body":"Notes"}]`
 	nextPage        = `<https://api.github.com/repos/DevWolk/garminctl/releases?page=2&per_page=100>; rel="next"`
 	nullJSON        = "null"
+	callerEdit      = "caller edit"
+	selectedName    = "Selected"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -99,7 +101,7 @@ func TestGitHubReleasesMetadataAndPagination(t *testing.T) {
 		t.Fatalf("releases=%+v calls=%d, want %+v and two calls", got, calls, want)
 	}
 
-	got[0].Notes = "caller edit"
+	got[0].Notes = callerEdit
 
 	again, err := source.Releases(t.Context())
 	if err != nil || !reflect.DeepEqual(again, want) || calls != 4 {

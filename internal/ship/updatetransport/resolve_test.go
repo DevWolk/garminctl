@@ -69,7 +69,7 @@ func resolvePair() []updatetransport.AssetRef {
 
 func tagRecord() map[string]any {
 	return map[string]any{
-		"id": 41, "tag_name": tag120, "name": "Selected", "body": "<b>plain notes</b>",
+		"id": 41, "tag_name": tag120, "name": selectedName, "body": "<b>plain notes</b>",
 		"published_at": "2026-11-08T10:00:00Z",
 		"prerelease":   true, "draft": true,
 		"assets_url": "https://untrusted.invalid/assets",
@@ -109,7 +109,7 @@ func TestGitHubResolvePinsTagReleaseIDAndAssetSnapshot(t *testing.T) {
 	want := &updatetransport.ResolvedRelease{
 		ReleaseID: 41,
 		Release: updatetransport.Release{
-			Tag: tag120, Name: "Selected", Notes: "<b>plain notes</b>", Draft: true, Prerelease: true,
+			Tag: tag120, Name: selectedName, Notes: "<b>plain notes</b>", Draft: true, Prerelease: true,
 			PublishedAt: time.Date(2026, 11, 8, 10, 0, 0, 0, time.UTC),
 		},
 		Package: pair[0], Signature: pair[1],
@@ -120,8 +120,8 @@ func TestGitHubResolvePinsTagReleaseIDAndAssetSnapshot(t *testing.T) {
 		t.Fatalf("resolved=%+v calls=%v, want %+v calls=%v", got, calls, want, uris)
 	}
 
-	got.Package.URL = "caller edit"
-	got.Release.Notes = "caller edit"
+	got.Package.URL = callerEdit
+	got.Release.Notes = callerEdit
 
 	again, err := source.Resolve(ctx, setupRequest())
 	if err != nil || !reflect.DeepEqual(again, want) || len(calls) != 6 {

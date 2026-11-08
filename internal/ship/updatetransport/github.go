@@ -1,5 +1,6 @@
-// Package updatetransport reads release metadata and matches package assets
-// without deciding release policy or acquiring a watch session.
+// Package updatetransport reads release metadata, matches package assets and
+// adapts their bounded streams to the pinned headless Wails updater. Release
+// policy, trust configuration and installation belong to its callers.
 package updatetransport
 
 import (

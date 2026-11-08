@@ -21,6 +21,7 @@ import (
 const (
 	architectureModule      = "github.com/DevWolk/garminctl"
 	architectureCGODisabled = "CGO_ENABLED=0"
+	architectureUpdater     = "github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 type architectureView struct {
@@ -356,6 +357,12 @@ func architectureCoreImportViolation(from, to string) string {
 }
 
 func architectureApprovedLibrary(from, to string) bool {
+	// Only the selected-release transport may use the pinned headless updater.
+	// This exact import does not admit its providers or the native runtime.
+	if architectureInternal(from) == "ship/updatetransport" && to == architectureUpdater {
+		return true
+	}
+
 	allow := map[string][]string{
 		"device/mtp":             {"github.com/google/gousb"},
 		"ciqstore":               {"golang.org/x/net/html"},
