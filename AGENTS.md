@@ -172,7 +172,12 @@ See CLAUDE.md for the working rules. Module map:
   for the publishing filenames and supported OS/arch/install kind. It returns
   indexes into the caller's asset snapshot and checks declared sizes; it does
   not fetch, authenticate or install bytes. Release/channel policy stays in
-  Application, and existing entry points do not invoke the matcher yet.
+  Application. Resolve checks the selected tag, lists assets by its numeric
+  release ID and returns copies of the matched package/signature references.
+  It bounds all pages, rejects duplicate IDs and requires canonical repository
+  asset URLs; inline assets and response URLs never choose an endpoint.
+  Resolved metadata is not authenticated or installable. Existing entry points
+  do not invoke Resolve or the matcher yet.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.

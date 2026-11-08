@@ -43,7 +43,7 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("GitHub releases: HTTP %d (%s)", e.StatusCode, http.StatusText(e.StatusCode))
 }
 
-// GitHub reads the compiled garminctl repository's public release history.
+// GitHub reads public release and asset metadata from the compiled repository.
 type GitHub struct{ client *http.Client }
 
 // NewGitHub borrows the client's transport, with bounded time and no redirects.
@@ -102,9 +102,28 @@ func (g *GitHub) Releases(ctx context.Context) ([]Release, error) {
 func (g *GitHub) page(ctx context.Context, page int) ([]Release, bool, error) {
 	endpoint := releasesEndpoint + "?per_page=" + strconv.Itoa(pageSize) + "&page=" + strconv.Itoa(page)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	data, headers, err := g.getMetadata(ctx, endpoint)
 	if err != nil {
 		return nil, false, err
+	}
+
+	items, err := readReleases(data)
+	if err != nil {
+		return nil, false, err
+	}
+
+	next, err := hasNextPage(headers.Values("Link"))
+	if err != nil {
+		return nil, false, err
+	}
+
+	return items, next, nil
+}
+
+func (g *GitHub) getMetadata(ctx context.Context, endpoint string) ([]byte, http.Header, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -113,28 +132,23 @@ func (g *GitHub) page(ctx context.Context, page int) ([]Release, bool, error) {
 
 	resp, err := g.client.Do(req)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, &StatusError{StatusCode: resp.StatusCode}
+		return nil, nil, &StatusError{StatusCode: resp.StatusCode}
 	}
 
-	items, err := readReleases(resp.Body)
+	data, err := readMetadata(resp.Body)
 	if err != nil {
-		return nil, false, err
+		return nil, nil, err
 	}
 
-	next, err := hasNextPage(resp.Header.Values("Link"))
-	if err != nil {
-		return nil, false, err
-	}
-
-	return items, next, nil
+	return data, resp.Header, nil
 }
 
-func readReleases(body io.Reader) ([]Release, error) {
+func readMetadata(body io.Reader) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(body, maxPageBytes+1))
 	if err != nil {
 		return nil, err
@@ -144,6 +158,10 @@ func readReleases(body io.Reader) ([]Release, error) {
 		return nil, errors.New("GitHub release page exceeds the byte limit")
 	}
 
+	return data, nil
+}
+
+func readReleases(data []byte) ([]Release, error) {
 	var items []Release
 	if err := json.Unmarshal(data, &items); err != nil {
 		return nil, fmt.Errorf("decode GitHub releases: %w", err)

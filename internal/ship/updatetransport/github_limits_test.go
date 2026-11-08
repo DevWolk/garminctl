@@ -20,7 +20,7 @@ func TestGitHubReleasesRejectsInvalidOrExcessivePages(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, link string
 	}{
-		{name: "null array", body: "null"},
+		{name: "null array", body: nullJSON},
 		{name: "object", body: "{}"},
 		{name: "trailing value", body: "[] []"},
 		{name: "invalid JSON", body: "["},

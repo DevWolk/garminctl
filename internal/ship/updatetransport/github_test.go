@@ -23,6 +23,7 @@ const (
 	firstRelease    = `[{"tag_name":"v2.0.0-beta.1","name":"Preview","body":"<b>literal notes</b>","prerelease":true,"published_at":"2026-11-07T12:00:00Z"},{"tag_name":"v9.0.0","draft":true,"name":null,"body":null,"published_at":null}]`
 	secondRelease   = `[{"tag_name":"v1.2.0","name":"Stable","body":"Notes"}]`
 	nextPage        = `<https://api.github.com/repos/DevWolk/garminctl/releases?page=2&per_page=100>; rel="next"`
+	nullJSON        = "null"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -39,18 +40,24 @@ func metadataClient(t *testing.T, handler http.HandlerFunc) *http.Client {
 			t.Errorf("unexpected metadata request: %s %s", r.Method, r.URL)
 		}
 
-		if r.Header.Get("Accept") != "application/vnd.github+json" ||
-			r.Header.Get("X-GitHub-Api-Version") != "2026-03-10" ||
-			r.Header.Get("User-Agent") != "garminctl" ||
-			r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
-			t.Errorf("unexpected metadata headers: %v", r.Header)
-		}
+		checkMetadataHeaders(t, r)
 
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, r)
 
 		return recorder.Result(), nil
 	})}
+}
+
+func checkMetadataHeaders(t *testing.T, r *http.Request) {
+	t.Helper()
+
+	if r.Header.Get("Accept") != "application/vnd.github+json" ||
+		r.Header.Get("X-GitHub-Api-Version") != "2026-03-10" ||
+		r.Header.Get("User-Agent") != "garminctl" ||
+		r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+		t.Errorf("unexpected metadata headers: %v", r.Header)
+	}
 }
 
 func TestGitHubReleasesMetadataAndPagination(t *testing.T) {
