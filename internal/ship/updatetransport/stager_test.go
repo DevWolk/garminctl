@@ -40,16 +40,35 @@ func stageTestPublicKey() ed25519.PublicKey {
 }
 
 func TestMain(m *testing.M) {
-	if len(os.Args) != 2 || os.Args[1] != updatetransport.StageCommand {
+	if len(os.Args) != 2 || (os.Args[1] != updatetransport.StageCommand && os.Args[1] != updatetransport.VerifyCommand) {
 		os.Exit(m.Run())
 	}
 
-	if err := stageTestChild(); err != nil {
+	worker := stageTestChild
+	if os.Args[1] == updatetransport.VerifyCommand {
+		worker = verifyTestChild
+	}
+
+	if err := worker(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
 	os.Exit(0)
+}
+
+func verifyTestChild() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	return updatetransport.RunVerifyWorker(context.Background(), updatetransport.WorkerConfig{
+		Directory: filepath.Dir(executable), BuildVersion: stageTestVersion, PublicKey: stageTestPublicKey(),
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("offline worker attempted network")
+		})},
+	}, os.Stdin, os.Stdout)
 }
 
 func stageTestChild() error {

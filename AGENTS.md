@@ -4,6 +4,8 @@ See CLAUDE.md for the working rules. Module map:
 
 - `cmd/garminctl`: `main.go` holds the build version (`-X main.version`) and
   dispatches the private `_application-stage` worker before ordinary commands.
+  `_application-verify` uses the same bounded protocol with a local-only asset
+  source; neither command accepts extra arguments or a request-supplied key.
   `main.updatePublicKey` is a compiled-only base64 Ed25519 public key; empty
   builds refuse staging. The worker runs only in a marked private cache
   operation, without watch ownership, a native window or installer execution.
@@ -202,6 +204,14 @@ See CLAUDE.md for the working rules. Module map:
   StagedPackage owns its operation until Close; UI/install permission and a
   durable offline catalog remain separate. Application UI does not invoke
   these services yet; app supplies trusted CLI/version/key/cache composition.
+  PackageCache retains package/signature pairs under application-packages,
+  apart from application-staging operations. Put verifies copied bytes before
+  whole-directory publication. List returns unverified metadata; Open uses a
+  fresh cached CLI and the current compiled key to verify offline, returning
+  an independently owned StagedPackage copy. The local asset transport never
+  falls back to HTTP. Manifests have bounded reads and safe hex IDs; normal
+  errors clean only owned pending/operation directories. No automatic eviction,
+  process-crash sweep, installation or UI binding is added by this service.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.

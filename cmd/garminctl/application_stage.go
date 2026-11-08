@@ -17,7 +17,18 @@ import (
 var updatePublicKey string
 
 func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
-	if len(args) == 0 || args[0] != app.ApplicationStageCommand {
+	if len(args) == 0 {
+		return cli.Run(version, args, stdout, stderr)
+	}
+
+	var worker func(context.Context, string, string, io.Reader, io.Writer) error
+
+	switch args[0] {
+	case app.ApplicationStageCommand:
+		worker = app.RunApplicationStage
+	case app.ApplicationVerifyCommand:
+		worker = app.RunApplicationVerify
+	default:
 		return cli.Run(version, args, stdout, stderr)
 	}
 
@@ -28,5 +39,5 @@ func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return app.RunApplicationStage(ctx, version, updatePublicKey, input, stdout)
+	return worker(ctx, version, updatePublicKey, input, stdout)
 }

@@ -17,6 +17,20 @@ import (
 // ApplicationStageCommand is a private subprocess protocol, not user install API.
 const ApplicationStageCommand = updatetransport.StageCommand
 
+// ApplicationVerifyCommand is the private offline-verification subprocess.
+const ApplicationVerifyCommand = updatetransport.VerifyCommand
+
+// NewApplicationPackageCache retains packages separately from stage operations.
+// Both factories require the same compiled key and create no watch runtime.
+func NewApplicationPackageCache(cliPath, version, compiledKey string) (*updatetransport.PackageCache, error) {
+	stager, err := NewApplicationStager(cliPath, version, compiledKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return updatetransport.NewPackageCache(filepath.Join(paths.Cache(), "application-packages"), stager)
+}
+
 // NewApplicationStager binds a trusted local CLI/version and compiled key to the
 // application's private cache, without creating a watch runtime or doing IO.
 func NewApplicationStager(cliPath, version, compiledKey string) (*updatetransport.Stager, error) {
@@ -34,6 +48,15 @@ func NewApplicationStager(cliPath, version, compiledKey string) (*updatetranspor
 // RunApplicationStage is the compiled CLI worker composition. It cannot stage
 // beside an installed CLI: only one marked operation under our cache is valid.
 func RunApplicationStage(ctx context.Context, version, compiledKey string, input io.Reader, output io.Writer) error {
+	return runApplicationWorker(ctx, version, compiledKey, input, output, updatetransport.RunStageWorker)
+}
+
+// RunApplicationVerify authenticates retained bytes without using the network.
+func RunApplicationVerify(ctx context.Context, version, compiledKey string, input io.Reader, output io.Writer) error {
+	return runApplicationWorker(ctx, version, compiledKey, input, output, updatetransport.RunVerifyWorker)
+}
+
+func runApplicationWorker(ctx context.Context, version, compiledKey string, input io.Reader, output io.Writer, worker func(context.Context, updatetransport.WorkerConfig, io.Reader, io.Writer) error) error {
 	key, err := applicationStageKey(compiledKey)
 	if err != nil {
 		return err
@@ -49,7 +72,7 @@ func RunApplicationStage(ctx context.Context, version, compiledKey string, input
 		return err
 	}
 
-	return updatetransport.RunStageWorker(ctx, updatetransport.WorkerConfig{
+	return worker(ctx, updatetransport.WorkerConfig{
 		BuildVersion: version, PublicKey: key, Directory: directory,
 	}, input, output)
 }

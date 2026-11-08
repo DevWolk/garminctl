@@ -62,7 +62,11 @@ func NewStager(config StagerConfig) (*Stager, error) {
 
 // Stage copies the trusted CLI, streams bounded IPC and joins before returning.
 // Cancellation/failure removes the operation; success transfers it to the result.
-func (s *Stager) Stage(ctx context.Context, target MatchRequest, release ResolvedRelease, progress func(StageProgress)) (result *StagedPackage, err error) {
+func (s *Stager) Stage(ctx context.Context, target MatchRequest, release ResolvedRelease, progress func(StageProgress)) (*StagedPackage, error) {
+	return s.run(ctx, target, release, false, nil, progress)
+}
+
+func (s *Stager) run(ctx context.Context, target MatchRequest, release ResolvedRelease, offline bool, prepare func(context.Context, string) error, progress func(StageProgress)) (result *StagedPackage, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -88,12 +92,8 @@ func (s *Stager) Stage(ctx context.Context, target MatchRequest, release Resolve
 		}
 	}()
 
-	operation, err := newOperationID()
+	operation, err := prepareStageOperation(ctx, directory, prepare)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := writeOperationMarker(directory, operation); err != nil {
 		return nil, err
 	}
 	// Display fields cannot inflate the worker protocol; they remain in the result.
@@ -115,7 +115,7 @@ func (s *Stager) Stage(ctx context.Context, target MatchRequest, release Resolve
 	diagnostics := &stageDiagnostics{}
 
 	runErr := runStageProcess(ctx, func() *exec.Cmd {
-		cmd := exec.CommandContext(ctx, cli, StageCommand)
+		cmd := cachedCLICommand(ctx, cli, offline)
 		cmd.Dir = directory
 		cmd.Stdin = bytes.NewReader(input)
 		cmd.Stdout = output
@@ -191,4 +191,31 @@ func (p *StagedPackage) Release() ResolvedRelease { return p.release }
 func (p *StagedPackage) Close() error {
 	p.once.Do(func() { p.closeErr = os.RemoveAll(p.directory) })
 	return p.closeErr
+}
+
+func cachedCLICommand(ctx context.Context, cli string, offline bool) *exec.Cmd {
+	if offline {
+		return exec.CommandContext(ctx, cli, VerifyCommand)
+	}
+
+	return exec.CommandContext(ctx, cli, StageCommand)
+}
+
+func prepareStageOperation(ctx context.Context, directory string, prepare func(context.Context, string) error) (string, error) {
+	operation, err := newOperationID()
+	if err != nil {
+		return "", err
+	}
+
+	if err := writeOperationMarker(directory, operation); err != nil {
+		return "", err
+	}
+
+	if prepare != nil {
+		if err := prepare(ctx, directory); err != nil {
+			return "", err
+		}
+	}
+
+	return operation, nil
 }

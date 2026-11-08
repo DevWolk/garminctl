@@ -12,22 +12,34 @@ import (
 func TestCLIPrivateStageRefusesUnconfiguredKey(t *testing.T) {
 	t.Parallel()
 
-	var stdout, stderr bytes.Buffer
+	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
 
-	err := runCLI([]string{app.ApplicationStageCommand}, strings.NewReader(`{"publicKey":"untrusted"}`), &stdout, &stderr)
-	if err == nil || !strings.Contains(err.Error(), "compiled public key") || stdout.Len() != 0 {
-		t.Fatalf("error=%v stdout=%q", err, stdout.String())
+			var stdout, stderr bytes.Buffer
+
+			err := runCLI([]string{command}, strings.NewReader(`{"publicKey":"untrusted"}`), &stdout, &stderr)
+			if err == nil || !strings.Contains(err.Error(), "compiled public key") || stdout.Len() != 0 {
+				t.Fatalf("error=%v stdout=%q", err, stdout.String())
+			}
+		})
 	}
 }
 
 func TestCLIPrivateStageRejectsArguments(t *testing.T) {
 	t.Parallel()
 
-	var stdout, stderr bytes.Buffer
+	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
 
-	err := runCLI([]string{app.ApplicationStageCommand, "--public-key=untrusted"}, strings.NewReader(""), &stdout, &stderr)
-	if clix.ExitCode(err) != 2 || stdout.Len() != 0 {
-		t.Fatalf("error=%v stdout=%q", err, stdout.String())
+			var stdout, stderr bytes.Buffer
+
+			err := runCLI([]string{command, "--public-key=untrusted"}, strings.NewReader(""), &stdout, &stderr)
+			if clix.ExitCode(err) != 2 || stdout.Len() != 0 {
+				t.Fatalf("error=%v stdout=%q", err, stdout.String())
+			}
+		})
 	}
 }
 

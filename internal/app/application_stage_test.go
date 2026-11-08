@@ -45,8 +45,16 @@ func TestApplicationStageBuildKeyCannotComeFromInput(t *testing.T) {
 				t.Fatal("invalid compiled key accepted")
 			}
 
+			if _, err := NewApplicationPackageCache("trusted-cli", "dev", encoded); err == nil {
+				t.Fatal("cache accepted missing/invalid compiled key")
+			}
+
 			if err := RunApplicationStage(context.Background(), "dev", encoded, bytes.NewBufferString(`{"publicKey":"ignored"}`), io.Discard); err == nil {
 				t.Fatal("request chose its own key")
+			}
+
+			if err := RunApplicationVerify(t.Context(), "dev", encoded, bytes.NewBufferString(`{"publicKey":"ignored"}`), io.Discard); err == nil {
+				t.Fatal("offline request chose its own key")
 			}
 		})
 	}

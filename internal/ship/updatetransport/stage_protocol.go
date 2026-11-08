@@ -13,6 +13,9 @@ import (
 // StageCommand is the private CLI subprocess entry point, not an installer.
 const StageCommand = "_application-stage"
 
+// VerifyCommand replays retained bytes through the compiled CLI, without network.
+const VerifyCommand = "_application-verify"
+
 const (
 	stageProtocol   = 1
 	maxStageRequest = 64 << 10
