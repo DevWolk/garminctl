@@ -1,5 +1,5 @@
-// Package updatetransport reads application release metadata without deciding
-// release policy or acquiring a watch session.
+// Package updatetransport reads release metadata and matches package assets
+// without deciding release policy or acquiring a watch session.
 package updatetransport
 
 import (

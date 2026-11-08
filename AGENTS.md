@@ -168,6 +168,11 @@ See CLAUDE.md for the working rules. Module map:
   Application owns selection policy. Requests use no cookies or redirects,
   and pagination never follows response URLs. It imports no feature or Wails
   runtime. There is no cache, asset downloader or installer in this client.
+  Its pure MatchAssets function selects exactly one package and .sig sibling
+  for the publishing filenames and supported OS/arch/install kind. It returns
+  indexes into the caller's asset snapshot and checks declared sizes; it does
+  not fetch, authenticate or install bytes. Release/channel policy stays in
+  Application, and existing entry points do not invoke the matcher yet.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
