@@ -151,3 +151,19 @@ func assertFreshReleaseHistory(t *testing.T, fresh *application.ReleaseHistoryRe
 		t.Fatalf("fresh=%+v", fresh)
 	}
 }
+
+func TestReleaseHistoryNilFeedRetainsEmptyOfflineHistory(t *testing.T) {
+	t.Parallel()
+
+	store := &historyStore{}
+	request := application.CheckRequest{CurrentVersion: version100}
+
+	if _, err := application.NewCheckReleaseHistoryAction(historyFeed{}, store).Run(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := application.NewCheckReleaseHistoryAction(historyFeed{err: errors.New("offline")}, store).Run(t.Context(), request)
+	if err != nil || result == nil || !result.FromCache || result.History == nil || len(result.History) != 0 {
+		t.Fatalf("empty offline history=%+v error=%v", result, err)
+	}
+}

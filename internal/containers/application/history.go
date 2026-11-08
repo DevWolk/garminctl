@@ -78,6 +78,9 @@ func (a *CheckReleaseHistoryAction) Run(ctx context.Context, request CheckReques
 	}
 
 	snapshot := ReleaseSnapshot{CheckedAt: time.Now().UTC(), Releases: slices.Clone(releases)}
+	if snapshot.Releases == nil {
+		snapshot.Releases = []Release{}
+	}
 
 	result := &ReleaseHistoryResult{CheckResult: *selected, CheckedAt: snapshot.CheckedAt}
 	if err := a.store.Save(ctx, snapshot); err != nil {
