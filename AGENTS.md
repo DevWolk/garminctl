@@ -174,6 +174,13 @@ See CLAUDE.md for the working rules. Module map:
   The existing CheckReleasesAction keeps its error contract. App wires the
   new history Action to an isolated store without creating a watch runtime.
   Native UI is still unwired. Available is metadata, never an installable package.
+  ReadInventoryAction owns installation classification and independent desktop,
+  CLI and backend build labels over caller-owned observation ports. App composes
+  read-only hostinfo and bounded loopback /api/server metadata. Unknown/conflicting
+  ownership stays unknown; these observations grant no install permission.
+- `internal/ship/hostinfo` owns regular executable discovery, a bounded CLI
+  version child and read-only dpkg/rpm/Windows InstallDir queries. It imports
+  no Application policy or Wails runtime. Native UI is not wired to it yet.
 - `internal/ship/updatetransport` owns bounded, cancellable GitHub release
   metadata reads for the compiled repository. It retains raw channel flags;
   Application owns selection policy. Requests use no cookies or redirects,

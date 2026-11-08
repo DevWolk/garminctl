@@ -362,6 +362,10 @@ func architectureApprovedLibrary(from, to string) bool {
 	if architectureInternal(from) == "ship/updatetransport" && to == architectureUpdater {
 		return true
 	}
+	// Read-only installation inventory may query this exact registry package.
+	if architectureInternal(from) == "ship/hostinfo" && to == "golang.org/x/sys/windows/registry" {
+		return true
+	}
 
 	allow := map[string][]string{
 		"device/mtp":             {"github.com/google/gousb"},
