@@ -22,6 +22,10 @@ func (f applicationReleaseFeed) Releases(ctx context.Context) ([]application.Rel
 		return nil, err
 	}
 
+	return applicationReleases(items), nil
+}
+
+func applicationReleases(items []updatetransport.Release) []application.Release {
 	releases := make([]application.Release, len(items))
 	for i, item := range items {
 		releases[i] = application.Release{
@@ -30,5 +34,5 @@ func (f applicationReleaseFeed) Releases(ctx context.Context) ([]application.Rel
 		}
 	}
 
-	return releases, nil
+	return releases
 }

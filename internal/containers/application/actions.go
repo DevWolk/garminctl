@@ -44,6 +44,10 @@ func (a *CheckReleasesAction) Run(ctx context.Context, request CheckRequest) (*C
 		return nil, fmt.Errorf("check application releases: %w", err)
 	}
 
+	return selectReleaseSnapshot(ctx, request, current, releases)
+}
+
+func selectReleaseSnapshot(ctx context.Context, request CheckRequest, current string, releases []Release) (*CheckResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

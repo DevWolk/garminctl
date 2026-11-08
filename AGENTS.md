@@ -166,8 +166,12 @@ See CLAUDE.md for the working rules. Module map:
   x/mod/semver allowance introduces no Wails or watch dependency. The core is
   not wired into entry points yet. App's NewApplicationReleaseCheck maps the
   Ship metadata client into the Feed without creating a watch runtime.
-  Cache, staging and native UI remain separate UPD-04 steps. Available is
-  metadata, never an installable package.
+  CheckReleaseHistoryAction adds explicit cached fallback, its successful-check
+  timestamp and refresh/cache-write errors. It reapplies channel policy to raw
+  saved releases and does not convert caller cancellation into cached success.
+  The existing CheckReleasesAction keeps its error contract. App wires the
+  new history Action to an isolated store without creating a watch runtime.
+  Native UI is still unwired. Available is metadata, never an installable package.
 - `internal/ship/updatetransport` owns bounded, cancellable GitHub release
   metadata reads for the compiled repository. It retains raw channel flags;
   Application owns selection policy. Requests use no cookies or redirects,
@@ -186,8 +190,12 @@ See CLAUDE.md for the working rules. Module map:
   raw sibling signature and streaming only the owned package URL. It requires
   exact actual size, bounds reads/time and strips credentials on HTTPS-only
   redirects. The staging caller must supply the compiled trust key to Wails;
-  Provider Download success alone is not authentication. There is no cache,
-  installer or new watch owner. Stager runs a private cached CLI with bounded
+  Provider Download success alone is not authentication. HistoryCache stores
+  versioned display metadata for the compiled source in application-history,
+  bounded to 20 MiB/1000 records with private atomic file replacement. Missing,
+  corrupt, foreign-source or unsupported snapshots fail explicitly. Package
+  retention/recovery storage is separate; there is no installer or new watch
+  owner. Stager runs a private cached CLI with bounded
   versioned IPC, operation/build/key identity and joined cancellation/cleanup.
   Worker retains the original signed stream and .sig before Wails archive
   extraction, then parent verifies the retained digest after child exit.
