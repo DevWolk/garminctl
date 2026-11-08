@@ -3,6 +3,11 @@
 See CLAUDE.md for the working rules. Module map:
 
 - `cmd/garminctl`: `main.go` holds the build version (`-X main.version`) and
+  dispatches the private `_application-stage` worker before ordinary commands.
+  `main.updatePublicKey` is a compiled-only base64 Ed25519 public key; empty
+  builds refuse staging. The worker runs only in a marked private cache
+  operation, without watch ownership, a native window or installer execution.
+  Normal dispatch
   calls `cli.Run` in `internal/app/cli`, which parses global flags (output goes
   to the `cli` writers so tests can run commands over a dump) and dispatches through
   `plainCommand` (no watch: devices, desktop, serve, mcp, autostart, cloud login) and
@@ -182,8 +187,13 @@ See CLAUDE.md for the working rules. Module map:
   exact actual size, bounds reads/time and strips credentials on HTTPS-only
   redirects. The staging caller must supply the compiled trust key to Wails;
   Provider Download success alone is not authentication. There is no cache,
-  installer or new watch owner. Existing entry points do not invoke Provider,
-  Resolve or the matcher yet.
+  installer or new watch owner. Stager runs a private cached CLI with bounded
+  versioned IPC, operation/build/key identity and joined cancellation/cleanup.
+  Worker retains the original signed stream and .sig before Wails archive
+  extraction, then parent verifies the retained digest after child exit.
+  StagedPackage owns its operation until Close; UI/install permission and a
+  durable offline catalog remain separate. Application UI does not invoke
+  these services yet; app supplies trusted CLI/version/key/cache composition.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.

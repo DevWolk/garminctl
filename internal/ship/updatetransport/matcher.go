@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const maxPackageBytes = 512 << 20
+const (
+	maxPackageBytes = 512 << 20
+	platformWindows = "windows"
+)
 
 // Match the publishing workflow's admitted spelling, without imposing channel
 // or semantic-version precedence policy on a selected tag.
@@ -34,10 +37,10 @@ type Asset struct {
 // MatchRequest names an already selected release tag and the installation.
 // Semantic version and channel policy belong to Application, not the matcher.
 type MatchRequest struct {
-	ReleaseTag   string
-	OS           string
-	Arch         string
-	Installation InstallKind
+	ReleaseTag   string      `json:"releaseTag"`
+	OS           string      `json:"os"`
+	Arch         string      `json:"arch"`
+	Installation InstallKind `json:"installation"`
 }
 
 // AssetMatch contains indexes into the supplied, unchanged asset snapshot.
@@ -81,7 +84,7 @@ func packageFilename(request MatchRequest) (string, error) {
 		return "", errors.New("release tag is outside the publishing filename contract")
 	}
 
-	if request.OS != "windows" && request.OS != "linux" {
+	if request.OS != platformWindows && request.OS != "linux" {
 		return "", errors.New("unsupported package operating system")
 	}
 
@@ -92,7 +95,7 @@ func packageFilename(request MatchRequest) (string, error) {
 	version := strings.TrimPrefix(request.ReleaseTag, "v")
 	switch request.Installation {
 	case InstallSetup:
-		if request.OS != "windows" || request.Arch != "amd64" {
+		if request.OS != platformWindows || request.Arch != "amd64" {
 			return "", errors.New("setup requires windows amd64")
 		}
 
@@ -105,7 +108,7 @@ func packageFilename(request MatchRequest) (string, error) {
 		return "garminctl_" + strings.ReplaceAll(version, "-", ".") + "_linux_amd64." + string(request.Installation), nil
 	case InstallPortable:
 		extension := ".tar.gz"
-		if request.OS == "windows" {
+		if request.OS == platformWindows {
 			extension = ".zip"
 		}
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/DevWolk/garminctl/internal/app/cli"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
 )
 
@@ -13,7 +12,7 @@ import (
 var version = "dev"
 
 func main() {
-	err := cli.Run(version, os.Args[1:], os.Stdout, os.Stderr)
+	err := runCLI(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 
 	code := clix.ExitCode(err)
 	if code != 0 {
