@@ -124,14 +124,14 @@ func (p applicationBackendProbe) Inspect(ctx context.Context) (application.Backe
 
 	var info struct {
 		Application string `json:"application"`
-		DesktopAPI  int    `json:"desktopAPI"`
+		DesktopAPI  string `json:"desktopAPI"`
 		Version     string `json:"version"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
 		return result, err
 	}
 
-	if info.Application != "garminctl" || info.DesktopAPI != 1 || strings.TrimSpace(info.Version) == "" || len(info.Version) > 256 || strings.ContainsAny(info.Version, "\r\n") {
+	if info.Application != "garminctl" || info.DesktopAPI != "1" || strings.TrimSpace(info.Version) == "" || len(info.Version) > 256 || strings.ContainsAny(info.Version, "\r\n") {
 		return result, errors.New("backend metadata is not a compatible garminctl server")
 	}
 

@@ -88,7 +88,7 @@ func TestApplicationInventoryReadsSeparateLoopbackBackendVersion(t *testing.T) {
 			t.Errorf("unexpected metadata request %s %s", r.Method, r.URL)
 		}
 
-		_, _ = io.WriteString(w, `{"application":"garminctl","desktopAPI":1,"version":"v1.2.2","extra":"existing metadata may grow"}`)
+		_, _ = io.WriteString(w, `{"application":"garminctl","desktopAPI":"1","version":"v1.2.2","extra":"existing metadata may grow"}`)
 	}))
 	t.Cleanup(server.Close)
 
@@ -138,7 +138,7 @@ func TestApplicationInventoryRejectsUnsafeEndpointBeforeIO(t *testing.T) {
 func TestApplicationInventoryBoundsAndValidatesBackendMetadata(t *testing.T) {
 	t.Parallel()
 
-	for _, body := range []string{`{"application":"other","desktopAPI":1,"version":"v1"}`, `{"application":"garminctl","desktopAPI":2,"version":"v1"}`, `{"application":"garminctl","desktopAPI":1}`, `{"application":"garminctl","desktopAPI":1,"version":"v1"} {}`, `{"application":"garminctl","desktopAPI":1,"version":"v1"}` + strings.Repeat(" ", 65<<10)} {
+	for _, body := range []string{`{"application":"other","desktopAPI":"1","version":"v1"}`, `{"application":"garminctl","desktopAPI":"2","version":"v1"}`, `{"application":"garminctl","desktopAPI":"1"}`, `{"application":"garminctl","desktopAPI":"1","version":"v1"} {}`, `{"application":"garminctl","desktopAPI":"1","version":"v1"}` + strings.Repeat(" ", 65<<10)} {
 		t.Run(body[:min(len(body), 45)], func(t *testing.T) {
 			t.Parallel()
 
