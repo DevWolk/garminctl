@@ -20,6 +20,9 @@ import (
 
 var version = "dev"
 
+// updatePublicKey is compiled into both binaries; requests cannot set it.
+var updatePublicKey string
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -45,6 +48,6 @@ func run() error {
 	}
 
 	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(scope desktop.Scope) []application.Service {
-		return []application.Service{app.NewApplicationNativeService(version, scope)}
+		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope)}
 	})
 }

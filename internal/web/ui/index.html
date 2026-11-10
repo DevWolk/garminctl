@@ -344,6 +344,16 @@
           <h3 id="application-release-title"></h3>
           <p id="application-release-date" class="hint"></p>
           <div id="application-notes" class="application-notes" tabindex="0" role="region" aria-labelledby="application-release-title"></div>
+          <h3>Release package</h3>
+          <p class="hint">Download and verify the selected release. Packages are saved locally; this action does not install the application.</p>
+          <div class="toolbar">
+            <button class="btn" type="button" id="application-download-start" disabled>Download selected release</button>
+            <button class="btn" type="button" id="application-download-cancel" hidden>Cancel download</button>
+          </div>
+          <p id="application-download-release" class="hint"></p>
+          <progress id="application-download-progress" aria-label="Package download" hidden></progress>
+          <p id="application-download-detail" class="hint"></p>
+          <p id="application-download-status" class="hint" role="status" aria-live="polite"></p>
         </div>
       </div>
       <p class="hint"><a href="https://github.com/DevWolk/garminctl/releases" target="_blank" rel="noopener noreferrer">Browse all releases on GitHub</a></p>
@@ -479,6 +489,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="/face.js"></script>
+<script src="/application-download.js"></script>
 <script src="/application.js"></script>
 <script src="/app.js"></script>
 <script src="/mcp.js"></script>

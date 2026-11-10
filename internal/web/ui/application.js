@@ -11,12 +11,25 @@
   let active = false;
   let busy = false;
   let history = null;
+  const downloads = window.createApplicationDownload({
+    selection: () => {
+      const release = history?.history?.[Number(choices.value)];
+      return release ? {tag: release.tag, includePrerelease: channel.checked} : null;
+    },
+    busy: () => busy,
+    changed: updateControls,
+  });
+  function updateControls() {
+    check.disabled = channel.disabled = busy || downloads.active();
+    choices.disabled = !history?.history?.length || busy || downloads.active();
+    downloads.update();
+  }
 
   function text(name, value) { get(name).textContent = value; }
   function errorText(error) { return error?.message || String(error); }
   function setBusy(value) {
     busy = value;
-    check.disabled = channel.disabled = value;
+    updateControls();
     get('progress').hidden = !value;
     page.setAttribute('aria-busy', String(value));
   }
@@ -56,7 +69,7 @@
       option.textContent = release.tag + (release.prerelease ? ' (prerelease)' : '');
       choices.append(option);
     }
-    choices.disabled = !result?.history?.length;
+    updateControls();
     choices.value = '0';
     notes();
     if (!result) {
@@ -68,7 +81,7 @@
     status.textContent = [available, (result.fromCache ? 'Saved history. Last checked: ' : 'Checked: ') + checked + '.', result.refreshError ? 'Could not refresh: ' + result.refreshError : '', result.cacheError ? 'Could not save history: ' + result.cacheError : ''].filter(Boolean).join(' ');
   }
   async function readHistory(refresh) {
-    if (!native || busy) return;
+    if (!native || busy || downloads.active()) return;
     setBusy(true);
     try {
       renderHistory(await (refresh ? native.check(channel.checked) : native.history(channel.checked)));
@@ -84,6 +97,7 @@
     const results = await Promise.allSettled([
       Promise.resolve().then(() => native.info()),
       Promise.resolve().then(() => native.history(channel.checked)),
+      downloads.refresh(),
     ]);
     if (results[0].status === 'fulfilled') inventory(results[0].value);
     else text('inventory-note', 'Could not read installed versions: ' + errorText(results[0].reason));
@@ -108,13 +122,14 @@
   choices.addEventListener('change', notes);
   window.applicationPage = {
     activate() {
-      if (active) return;
+      if (active) return native ? downloads.refresh() : undefined;
       active = true;
       return native ? readNative() : readBrowser();
     },
     attach(bridge) {
       if (native) return;
       native = bridge;
+      downloads.attach(bridge);
       page.hidden = false;
       get('browser').hidden = true;
       if (active) return readNative();

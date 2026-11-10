@@ -128,7 +128,12 @@ stable releases are selected by default. **Include prereleases** changes which
 saved releases are shown without another network request. Saved history includes
 the time of its last successful check and remains available offline. Release
 notes are displayed as text. The Releases link opens the browser for manual
-package download; this page does not install updates.
+package download. In builds with a trusted verification key, **Download selected
+release** verifies and saves the package locally. **Cancel download** waits for
+worker cleanup; reloading the page resumes observation of the same operation.
+Preparation requires confirmed installation ownership and matching desktop/CLI
+builds. A missing key or an unsupported installation is reported explicitly.
+This page does not install updates.
 The **Updates** tab manages watch software and apps. The GitHub packages do not
 configure an APT/DNF repository, so system updates alone will not fetch newer
 versions of garminctl.

@@ -16,6 +16,9 @@ window.runtime.ClipboardSetText = Clipboard.SetText;
     info: () => applicationCall('Info'),
     history: (includePrerelease) => applicationCall('History', includePrerelease),
     check: (includePrerelease) => applicationCall('Check', includePrerelease),
+    downloadStatus: () => applicationCall('DownloadStatus'),
+    startDownload: (tag, includePrerelease) => applicationCall('StartDownload', tag, includePrerelease),
+    cancelDownload: (id) => applicationCall('CancelDownload', id),
   });
   let confirming = false;
   async function action(name) {

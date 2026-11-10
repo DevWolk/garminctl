@@ -5,6 +5,7 @@ const {readFileSync} = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const script = readFileSync(path.join(__dirname, '../internal/web/ui/application.js'), 'utf8');
+const downloadScript = readFileSync(path.join(__dirname, '../internal/web/ui/application-download.js'), 'utf8');
 
 // A deliberately small DOM port: unsafe HTML writes fail instead of parsing it.
 class Element {
@@ -13,14 +14,17 @@ class Element {
   append(...nodes) { this.children.push(...nodes); }
   replaceChildren(...nodes) { this.children = nodes; }
   setAttribute(name, value) { this.attributes.set(name, value); }
+  removeAttribute(name) { this.attributes.delete(name); if (name === 'value') delete this.value; }
   addEventListener(name, callback) { this.events.set(name, callback); }
   fire(name) { return this.events.get(name)(); }
 }
-function fixture(fetch = async () => { throw new Error('Unexpected network'); }) {
+function fixture(fetch = async () => { throw new Error('Unexpected network'); }, clock = {}) {
   const nodes = new Map();
   const get = name => { if (!nodes.has(name)) nodes.set(name, new Element()); return nodes.get(name); };
   const window = {};
-  vm.runInNewContext(script, {window, document: {getElementById: id => get(id.replace('application-', '')), createElement: () => new Element()}, fetch, AbortSignal, Date});
+  const context = vm.createContext({window, document: {getElementById: id => get(id.replace('application-', '')), createElement: () => new Element()}, fetch, AbortSignal, Date, setTimeout: clock.setTimeout || (() => 1), clearTimeout: clock.clearTimeout || (() => {})});
+  vm.runInContext(downloadScript, context);
+  vm.runInContext(script, context);
   return {page: window.applicationPage, get};
 }
 const release = {tag: 'v2.0.0', name: '<img src=x onerror=alert(1)>', notes: '<script>unsafe()</script>', prerelease: false};
@@ -116,16 +120,87 @@ test('late browser response cannot replace native versions', async () => {
   assert.doesNotMatch(ui.get('inventory').children.map(n=>n.textContent).join(' '),/stale-browser/);
 });
 
-test('desktop bridge supplies only the three typed reads and routes the Help action', async () => {
+test('desktop bridge supplies typed reads and preparation methods and routes Help', async () => {
   const source=readFileSync(path.join(__dirname,'../internal/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
   const calls=[];let bridge,event,navigation;
   const window={applicationPage:{attach:value=>{bridge=value;}}};
   const document={addEventListener:()=>{}};
   vm.runInNewContext(source,{window,document,Call:{ByName:(...args)=>{calls.push(args);return Promise.resolve();}},Clipboard:{SetText:()=>{}},Events:{On:(name,handler)=>{assert.equal(name,'desktop:action');event=handler;}},navigate:(...args)=>{navigation=args;}});
   assert.equal(calls.length,1);
-  await bridge.info();await bridge.history(false);await bridge.check(true);
+  await bridge.info();await bridge.history(false);await bridge.check(true);await bridge.downloadStatus();await bridge.startDownload('v1.2.0',false);await bridge.cancelDownload(7);
   const prefix='github.com/DevWolk/garminctl/internal/containers/application/ui/native.Service.';
-  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true]]);
+  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true],[prefix+'DownloadStatus'],[prefix+'StartDownload','v1.2.0',false],[prefix+'CancelDownload',7]]);
   await event({data:'application'});
   assert.deepEqual(navigation,['application','']);
+});
+
+function downloadClock() {
+  let next=0;
+  const tasks=new Map();
+  return {setTimeout(fn){const id=++next;tasks.set(id,fn);return id;},clearTimeout(id){tasks.delete(id);},async tick(){const item=tasks.entries().next().value;assert.ok(item,'expected scheduled status read');tasks.delete(item[0]);return item[1]();},size:()=>tasks.size};
+}
+function idleDownload(){return {id:0,phase:'idle',active:false};}
+
+test('native download shows counted bytes, remains canceling until cleanup and permits retry',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleDownload(), starts=0,cancels=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>current,startDownload:async(tag,pre)=>{assert.equal(tag,release.tag);assert.equal(pre,false);starts++;return current={id:starts,tag,phase:'downloading',written:2,total:4,active:true};},cancelDownload:async id=>{assert.equal(id,current.id);cancels++;return current={...current,phase:'canceling'};}}));
+  await ui.page.activate();
+  assert.equal(starts,0);assert.equal(ui.get('download-start').disabled,false);
+  await ui.get('download-start').fire('click');
+  assert.equal(ui.get('download-progress').value,2);assert.equal(ui.get('download-progress').max,4);
+  assert.equal(ui.get('check').disabled,true);assert.equal(ui.get('release').disabled,true);
+  assert.match(ui.get('download-detail').textContent,/2 of 4 bytes/);
+  assert.equal(ui.get('download-status').textContent,'');
+  current={...current,phase:'verifying',written:4};await clock.tick();
+  assert.equal(ui.get('download-progress').value,undefined);
+  assert.match(ui.get('download-detail').textContent,/Verifying/);
+  await ui.get('download-cancel').fire('click');
+  assert.equal(cancels,1);assert.equal(ui.get('download-cancel').disabled,true);
+  assert.equal(ui.get('download-start').disabled,true);
+  current={...current,phase:'canceled',active:false};await clock.tick();
+  assert.match(ui.get('download-status').textContent,/Download canceled/);
+  assert.equal(ui.get('download-progress').hidden,true);assert.equal(ui.get('download-cancel').hidden,true);
+  assert.equal(ui.get('download-start').disabled,false);
+  await ui.get('download-start').fire('click');assert.equal(starts,2);
+});
+
+test('saved preparation after page reload is observed without starting another download',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current={id:7,tag:'v2.0.0-beta.1',phase:'downloading',written:3,total:4,active:true},starts=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>current,startDownload:async()=>{starts++;}}));
+  await ui.page.activate();assert.equal(starts,0);
+  assert.match(ui.get('download-release').textContent,/v2.0.0-beta.1/);
+  current={...current,phase:'ready',written:4,active:false,result:{bytes:4}};await clock.tick();
+  assert.match(ui.get('download-status').textContent,/Verified package saved/);
+  assert.equal(ui.get('download-progress').value,4);assert.equal(ui.get('check').disabled,false);
+  assert.equal(clock.size(),0);
+});
+
+test('disabled key, start error and failed status remain visible with recovery',async()=>{
+  const ui=fixture();let current={...idleDownload(),disabledReason:'No trusted key'},statusFails=false;
+  await ui.page.attach(bridge({downloadStatus:async()=>{if(statusFails)throw new Error('bridge offline');return current;},startDownload:async()=>{throw new Error('build mismatch');}}));
+  await ui.page.activate();
+  assert.equal(ui.get('download-start').disabled,true);assert.match(ui.get('download-status').textContent,/No trusted key/);
+  current=idleDownload();await ui.page.activate();
+  await ui.get('download-start').fire('click');assert.match(ui.get('download-status').textContent,/build mismatch/);
+  statusFails=true;await ui.page.activate();assert.equal(ui.get('download-start').disabled,true);assert.match(ui.get('download-status').textContent,/Reopen this tab/);
+  statusFails=false;await ui.page.activate();assert.equal(ui.get('download-start').disabled,false);
+});
+
+test('late status response cannot overwrite cancellation or a newer observation',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleDownload(),defer=false,resolve;
+  await ui.page.attach(bridge({downloadStatus:()=>defer?new Promise(done=>{resolve=done;}):Promise.resolve(current),startDownload:async()=>current={id:1,tag:release.tag,phase:'downloading',written:1,total:4,active:true},cancelDownload:async()=>current={...current,phase:'canceling'}}));
+  await ui.page.activate();await ui.get('download-start').fire('click');
+  defer=true;const polling=clock.tick();
+  const stale={...current};await ui.get('download-cancel').fire('click');resolve(stale);await polling;
+  assert.match(ui.get('download-detail').textContent,/Canceling/);
+  assert.equal(ui.get('download-cancel').disabled,true);
+  const older=clock.tick();
+  defer=false;current={...current,phase:'canceled',active:false};await ui.page.activate();
+  resolve(stale);await older;
+  assert.match(ui.get('download-status').textContent,/Download canceled/);
+  assert.equal(ui.get('download-start').disabled,false);
+  assert.equal(clock.size(),0);
 });

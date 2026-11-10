@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-const inventoryPackage = "garminctl"
+const (
+	inventoryPackage         = "garminctl"
+	inventoryPlatformLinux   = "linux"
+	inventoryPlatformWindows = "windows"
+)
 
 // OwnershipEvidence describes OS observations, not permission to replace files.
 type OwnershipEvidence struct{ Manager, Package, Root, Error string }
@@ -157,11 +161,11 @@ func classifyInstallation(local LocalInventory) InstallationInfo {
 	}
 
 	d, c := desktop.Ownership, cli.Ownership
-	if local.OS == "windows" && matchingSetupOwnership(d, c) {
+	if local.OS == inventoryPlatformWindows && matchingSetupOwnership(d, c) {
 		return InstallationInfo{Kind: "setup", Root: d.Root, Package: inventoryPackage}
 	}
 
-	if local.OS == "linux" && d.Manager == c.Manager && d.Package == inventoryPackage && c.Package == inventoryPackage {
+	if local.OS == inventoryPlatformLinux && d.Manager == c.Manager && d.Package == inventoryPackage && c.Package == inventoryPackage {
 		switch d.Manager {
 		case "dpkg":
 			return InstallationInfo{Kind: "deb", Package: inventoryPackage}
@@ -191,15 +195,15 @@ func inventoryOwnershipErrors(desktop, cli OwnershipEvidence) string {
 }
 
 func expectedInventoryNames(local LocalInventory) bool {
-	if local.OS == "windows" {
+	if local.OS == inventoryPlatformWindows {
 		return strings.EqualFold(local.Desktop.Name, "garmin-desktop.exe") && strings.EqualFold(local.CLI.Name, "garminctl.exe")
 	}
 
-	return local.OS == "linux" && local.Desktop.Name == "garmin-desktop" && local.CLI.Name == inventoryPackage
+	return local.OS == inventoryPlatformLinux && local.Desktop.Name == "garmin-desktop" && local.CLI.Name == inventoryPackage
 }
 
 func sameInventoryDirectory(platform, a, b string) bool {
-	if platform == "windows" {
+	if platform == inventoryPlatformWindows {
 		return strings.EqualFold(a, b)
 	}
 

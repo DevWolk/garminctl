@@ -36,17 +36,24 @@ See CLAUDE.md for the working rules. Module map:
   Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
   acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.
-- `internal/containers/application` owns release selection, saved-history reads
-  and independent desktop/CLI/backend inventory. `ui/native` supplies only Info,
-  saved History and explicit Check, with a window-scoped read lease supplied by
-  desktop. App assembles the reader lazily from the compiled desktop version and
-  trusted backend identity. Registration does no IO and creates no watch runtime.
-  The Application SPA tab works without a watch, uses native read bindings for
-  local metadata, and renders release notes as text. Browser access shows backend
-  metadata and the Releases link. Opening the tab or switching channel never
-  refreshes the release feed; Check is explicit. Native scope shutdown cancels
-  and joins these reads before closing an owned backend. No public installer
-  API or install/rollback UI is exposed.
+- `internal/containers/application` owns SemVer/channel selection, saved history,
+  independent desktop/CLI/backend inventory and DownloadReleaseAction. Stable is
+  the default and drafts are excluded; the core imports no Wails or watch owner.
+  Download re-observes confirmed installation and matching desktop/CLI builds,
+  then rechecks exact-tag/channel metadata before package IO. App maps its ports
+  to the existing resolver, cached CLI stager and protected PackageCache.
+  `ui/native` binds Info/History/Check and StartDownload/DownloadStatus/
+  CancelDownload. App assembles these lazily from compiled version/key and trusted
+  backend identity. Registration does no IO and creates no watch runtime.
+  One download holds the existing window Scope until worker/cache cleanup ends.
+  Cancel uses an operation ID; canceling stays active until join, and stale
+  requests/callbacks cannot affect the next operation. Window close cancels and
+  joins preparation before closing an owned backend; reused backend remains.
+  The Application tab needs no watch. Opening it or changing channel never
+  refreshes the release feed or starts a download. Notes are text, progress counts
+  bytes and reload only resumes status polling. Browser access shows backend
+  metadata and Releases. Missing compiled key disables preparation while keeping
+  metadata reads available. No public HTTP/MCP installer or install/rollback UI.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden
   listing. Non-CGO CLI builds retain WPD/DirFS support. Linux packages include
@@ -173,25 +180,9 @@ See CLAUDE.md for the working rules. Module map:
   undecorated. Three ui adapters
   use the same Actions; app supplies Registry over the existing leased Session.
   HTTP borrows only a current watch, while CLI/MCP require its XML.
-- `internal/containers/application` owns release metadata, the consumer
-  ReleaseFeed port and stateless CheckReleasesAction. Stable is the default;
-  drafts are excluded and SemVer controls candidate/history order. Its scoped
-  x/mod/semver allowance introduces no Wails or watch dependency. The core is
-  not wired into entry points yet. App's NewApplicationReleaseCheck maps the
-  Ship metadata client into the Feed without creating a watch runtime.
-  CheckReleaseHistoryAction adds explicit cached fallback, its successful-check
-  timestamp and refresh/cache-write errors. It reapplies channel policy to raw
-  saved releases and does not convert caller cancellation into cached success.
-  The existing CheckReleasesAction keeps its error contract. App wires the
-  new history Action to an isolated store without creating a watch runtime.
-  Native UI is still unwired. Available is metadata, never an installable package.
-  ReadInventoryAction owns installation classification and independent desktop,
-  CLI and backend build labels over caller-owned observation ports. App composes
-  read-only hostinfo and bounded loopback /api/server metadata. Unknown/conflicting
-  ownership stays unknown; these observations grant no install permission.
 - `internal/ship/hostinfo` owns regular executable discovery, a bounded CLI
   version child and read-only dpkg/rpm/Windows InstallDir queries. It imports
-  no Application policy or Wails runtime. Native UI is not wired to it yet.
+  no Application policy or Wails runtime; native inventory uses app source adapters.
 - `internal/ship/updatetransport` owns bounded, cancellable GitHub release
   metadata reads for the compiled repository. It retains raw channel flags;
   Application owns selection policy. Requests use no cookies or redirects,
@@ -219,9 +210,9 @@ See CLAUDE.md for the working rules. Module map:
   versioned IPC, operation/build/key identity and joined cancellation/cleanup.
   Worker retains the original signed stream and .sig before Wails archive
   extraction, then parent verifies the retained digest after child exit.
-  StagedPackage owns its operation until Close; UI/install permission and a
-  durable offline catalog remain separate. Application UI does not invoke
-  these services yet; app supplies trusted CLI/version/key/cache composition.
+  StagedPackage owns its operation until Close. App supplies trusted CLI/version/
+  compiled-key/cache composition to native preparation, retaining verified bytes
+  before closing temporary operations. Installation authority remains separate.
   PackageCache retains package/signature pairs under application-packages,
   apart from application-staging operations. Put verifies copied bytes before
   whole-directory publication. List returns unverified metadata; Open uses a
@@ -229,7 +220,7 @@ See CLAUDE.md for the working rules. Module map:
   an independently owned StagedPackage copy. The local asset transport never
   falls back to HTTP. Manifests have bounded reads and safe hex IDs; normal
   errors clean only owned pending/operation directories. No automatic eviction,
-  process-crash sweep, installation or UI binding is added by this service.
+  process-crash sweep or installation is performed by this service.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
@@ -261,7 +252,7 @@ See CLAUDE.md for the working rules. Module map:
   session/tool-call metadata for the web UI's AI & MCP tab.
 
 Quality gate: `make check` (module metadata, golangci-lint with govet,
-race tests, govulncheck) must pass; the tools are pinned in
+race tests, headless UI tests, govulncheck) must pass; the tools are pinned in
 `tools.mod`. Make targets in `.make/` use `docker/docker-compose.yml` and a
 host-UID toolchain container. `make package` builds native installers in `dist/`.
 `make install` rebuilds the CLI and desktop binaries and rolls the CLI out on

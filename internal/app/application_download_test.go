@@ -1,0 +1,254 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/DevWolk/garminctl/internal/containers/application"
+	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
+)
+
+const (
+	applicationDownloadTag = "v1.2.0"
+	downloadTestBuild      = "v1.0.0"
+)
+
+var downloadTestBytes = []byte("synthetic application package; never executable")
+
+func downloadTestKey() ed25519.PrivateKey {
+	return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{41}, ed25519.SeedSize))
+}
+
+type downloadTestHTTP func(*http.Request) (*http.Response, error)
+
+func (f downloadTestHTTP) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func downloadTestResponse(body []byte) *http.Response {
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/octet-stream"}}, Body: io.NopCloser(bytes.NewReader(body))}
+}
+
+func TestMain(m *testing.M) {
+	if len(os.Args) != 2 || (os.Args[1] != updatetransport.StageCommand && os.Args[1] != updatetransport.VerifyCommand) {
+		os.Exit(m.Run())
+	}
+
+	if err := downloadTestWorker(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	os.Exit(0)
+}
+
+func downloadTestWorker() error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	key := downloadTestKey()
+	digest := sha256.Sum256(downloadTestBytes)
+	signature := ed25519.Sign(key, digest[:])
+
+	input, err := io.ReadAll(io.LimitReader(os.Stdin, (64<<10)+1))
+	if err != nil {
+		return err
+	}
+
+	var request struct {
+		Target updatetransport.MatchRequest `json:"target"`
+	}
+	if err := json.Unmarshal(input, &request); err != nil {
+		return err
+	}
+
+	if strings.HasSuffix(request.Target.ReleaseTag, "-bad") {
+		signature[0] ^= 0xff
+	}
+
+	client := &http.Client{Transport: downloadTestHTTP(func(r *http.Request) (*http.Response, error) {
+		if os.Args[1] == updatetransport.VerifyCommand {
+			return nil, errors.New("offline verifier attempted HTTP")
+		}
+
+		switch r.URL.Path {
+		case "/repos/DevWolk/garminctl/releases/assets/101":
+			return downloadTestResponse(downloadTestBytes), nil
+		case "/repos/DevWolk/garminctl/releases/assets/102":
+			return downloadTestResponse(signature), nil
+		}
+
+		return nil, fmt.Errorf("unexpected fixture URL %s", r.URL)
+	})}
+
+	config := updatetransport.WorkerConfig{Directory: filepath.Dir(executable), BuildVersion: downloadTestBuild, PublicKey: ed25519.PublicKey(key[ed25519.SeedSize:]), HTTPClient: client}
+	if os.Args[1] == updatetransport.VerifyCommand {
+		return updatetransport.RunVerifyWorker(context.Background(), config, bytes.NewReader(input), os.Stdout)
+	}
+
+	return updatetransport.RunStageWorker(context.Background(), config, bytes.NewReader(input), os.Stdout)
+}
+
+func downloadPipeline(t *testing.T, tag string, draft bool) (applicationPackageDownload, application.DownloadTarget) {
+	t.Helper()
+
+	if runtime.GOARCH != "amd64" || (runtime.GOOS != "linux" && runtime.GOOS != "windows") {
+		t.Skip("synthetic native Setup/DEB fixture requires an amd64 publishing platform")
+	}
+
+	cli, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kind, name := "deb", "garminctl_"+strings.ReplaceAll(strings.TrimPrefix(tag, "v"), "-", ".")+"_linux_amd64.deb"
+	if runtime.GOOS == "windows" {
+		kind = "setup"
+		name = "garminctl_" + tag + "_windows_amd64_setup.exe"
+	}
+
+	client := &http.Client{Transport: downloadTestHTTP(func(r *http.Request) (*http.Response, error) {
+		var value any
+
+		switch r.URL.Path {
+		case "/repos/DevWolk/garminctl/releases/tags/" + tag:
+			value = map[string]any{"id": 11, "tag_name": tag, "draft": draft}
+		case "/repos/DevWolk/garminctl/releases/11/assets":
+			value = []updatetransport.AssetRef{{ID: 101, Name: name, Size: int64(len(downloadTestBytes)), URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/101"}, {ID: 102, Name: name + ".sig", Size: 64, URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/102"}}
+		default:
+			return nil, fmt.Errorf("unexpected parent HTTP %s", r.URL)
+		}
+
+		body, err := json.Marshal(value)
+
+		return downloadTestResponse(body), err
+	})}
+	directory := t.TempDir()
+	key := downloadTestKey()
+
+	return applicationPackageDownload{source: updatetransport.NewGitHub(client), key: base64.StdEncoding.EncodeToString(key[ed25519.SeedSize:]), stageDirectory: filepath.Join(directory, "stages"), packageDirectory: filepath.Join(directory, "packages")}, application.DownloadTarget{OS: runtime.GOOS, Arch: runtime.GOARCH, Installation: kind, CLIPath: cli, CLIVersion: downloadTestBuild, IncludePrerelease: true}
+}
+
+func TestApplicationDownloadUsesRealCachedCLIAndReverifiesRetainedPackage(t *testing.T) {
+	t.Parallel()
+	pipeline, target := downloadPipeline(t, applicationDownloadTag, false)
+
+	var phases []string
+
+	result, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, func(p application.DownloadProgress) { phases = append(phases, p.Phase) })
+	if err != nil || result == nil || result.CacheID == "" || result.Bytes != int64(len(downloadTestBytes)) {
+		t.Fatalf("result=%+v %v phases=%v", result, err, phases)
+	}
+
+	again, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil)
+	if err != nil || again == nil || *again != *result {
+		t.Fatalf("retained=%+v %v", again, err)
+	}
+
+	assertDownloadOperationsClean(t, pipeline)
+
+	entries, err := os.ReadDir(filepath.Join(pipeline.packageDirectory, result.CacheID))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".deb") || strings.HasSuffix(entry.Name(), ".exe") {
+			if err := os.WriteFile(filepath.Join(pipeline.packageDirectory, result.CacheID, entry.Name()), bytes.Repeat([]byte{0}, len(downloadTestBytes)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	if value, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil); err == nil || value != nil {
+		t.Fatalf("corrupt cache accepted=%+v %v", value, err)
+	}
+
+	assertDownloadOperationsClean(t, pipeline)
+}
+
+func assertDownloadOperationsClean(t *testing.T, pipeline applicationPackageDownload) {
+	t.Helper()
+
+	operations, err := filepath.Glob(filepath.Join(pipeline.stageDirectory, "stage-*"))
+	if err != nil || len(operations) != 0 {
+		t.Fatalf("operations=%v err=%v", operations, err)
+	}
+}
+
+func TestApplicationDownloadRejectsChangedPolicyAndBadSignature(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, tag string
+		draft     bool
+	}{{name: "changed draft", tag: applicationDownloadTag, draft: true}, {name: "bad signature", tag: "v1.2.0-bad"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pipeline, target := downloadPipeline(t, tc.tag, tc.draft)
+			if result, err := pipeline.Download(t.Context(), application.Release{Tag: tc.tag}, target, nil); err == nil || result != nil {
+				t.Fatalf("result=%+v %v", result, err)
+			}
+
+			assertDownloadOperationsClean(t, pipeline)
+		})
+	}
+}
+
+func TestApplicationDownloadCancellationDoesNotRetainPartialPackage(t *testing.T) {
+	t.Parallel()
+	pipeline, target := downloadPipeline(t, applicationDownloadTag, false)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	result, err := pipeline.Download(ctx, application.Release{Tag: applicationDownloadTag}, target, func(p application.DownloadProgress) {
+		if p.Written > 0 {
+			cancel()
+		}
+	})
+	if err == nil || result != nil {
+		t.Fatalf("canceled=%+v %v", result, err)
+	}
+
+	assertDownloadOperationsClean(t, pipeline)
+
+	entries, err := os.ReadDir(pipeline.packageDirectory)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("partial retained=%v", entries)
+	}
+}
+
+func TestNativeApplicationReaderMissingKeyDisablesOnlyDownloads(t *testing.T) {
+	t.Parallel()
+
+	reader, err := newApplicationNativeReader(ApplicationReadConfig{Inventory: ApplicationInventoryConfig{DesktopVersion: downloadTestBuild}, HistoryDirectory: filepath.Join(t.TempDir(), "history")}, "")
+	if err != nil || reader == nil || reader.DownloadDisabledReason() == "" {
+		t.Fatalf("reader=%+v %v", reader, err)
+	}
+
+	if value, err := reader.Download(t.Context(), application.DownloadRequest{Tag: applicationDownloadTag}, nil); err == nil || value != nil {
+		t.Fatalf("missing key started package preparation=%+v %v", value, err)
+	}
+
+	if value, err := reader.History(t.Context(), false, false); err != nil || value != nil {
+		t.Fatalf("read-only first use changed=%+v %v", value, err)
+	}
+}

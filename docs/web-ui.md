@@ -27,7 +27,7 @@ automatic cloud actions and [CLI options](cli.md#servers) for directory mode.
 | Music | Upload/delete audio, create playlists, and view streaming-app cache size. |
 | Store | Browse Connect IQ listings, details, permissions and reviews; filter by the connected device. |
 | Updates | Check/install watch software and data, compare app versions, sideload `.PRG` files, and inspect installed components. |
-| Application | Backend version and GitHub Releases link; the native desktop also shows local versions, installation type and saved release history with explicit update checks. |
+| Application | Backend version and GitHub Releases link; the native desktop also shows local versions, installation type and saved release history with explicit update checks, plus verified package preparation/progress/cancel in builds with a trusted key. |
 | Garmin Connect | Sign in, sync, inspect queued files, and edit Connect-managed settings. |
 | Files | Browse, upload, download, delete, and decode FIT files; download decoded JSON. |
 | AI & MCP | Copy connection instructions and view assistant sessions and tool calls. |

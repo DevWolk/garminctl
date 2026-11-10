@@ -1,4 +1,4 @@
-// Package native supplies read-only application methods to a native host.
+// Package native supplies application reads and package preparation to a native host.
 package native
 
 import (
@@ -25,12 +25,15 @@ type Reader interface {
 // Factory constructs a reader without IO from local backend observations.
 type Factory func(string, bool) (Reader, error)
 
-// Service exposes inventory, saved history and an explicit release check.
+// Service exposes application metadata and window-owned package preparation.
 type Service struct {
-	scope   Scope
-	factory Factory
-	mu      sync.Mutex
-	reader  Reader
+	scope        Scope
+	factory      Factory
+	mu           sync.Mutex
+	reader       Reader
+	downloadMu   sync.Mutex
+	operation    *downloadOperation
+	nextDownload uint64
 }
 
 // NewService constructs no runtime, requests or background work.
