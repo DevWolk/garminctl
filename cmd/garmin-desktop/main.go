@@ -15,6 +15,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/desktop"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 var version = "dev"
@@ -43,5 +44,7 @@ func run() error {
 		return app.ServeListener(ctx, listener, open, *root == "", version)
 	}
 
-	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) })
+	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(scope desktop.Scope) []application.Service {
+		return []application.Service{app.NewApplicationNativeService(version, scope)}
+	})
 }

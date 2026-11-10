@@ -34,6 +34,7 @@
       <button class="nav-item" data-tab="music"><span class="nav-ico">♪</span>Music</button>
       <button class="nav-item" data-tab="store"><span class="nav-ico">◈</span>Store</button>
       <button class="nav-item" data-tab="updates"><span class="nav-ico">⇡</span>Updates<span class="nav-badge" id="badge-updates" hidden></span></button>
+      <button class="nav-item" data-tab="application"><span class="nav-ico">◉</span>Application</button>
       <button class="nav-item" data-tab="cloud"><span class="nav-ico">⇅</span>Garmin Connect<span class="nav-badge" id="badge-cloud" hidden></span></button>
       <button class="nav-item" data-tab="files"><span class="nav-ico">▤</span>Files</button>
       <button class="nav-item" data-tab="ai"><span class="nav-ico">◇</span>AI &amp; MCP</button>
@@ -318,6 +319,36 @@
       </div>
     </section>
 
+    <section id="tab-application" class="tab">
+      <header class="page-head">
+        <h1>Application</h1>
+        <p class="lede">garminctl versions and release history.</p>
+      </header>
+      <p id="application-browser" class="hint">Open the desktop app to see local versions and saved release history.</p>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>Installed version</h2>
+          <dl class="facts" id="application-inventory"></dl>
+          <p id="application-inventory-note" class="hint"></p>
+        </div>
+        <div class="panel" id="application-native" hidden>
+          <h2>Releases</h2>
+          <div class="toolbar">
+            <button class="btn primary" type="button" id="application-check">Check for updates</button>
+            <label class="check"><input id="application-prerelease" type="checkbox"> Include prereleases</label>
+          </div>
+          <progress id="application-progress" aria-label="Reading application information" hidden></progress>
+          <p id="application-status" class="hint" role="status" aria-live="polite"></p>
+          <label for="application-release">Release history</label>
+          <select id="application-release" disabled></select>
+          <h3 id="application-release-title"></h3>
+          <p id="application-release-date" class="hint"></p>
+          <div id="application-notes" class="application-notes" tabindex="0" role="region" aria-labelledby="application-release-title"></div>
+        </div>
+      </div>
+      <p class="hint"><a href="https://github.com/DevWolk/garminctl/releases" target="_blank" rel="noopener noreferrer">Browse all releases on GitHub</a></p>
+    </section>
+
     <section id="tab-cloud" class="tab">
       <header class="page-head">
         <h1>Garmin Connect</h1>
@@ -448,6 +479,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="/face.js"></script>
+<script src="/application.js"></script>
 <script src="/app.js"></script>
 <script src="/mcp.js"></script>
 </body>

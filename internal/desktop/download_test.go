@@ -57,7 +57,7 @@ func TestDownloadPublishesOnlyCompleteResponse(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			d := &nativeDownloads{}
+			d := &nativeOperations{}
 			d.startup(t.Context())
 			t.Cleanup(d.close)
 
@@ -93,7 +93,7 @@ func TestTruncatedDownloadPreservesDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &nativeDownloads{}
+	d := &nativeOperations{}
 	d.startup(t.Context())
 	t.Cleanup(d.close)
 
@@ -129,7 +129,7 @@ func TestClosingWindowCancelsAndJoinsDownloads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &nativeDownloads{}
+	d := &nativeOperations{}
 	d.startup(t.Context())
 	t.Cleanup(d.close)
 	u := downloadURL(t, server.URL)
@@ -167,7 +167,7 @@ func TestDownloadHasConfigurableBoundedDeadline(t *testing.T) {
 	t.Parallel()
 
 	synctest.Test(t, func(t *testing.T) {
-		d := &nativeDownloads{timeout: time.Second, client: &http.Client{Transport: waitingDownloadTransport{}}}
+		d := &nativeOperations{timeout: time.Second, client: &http.Client{Transport: waitingDownloadTransport{}}}
 
 		d.startup(t.Context())
 		defer d.close()
@@ -198,7 +198,7 @@ func TestDownloadReplacementFailureCleansTemporaryFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &nativeDownloads{}
+	d := &nativeOperations{}
 	d.startup(t.Context())
 	t.Cleanup(d.close)
 

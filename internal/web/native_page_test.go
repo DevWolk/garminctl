@@ -23,7 +23,7 @@ func TestNativeIndexRenderingContract(t *testing.T) {
 		nonce  = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	)
 
-	for _, path := range []string{"/", "/index.html", "/settings", "/apps/example"} {
+	for _, path := range []string{"/", "/index.html", "/settings", "/apps/example", "/application"} {
 		t.Run(path, func(t *testing.T) {
 			t.Parallel()
 

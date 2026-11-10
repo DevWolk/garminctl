@@ -23,7 +23,7 @@ type v3WindowHost struct {
 
 // Run initializes single-instance ownership before starting an owned backend.
 // Native shutdown joins that backend even on framework-specific exit paths.
-func Run(start func() (*Backend, error)) (runErr error) {
+func Run(start func() (*Backend, error), registrars ...ServiceRegistrar) (runErr error) {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func Run(start func() (*Backend, error)) (runErr error) {
 
 	service := new(App)
 	assets := new(nativeAssets)
-	host := newV3WindowHost(service, dataDir, assets)
+	host := newV3WindowHost(service, dataDir, assets, nativeServices(service, registrars))
 
 	service.host = host
 	defer func() { runErr = errors.Join(runErr, service.shutdown()) }()
@@ -58,12 +58,12 @@ func Run(start func() (*Backend, error)) (runErr error) {
 	return errors.Join(startupErr, host.app.Run())
 }
 
-func newV3WindowHost(service *App, dataDir string, assets http.Handler) *v3WindowHost {
+func newV3WindowHost(service *App, dataDir string, assets http.Handler, services []application.Service) *v3WindowHost {
 	host := new(v3WindowHost)
 	host.app = application.New(application.Options{
 		Name: applicationName, Icon: appIcon,
 		Assets:     nativeAssetOptions(assets),
-		Services:   []application.Service{application.NewService(service)},
+		Services:   services,
 		ShouldQuit: func() bool { return !service.beforeClose(context.Background()) },
 		// The production logger discards output, so a fatal host error (for
 		// example no session bus for the single-instance check) is reported here.
@@ -137,9 +137,7 @@ func (h *v3WindowHost) menu(service *App) {
 	view.Add("Quit").SetAccelerator("CmdOrCtrl+q").OnClick(func(_ *application.Context) { h.Quit() })
 
 	help := menu.AddSubmenu("Help")
-	help.Add("Download updates…").OnClick(func(_ *application.Context) {
-		_ = h.OpenExternal("https://github.com/DevWolk/garminctl/releases/latest")
-	})
+	help.Add("Application updates…").OnClick(func(_ *application.Context) { service.emit("application") })
 	h.app.Menu.Set(menu)
 }
 func (h *v3WindowHost) Emit(action string)            { h.app.Event.Emit("desktop:action", action) }

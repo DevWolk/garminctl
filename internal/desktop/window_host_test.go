@@ -54,7 +54,7 @@ func TestWindowCloseWaitsForReadyAndFrontendConsent(t *testing.T) {
 	host := new(fakeWindowHost)
 	app := &App{host: host}
 	app.startup(t.Context())
-	t.Cleanup(app.downloads.close)
+	t.Cleanup(app.operations.close)
 
 	if app.beforeClose(t.Context()) || len(host.actions) != 0 {
 		t.Fatal("unready frontend vetoed window closure")
@@ -67,7 +67,7 @@ func TestWindowCloseWaitsForReadyAndFrontendConsent(t *testing.T) {
 	}
 
 	host.quit = func() {
-		if _, err := app.downloads.windowContext(); !errors.Is(err, context.Canceled) {
+		if _, err := app.operations.windowContext(); !errors.Is(err, context.Canceled) {
 			t.Errorf("quit happened before download cancellation: %v", err)
 		}
 	}
@@ -148,7 +148,7 @@ func TestWindowDownloadDialogKeepsExportBoundaryAndCancellation(t *testing.T) {
 	host := new(fakeWindowHost)
 	app := &App{host: host, backend: &Backend{URL: &url.URL{Scheme: "http", Host: "127.0.0.1:8787"}}}
 	app.startup(t.Context())
-	t.Cleanup(app.downloads.close)
+	t.Cleanup(app.operations.close)
 
 	if err := app.Download("https://example.invalid/api/file", "file.fit"); err == nil || len(host.names) != 0 {
 		t.Fatal("remote download reached Save dialog")

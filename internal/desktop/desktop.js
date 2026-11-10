@@ -11,9 +11,16 @@ window.runtime.ClipboardSetText = Clipboard.SetText;
     OpenExternal: (raw) => invoke('OpenExternal', raw),
     Download: (relative, name) => invoke('Download', relative, name),
   };
+  const applicationCall = (name, ...args) => Call.ByName('github.com/DevWolk/garminctl/internal/containers/application/ui/native.Service.' + name, ...args);
+  window.applicationPage.attach({
+    info: () => applicationCall('Info'),
+    history: (includePrerelease) => applicationCall('History', includePrerelease),
+    check: (includePrerelease) => applicationCall('Check', includePrerelease),
+  });
   let confirming = false;
   async function action(name) {
     if (name === 'back') { history.back(); return; }
+    if (name === 'application') { navigate('application', ''); return; }
     if (name === 'mcp') { navigate('ai', ''); return; }
     if (confirming) return;
     confirming = true;

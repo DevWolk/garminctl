@@ -21,15 +21,15 @@ var appIcon []byte
 // App is the small native bridge: lifecycle, browser links and file dialogs.
 // Watch operations remain in the shared local API and MCP server.
 type App struct {
-	backend   *Backend
-	host      windowHost
-	ready     atomic.Bool
-	closing   atomic.Bool
-	downloads nativeDownloads
+	backend    *Backend
+	host       windowHost
+	ready      atomic.Bool
+	closing    atomic.Bool
+	operations nativeOperations
 }
 
 func (a *App) startup(ctx context.Context) {
-	a.downloads.startup(ctx)
+	a.operations.startup(ctx)
 }
 
 func (a *App) emit(action string) { a.host.Emit(action) }
@@ -53,7 +53,7 @@ func (a *App) Ready() {
 // FinishClose is called after the frontend confirms pending edits may be lost.
 func (a *App) FinishClose() {
 	a.closing.Store(true)
-	a.downloads.cancel()
+	a.operations.cancel()
 	a.host.Quit()
 }
 
@@ -69,7 +69,7 @@ func (a *App) OpenExternal(raw string) error {
 
 // Download lets the user choose where a watch file or decoded JSON is saved.
 func (a *App) Download(relative, name string) error {
-	ctx, err := a.downloads.windowContext()
+	ctx, err := a.operations.windowContext()
 	if err != nil {
 		return err
 	}
@@ -95,13 +95,13 @@ func (a *App) Download(relative, name string) error {
 		}
 	}
 
-	return a.downloads.save(u, path)
+	return a.operations.save(u, path)
 }
 
-// shutdown joins downloads and only the backend this process owns. It also runs
+// shutdown joins native operations and only the backend this process owns. It also runs
 // from the native hook, before framework exit paths can bypass Run's caller.
 func (a *App) shutdown() error {
-	a.downloads.close()
+	a.operations.close()
 
 	if a.backend == nil {
 		return nil

@@ -28,7 +28,7 @@ func TestAppDownloadAfterWindowCloseDoesNotOpenDialog(t *testing.T) {
 
 	a := &App{}
 	a.startup(t.Context())
-	a.downloads.close()
+	a.operations.close()
 
 	if err := a.Download("/api/file?path=GARMIN/example.fit", "example.fit"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("closed window download = %v", err)
@@ -40,7 +40,7 @@ func TestAppDownloadWithoutBackendDoesNotOpenDialog(t *testing.T) {
 
 	a := &App{}
 	a.startup(t.Context())
-	t.Cleanup(a.downloads.close)
+	t.Cleanup(a.operations.close)
 
 	if err := a.Download("/api/file?path=GARMIN/example.fit", "example.fit"); err == nil {
 		t.Fatal("download without backend succeeded")
@@ -74,7 +74,7 @@ func TestAppDownloadAsksBeforeReplacingExistingFile(t *testing.T) {
 	host := &fakeWindowHost{dialogPath: target}
 	a := &App{host: host, backend: &Backend{URL: backend}}
 	a.startup(t.Context())
-	t.Cleanup(a.downloads.close)
+	t.Cleanup(a.operations.close)
 
 	download := func(want string) {
 		t.Helper()

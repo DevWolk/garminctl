@@ -71,6 +71,7 @@ function showTab(tab, fromRoute) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + tab));
   if (!fromRoute) { const [item, params] = tabRoute(tab); setRoute(tab, item, params); }
   if (state.connected) loadTab(tab); else if (tab === 'cloud') loadCloud(); else if (tab === 'store' && !state.store.loaded) loadStore();
+  if (tab === 'application') window.applicationPage.activate();
   if (tab === 'ai' && window.loadMCP) window.loadMCP();
   updateActionBar();
 }

@@ -14,16 +14,22 @@ import (
 // An empty directory selects the app's private history cache. A nonempty path
 // is trusted local composition, not an HTTP/CLI option. Construction performs no IO.
 func NewApplicationReleaseHistory(client *http.Client, directory string) (*application.CheckReleaseHistoryAction, error) {
+	store, err := applicationHistoryStoreFor(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	return application.NewCheckReleaseHistoryAction(applicationReleaseFeed{source: updatetransport.NewGitHub(client)}, store), nil
+}
+
+func applicationHistoryStoreFor(directory string) (applicationHistoryStore, error) {
 	if directory == "" {
 		directory = filepath.Join(paths.Cache(), "application-history")
 	}
 
 	cache, err := updatetransport.NewHistoryCache(directory)
-	if err != nil {
-		return nil, err
-	}
 
-	return application.NewCheckReleaseHistoryAction(applicationReleaseFeed{source: updatetransport.NewGitHub(client)}, applicationHistoryStore{cache: cache}), nil
+	return applicationHistoryStore{cache: cache}, err
 }
 
 type applicationHistoryStore struct{ cache *updatetransport.HistoryCache }

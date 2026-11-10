@@ -19,9 +19,9 @@ import (
 // configure a different positive timeout without changing file-export routes.
 const defaultDownloadTimeout = 10 * time.Minute
 
-// nativeDownloads owns only native file exports. Watch/session/job ownership
-// remains in the shared backend; a reused backend is never stopped here.
-type nativeDownloads struct {
+// nativeOperations joins window-scoped reads and file exports. Watch/session/job
+// ownership remains in the shared backend; a reused backend is never stopped here.
+type nativeOperations struct {
 	mu      sync.Mutex
 	ctx     context.Context //nolint:containedctx // derived once from the native window lifetime and cancelled/joined on shutdown
 	stop    context.CancelFunc
@@ -31,7 +31,7 @@ type nativeDownloads struct {
 	timeout time.Duration
 }
 
-func (d *nativeDownloads) startup(ctx context.Context) {
+func (d *nativeOperations) startup(ctx context.Context) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -40,14 +40,14 @@ func (d *nativeDownloads) startup(ctx context.Context) {
 	}
 }
 
-func (d *nativeDownloads) windowContext() (context.Context, error) {
+func (d *nativeOperations) windowContext() (context.Context, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	return d.contextLocked()
 }
 
-func (d *nativeDownloads) contextLocked() (context.Context, error) {
+func (d *nativeOperations) contextLocked() (context.Context, error) {
 	if d.closed {
 		return nil, context.Canceled
 	}
@@ -59,7 +59,21 @@ func (d *nativeDownloads) contextLocked() (context.Context, error) {
 	return d.ctx, d.ctx.Err()
 }
 
-func (d *nativeDownloads) save(u *url.URL, target string) error {
+func (d *nativeOperations) begin() (context.Context, func(), error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ctx, err := d.contextLocked()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	d.active.Add(1)
+
+	return ctx, sync.OnceFunc(d.active.Done), nil
+}
+
+func (d *nativeOperations) save(u *url.URL, target string) error {
 	d.mu.Lock()
 
 	ctx, err := d.contextLocked()
@@ -98,7 +112,7 @@ func newDownloadClient(timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
-func (d *nativeDownloads) cancel() {
+func (d *nativeOperations) cancel() {
 	d.mu.Lock()
 	d.closed = true
 	stop := d.stop
@@ -109,7 +123,7 @@ func (d *nativeDownloads) cancel() {
 	}
 }
 
-func (d *nativeDownloads) close() {
+func (d *nativeOperations) close() {
 	d.cancel()
 	d.active.Wait()
 

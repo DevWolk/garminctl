@@ -111,7 +111,7 @@ func TestNativeShutdownJoinsOwnedBackendOnce(t *testing.T) {
 		t.Fatalf("native shutdown stopped backend %d times", stops.Load())
 	}
 
-	if _, err := app.downloads.windowContext(); !errors.Is(err, context.Canceled) {
+	if _, err := app.operations.windowContext(); !errors.Is(err, context.Canceled) {
 		t.Fatalf("downloads survived native shutdown: %v", err)
 	}
 

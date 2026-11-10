@@ -103,7 +103,7 @@ recovery copies.
 
 ### Update an installed package
 
-Choose **Help → Download updates…** in the desktop app, or open
+Choose **Help → Application updates…** to open **Application**, or open
 [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
 Download the newer package for the same system and architecture, then quit
 garminctl before installing it. Stop any separate `garminctl serve` process too.
@@ -121,7 +121,14 @@ locations above. Reopen garminctl after updating; a running server must restart
 to use the new binary. MCP configuration can stay unchanged when its URL or
 executable path stays the same.
 
-The menu opens the release page; it does not download or install updates.
+**Application** shows separate desktop, CLI and backend versions, local platform,
+and the detected installation type. Unknown ownership and differing versions
+remain visible. **Check for updates** refreshes release history from GitHub;
+stable releases are selected by default. **Include prereleases** changes which
+saved releases are shown without another network request. Saved history includes
+the time of its last successful check and remains available offline. Release
+notes are displayed as text. The Releases link opens the browser for manual
+package download; this page does not install updates.
 The **Updates** tab manages watch software and apps. The GitHub packages do not
 configure an APT/DNF repository, so system updates alone will not fetch newer
 versions of garminctl.

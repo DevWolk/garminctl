@@ -69,7 +69,7 @@ func (a *CheckReleaseHistoryAction) Run(ctx context.Context, request CheckReques
 	}
 
 	if err != nil {
-		return a.cached(ctx, request, current, err)
+		return readReleaseHistory(ctx, a.store, request, current, err)
 	}
 
 	selected, err := selectReleaseSnapshot(ctx, request, current, releases)
@@ -94,8 +94,8 @@ func (a *CheckReleaseHistoryAction) Run(ctx context.Context, request CheckReques
 	return result, nil
 }
 
-func (a *CheckReleaseHistoryAction) cached(ctx context.Context, request CheckRequest, current string, refreshErr error) (*ReleaseHistoryResult, error) {
-	snapshot, err := a.store.Load(ctx)
+func readReleaseHistory(ctx context.Context, store ReleaseHistoryStore, request CheckRequest, current string, refreshErr error) (*ReleaseHistoryResult, error) {
+	snapshot, err := store.Load(ctx)
 	if canceled := ctx.Err(); canceled != nil {
 		return nil, canceled
 	}
@@ -113,5 +113,10 @@ func (a *CheckReleaseHistoryAction) cached(ctx context.Context, request CheckReq
 		return nil, errors.Join(refreshErr, err)
 	}
 
-	return &ReleaseHistoryResult{CheckResult: *selected, CheckedAt: snapshot.CheckedAt, FromCache: true, RefreshError: refreshErr.Error()}, nil
+	result := &ReleaseHistoryResult{CheckResult: *selected, CheckedAt: snapshot.CheckedAt, FromCache: true}
+	if refreshErr != nil {
+		result.RefreshError = refreshErr.Error()
+	}
+
+	return result, nil
 }

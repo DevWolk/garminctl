@@ -401,3 +401,10 @@ table.files td.chk { width: 28px; }
   .hero-watch { width: 64px; height: 64px; }
   .actionbar { left: 50%; }
 }
+
+/* Application metadata stays readable even with long release notes or paths. */
+#application-inventory dd { overflow-wrap: anywhere; }
+#application-native { min-inline-size: 0; }
+#application-release { display: block; max-inline-size: 100%; margin-block: 8px 16px; }
+.application-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 28rem; overflow: auto; }
+.application-notes:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

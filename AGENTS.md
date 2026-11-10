@@ -36,6 +36,17 @@ See CLAUDE.md for the working rules. Module map:
   Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
   acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.
+- `internal/containers/application` owns release selection, saved-history reads
+  and independent desktop/CLI/backend inventory. `ui/native` supplies only Info,
+  saved History and explicit Check, with a window-scoped read lease supplied by
+  desktop. App assembles the reader lazily from the compiled desktop version and
+  trusted backend identity. Registration does no IO and creates no watch runtime.
+  The Application SPA tab works without a watch, uses native read bindings for
+  local metadata, and renders release notes as text. Browser access shows backend
+  metadata and the Releases link. Opening the tab or switching channel never
+  refreshes the release feed; Check is explicit. Native scope shutdown cancels
+  and joins these reads before closing an owned backend. No public installer
+  API or install/rollback UI is exposed.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden
   listing. Non-CGO CLI builds retain WPD/DirFS support. Linux packages include
