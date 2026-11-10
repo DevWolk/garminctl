@@ -15,7 +15,7 @@ func catalogManifest(t *testing.T) (packageManifest, *Stager) {
 	release := ResolvedRelease{
 		ReleaseID: 41, Release: Release{Tag: request.ReleaseTag},
 		Package:   AssetRef{ID: 101, Name: "garminctl_1.2.0_linux_amd64.deb", Size: 1, URL: releasesEndpoint + "/assets/101"},
-		Signature: AssetRef{ID: 708, Name: "garminctl_1.2.0_linux_amd64.deb.sig", Size: 64, URL: releasesEndpoint + "/assets/708"},
+		Signature: AssetRef{ID: 708, Name: "garminctl_1.2.0_linux_amd64.deb.sig", Size: packageSignatureSize, URL: releasesEndpoint + "/assets/708"},
 	}
 	owner := &Stager{cacheDir: filepath.Join(t.TempDir(), "stage"), key: strings.Repeat("a", 64)}
 
@@ -36,12 +36,13 @@ func TestPackageManifestRejectsUntrustedDataBeforeVerification(t *testing.T) {
 		valid bool
 	}{
 		{name: "valid", edit: func(s string) string { return s }, valid: true},
-		{"schema", func(s string) string { return strings.Replace(s, `"version":1`, `"version":2`, 1) }, false},
+		{"legacy schema", func(s string) string { return strings.Replace(s, `"version":2`, `"version":1`, 1) }, false},
+		{"future schema", func(s string) string { return strings.Replace(s, `"version":2`, `"version":3`, 1) }, false},
 		{"source", func(s string) string {
 			return strings.Replace(s, `"source":"`+releasesEndpoint+`"`, `"source":"other"`, 1)
 		}, false},
 		{"key identity", func(s string) string { return strings.ReplaceAll(s, strings.Repeat("a", 64), strings.Repeat("c", 64)) }, false},
-		{"unknown key override", func(s string) string { return strings.Replace(s, `"version":1`, `"publicKey":"other","version":1`, 1) }, false},
+		{"unknown key override", func(s string) string { return strings.Replace(s, `"version":2`, `"publicKey":"other","version":2`, 1) }, false},
 		{"trailing", func(s string) string { return s + " {}" }, false},
 		{"truncated", func(s string) string { return s[:len(s)-1] }, false},
 		{"overlong", func(s string) string { return s + strings.Repeat(" ", maxStageRequest) }, false},
@@ -97,5 +98,27 @@ func TestPackageCatalogMetadataCannotChooseHostPath(t *testing.T) {
 		if result, err := cache.Open(t.Context(), id, nil); result != nil || err == nil || !strings.Contains(err.Error(), "invalid package catalog identity") {
 			t.Fatalf("accepted catalog path %q", id)
 		}
+	}
+}
+
+func TestPackageManifestRejectsCorrectlyHashedLegacySchema(t *testing.T) {
+	t.Parallel()
+	manifest, owner := catalogManifest(t)
+	manifest.Version = 1
+
+	id, err := packageIdentity(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifest.ID = id
+
+	cache, err := NewPackageCache(t.TempDir(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cache.validateManifest(id, manifest); err == nil {
+		t.Fatal("legacy schema accepted with a recomputed identity")
 	}
 }

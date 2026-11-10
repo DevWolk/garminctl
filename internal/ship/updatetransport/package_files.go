@@ -89,7 +89,7 @@ func (s *Stager) verifyRetained(ctx context.Context, target MatchRequest, releas
 			return err
 		}
 
-		return copyRetainedFile(ctx, root, release.Signature.Name, input, "signature", 64)
+		return copyRetainedFile(ctx, root, release.Signature.Name, input, "signature", packageSignatureSize)
 	}
 
 	return s.run(ctx, target, release, true, prepare, progress)

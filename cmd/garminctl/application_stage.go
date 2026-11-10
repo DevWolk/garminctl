@@ -12,7 +12,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/clix"
 )
 
-// updatePublicKey is base64 raw Ed25519 public key set by the build. Empty builds
+// updatePublicKey is base64 RSA-3072 SubjectPublicKeyInfo DER set by the build. Empty builds
 // refuse staging. No flag, environment value or IPC field can choose the key.
 var updatePublicKey string
 

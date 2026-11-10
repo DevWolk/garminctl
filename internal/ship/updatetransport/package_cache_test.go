@@ -176,7 +176,7 @@ func TestPackageCacheFailedPutKeepsPreviousAndCleansPending(t *testing.T) {
 	}
 	defer root.Close()
 
-	if err := root.WriteFile(filepath.Base(staged.SignaturePath()), make([]byte, 64), 0o600); err != nil {
+	if err := root.WriteFile(filepath.Base(staged.SignaturePath()), make([]byte, rawSignatureSize), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

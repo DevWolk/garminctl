@@ -85,7 +85,7 @@ func (p *localPackageAssets) RoundTrip(request *http.Request) (*http.Response, e
 		expected = p.release.Package.Size
 	case p.release.Signature.URL:
 		name = "signature"
-		expected = 64
+		expected = packageSignatureSize
 	default:
 		return nil, errors.New("offline verifier has no asset for this URL")
 	}

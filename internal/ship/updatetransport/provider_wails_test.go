@@ -55,14 +55,13 @@ func stagingDirectories(t *testing.T) []string {
 	return dirs
 }
 
-func TestProviderPinnedWailsVerificationAndFailureCleanup(t *testing.T) {
+func TestProviderMandatoryRSAVerificationAndWailsFailureCleanup(t *testing.T) {
 	t.Parallel()
 
-	otherKey := signedFixture(t).key
+	otherKey := otherStagePublicKey(t)
 	for _, tc := range []struct {
 		name   string
 		edit   func(*providerFixture)
-		noKey  bool
 		cancel bool
 		ready  bool
 	}{
@@ -80,7 +79,6 @@ func TestProviderPinnedWailsVerificationAndFailureCleanup(t *testing.T) {
 		{name: "different trust root", edit: func(f *providerFixture) {
 			f.key = otherKey
 		}},
-		{name: "missing pinned key", noKey: true},
 		{name: "canceled package response", cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -106,7 +104,7 @@ func TestProviderPinnedWailsVerificationAndFailureCleanup(t *testing.T) {
 				return response, err
 			})
 
-			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,14 +112,9 @@ func TestProviderPinnedWailsVerificationAndFailureCleanup(t *testing.T) {
 			host := &verifierHost{t: t}
 			flow := updater.New(host)
 
-			key := []byte(fixture.key)
-			if tc.noKey {
-				key = nil
-			}
-
 			if err := flow.Init(updater.Config{
 				CurrentVersion: "1.0.0", Platform: fixture.request.OS, Arch: fixture.request.Arch,
-				PublicKey: key, Providers: []updater.Provider{provider}, Window: updater.WindowNone,
+				Providers: []updater.Provider{provider}, Window: updater.WindowNone,
 			}); err != nil {
 				t.Fatal(err)
 			}

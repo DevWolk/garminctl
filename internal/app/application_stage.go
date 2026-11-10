@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -81,7 +80,7 @@ func applicationStageCache() string { return filepath.Join(paths.Cache(), "appli
 
 func applicationStageKey(encoded string) ([]byte, error) {
 	key, err := base64.StdEncoding.Strict().DecodeString(encoded)
-	if err != nil || len(key) != ed25519.PublicKeySize {
+	if err != nil || updatetransport.ValidatePublicKey(key) != nil {
 		return nil, errors.New("application updater compiled public key is not configured or invalid")
 	}
 

@@ -1,7 +1,6 @@
 package updatetransport
 
 import (
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"regexp"
@@ -72,8 +71,8 @@ func MatchAssets(request MatchRequest, assets []Asset) (*AssetMatch, error) {
 		return nil, errors.New("release package size must be positive and at most 512 MiB")
 	}
 
-	if assets[signature].Size != ed25519.SignatureSize {
-		return nil, errors.New("release signature size must be exactly 64 bytes")
+	if assets[signature].Size != packageSignatureSize {
+		return nil, errors.New("release signature size must be exactly 384 bytes")
 	}
 
 	return &AssetMatch{PackageIndex: payload, SignatureIndex: signature}, nil

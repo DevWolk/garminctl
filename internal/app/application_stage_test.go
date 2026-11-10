@@ -3,6 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"io"
 	"path/filepath"
@@ -55,6 +58,40 @@ func TestApplicationStageBuildKeyCannotComeFromInput(t *testing.T) {
 
 			if err := RunApplicationVerify(t.Context(), "dev", encoded, bytes.NewBufferString(`{"publicKey":"ignored"}`), io.Discard); err == nil {
 				t.Fatal("offline request chose its own key")
+			}
+		})
+	}
+}
+
+func TestApplicationStageKeyAcceptsRSAAndRejectsLegacyKey(t *testing.T) {
+	t.Parallel()
+
+	private, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	der, err := x509.MarshalPKIXPublicKey(&private.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		data  []byte
+		valid bool
+	}{
+		{name: "RSA SPKI", data: der, valid: true},
+		{name: "missing"},
+		{name: "legacy Ed25519", data: bytes.Repeat([]byte{7}, 32)},
+		{name: "trailing data", data: append(bytes.Clone(der), 0)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := applicationStageKey(base64.StdEncoding.EncodeToString(tc.data))
+			if (err == nil) != tc.valid || (tc.valid && !bytes.Equal(got, tc.data)) {
+				t.Fatalf("compiled key accepted=%t error=%v", err == nil, err)
 			}
 		})
 	}

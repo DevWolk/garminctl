@@ -3,9 +3,6 @@ package updatetransport_test
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
 	"io"
 	"net/http"
 	"reflect"
@@ -23,24 +20,24 @@ type providerFixture struct {
 	record  updatetransport.ResolvedRelease
 	data    []byte
 	sig     []byte
-	key     ed25519.PublicKey
+	key     []byte
 }
 
 func signedFixture(t *testing.T) providerFixture {
 	t.Helper()
 
-	pub, private, err := ed25519.GenerateKey(rand.Reader)
+	data := []byte("synthetic package bytes; never executable")
+
+	signature, err := stageTestSign(data)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	data := []byte("synthetic package bytes; never executable")
-	digest := sha256.Sum256(data)
 	pair := resolvePair()
 	pair[0].Size = int64(len(data))
 
 	return providerFixture{
-		request: setupRequest(), data: data, sig: ed25519.Sign(private, digest[:]), key: pub,
+		request: setupRequest(), data: data, sig: signature, key: stageTestPublicKey(),
 		record: updatetransport.ResolvedRelease{
 			ReleaseID: 41, Package: pair[0], Signature: pair[1],
 			Release: updatetransport.Release{
@@ -90,7 +87,7 @@ func newFixtureProvider(t *testing.T, fixture providerFixture) (*updatetransport
 
 	calls := []string{}
 
-	provider, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record)
+	provider, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record, fixture.key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,17 +113,17 @@ func TestProviderCopiesSelectedReleaseAndRawSiblingSignature(t *testing.T) {
 		Version: selectedVersion, Name: selectedName, Notes: "plain notes",
 		PublishedAt:  fixture.record.Release.PublishedAt,
 		Artifact:     updater.Artifact{Filename: setup120, Size: int64(len(fixture.data)), Platform: windowsOS, Arch: amd64Arch},
-		Verification: &updater.Verification{DigestAlgo: "sha256", SignatureAlgo: "ed25519", Signature: fixture.sig},
+		Verification: &updater.Verification{DigestAlgo: "sha256"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected Wails metadata: %+v verification=%+v", got, got.Verification)
 	}
 
-	got.Verification.Signature[0] ^= 0xff
+	got.Verification.Digest = []byte("caller edit")
 	got.Name = callerEdit
 
 	again, err := provider.Check(t.Context(), checkRequest())
-	if err != nil || again == nil || again.Name != selectedName || !bytes.Equal(again.Verification.Signature, fixture.sig) || len(*calls) != 2 {
+	if err != nil || again == nil || again.Name != selectedName || len(again.Verification.Digest) != 0 || len(*calls) != 2 {
 		t.Fatalf("second check=%+v error=%v calls=%v", again, err, *calls)
 	}
 }

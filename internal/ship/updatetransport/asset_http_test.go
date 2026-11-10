@@ -40,13 +40,13 @@ func TestProviderSignatureReadIsBoundedAndBodyClosed(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})}
 
-	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	got, err := provider.Check(t.Context(), checkRequest())
-	if got != nil || err == nil || body.read != 65 || body.closed != 1 {
+	if got != nil || err == nil || body.read != rawSignatureSize+1 || body.closed != 1 {
 		t.Fatalf("result=%+v error=%v read=%d closed=%d", got, err, body.read, body.closed)
 	}
 }
@@ -68,7 +68,7 @@ func TestProviderAssetReadErrorsPreserveCauseAndCloseBody(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 			})}
 
-			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +139,7 @@ func TestProviderFollowsHTTPSAssetRedirectWithoutCookiesOrCredentials(t *testing
 		}),
 	}
 
-	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestProviderRejectsUnsafeOrExcessiveRedirects(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {tc.destination}}, Body: http.NoBody}, nil
 			})}
 
-			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -216,7 +216,7 @@ func TestProviderTimeBounds(t *testing.T) {
 					return nil, r.Context().Err()
 				})}
 
-				provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+				provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -270,7 +270,7 @@ func TestProviderCancellationAfterProgressPreservesContextAndClosesBody(t *testi
 		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
 	})}
 
-	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 	if err != nil {
 		t.Fatal(err)
 	}

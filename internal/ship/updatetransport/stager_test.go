@@ -3,7 +3,8 @@ package updatetransport_test
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
+	"crypto"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -30,16 +31,12 @@ const stageProtocolField = "protocol"
 
 var stageData = []byte("synthetic installer payload; never executable")
 
-func stageTestKey() ed25519.PrivateKey {
-	// Deterministic key exists only in this test binary, never production.
-	return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{7}, ed25519.SeedSize))
-}
-
-func stageTestPublicKey() ed25519.PublicKey {
-	return ed25519.PublicKey(stageTestKey()[ed25519.SeedSize:])
-}
-
 func TestMain(m *testing.M) {
+	if err := initializeStageTestKey(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	if len(os.Args) != 2 || (os.Args[1] != updatetransport.StageCommand && os.Args[1] != updatetransport.VerifyCommand) {
 		os.Exit(m.Run())
 	}
@@ -86,7 +83,7 @@ func stageTestChild() error {
 	}
 
 	if strings.HasSuffix(request.Target.ReleaseTag, "-hang") {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{stageProtocolField: 1, stageOperationField: request.Operation, "kind": "progress", "written": 1, "total": len(stageData)})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{stageProtocolField: 2, stageOperationField: request.Operation, "kind": "progress", "written": 1, "total": len(stageData)})
 
 		for {
 			time.Sleep(time.Hour)
@@ -110,16 +107,16 @@ func stageTestChild() error {
 		return err
 	}
 
-	key := stageTestKey()
-
 	data, err := stagePayload(request.Target)
 	if err != nil {
 		return err
 	}
 
-	digest := sha256.Sum256(data)
+	signature, err := stageTestSign(data)
+	if err != nil {
+		return err
+	}
 
-	signature := ed25519.Sign(key, digest[:])
 	if strings.HasSuffix(request.Target.ReleaseTag, "-bad-signature") {
 		signature[0] ^= 0xff
 	}
@@ -154,7 +151,7 @@ func stageSelection(tag string) (updatetransport.MatchRequest, updatetransport.R
 
 	return request, updatetransport.ResolvedRelease{
 		ReleaseID: 41, Release: updatetransport.Release{Tag: tag},
-		Package: apiAsset(101, name, int64(len(stageData))), Signature: apiAsset(708, name+".sig", 64),
+		Package: apiAsset(101, name, int64(len(stageData))), Signature: apiAsset(708, name+".sig", rawSignatureSize),
 	}
 }
 
@@ -219,7 +216,7 @@ func TestStagerRunsCachedCLIAndRetainsVerifiedPackage(t *testing.T) {
 	}
 
 	sig, err := root.ReadFile(filepath.Base(result.SignaturePath()))
-	if err != nil || !ed25519.Verify(stageTestPublicKey(), digest[:], sig) {
+	if err != nil || rsa.VerifyPKCS1v15(&stagePrivateKey.PublicKey, crypto.SHA256, digest[:], sig) != nil {
 		t.Fatalf("bad retained signature: %v", err)
 	}
 }

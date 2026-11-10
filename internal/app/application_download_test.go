@@ -3,8 +3,11 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -24,12 +27,53 @@ import (
 const (
 	applicationDownloadTag = "v1.2.0"
 	downloadTestBuild      = "v1.0.0"
+	downloadTestKeyEnv     = "GARMINCTL_SYNTHETIC_DOWNLOAD_TEST_KEY"
 )
 
-var downloadTestBytes = []byte("synthetic application package; never executable")
+var (
+	downloadTestBytes  = []byte("synthetic application package; never executable")
+	downloadPrivateKey *rsa.PrivateKey
+	downloadPublicKey  []byte
+)
 
-func downloadTestKey() ed25519.PrivateKey {
-	return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{41}, ed25519.SeedSize))
+func initializeDownloadTestKey() error {
+	encoded := os.Getenv(downloadTestKeyEnv)
+	if encoded == "" {
+		key, err := rsa.GenerateKey(rand.Reader, 3072)
+		if err != nil {
+			return err
+		}
+
+		der, err := x509.MarshalPKCS8PrivateKey(key)
+		if err != nil {
+			return err
+		}
+
+		encoded = base64.StdEncoding.EncodeToString(der)
+		if err := os.Setenv(downloadTestKeyEnv, encoded); err != nil {
+			return err
+		}
+	}
+
+	der, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return err
+	}
+
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return errors.New("synthetic application key is not RSA")
+	}
+
+	downloadPrivateKey = key
+	downloadPublicKey, err = x509.MarshalPKIXPublicKey(&key.PublicKey)
+
+	return err
 }
 
 type downloadTestHTTP func(*http.Request) (*http.Response, error)
@@ -40,6 +84,11 @@ func downloadTestResponse(body []byte) *http.Response {
 }
 
 func TestMain(m *testing.M) {
+	if err := initializeDownloadTestKey(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	if len(os.Args) != 2 || (os.Args[1] != updatetransport.StageCommand && os.Args[1] != updatetransport.VerifyCommand) {
 		os.Exit(m.Run())
 	}
@@ -58,9 +107,12 @@ func downloadTestWorker() error {
 		return err
 	}
 
-	key := downloadTestKey()
 	digest := sha256.Sum256(downloadTestBytes)
-	signature := ed25519.Sign(key, digest[:])
+
+	signature, err := rsa.SignPKCS1v15(nil, downloadPrivateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		return err
+	}
 
 	input, err := io.ReadAll(io.LimitReader(os.Stdin, (64<<10)+1))
 	if err != nil {
@@ -93,7 +145,7 @@ func downloadTestWorker() error {
 		return nil, fmt.Errorf("unexpected fixture URL %s", r.URL)
 	})}
 
-	config := updatetransport.WorkerConfig{Directory: filepath.Dir(executable), BuildVersion: downloadTestBuild, PublicKey: ed25519.PublicKey(key[ed25519.SeedSize:]), HTTPClient: client}
+	config := updatetransport.WorkerConfig{Directory: filepath.Dir(executable), BuildVersion: downloadTestBuild, PublicKey: bytes.Clone(downloadPublicKey), HTTPClient: client}
 	if os.Args[1] == updatetransport.VerifyCommand {
 		return updatetransport.RunVerifyWorker(context.Background(), config, bytes.NewReader(input), os.Stdout)
 	}
@@ -126,7 +178,7 @@ func downloadPipeline(t *testing.T, tag string, draft bool) (applicationPackageD
 		case "/repos/DevWolk/garminctl/releases/tags/" + tag:
 			value = map[string]any{"id": 11, "tag_name": tag, "draft": draft}
 		case "/repos/DevWolk/garminctl/releases/11/assets":
-			value = []updatetransport.AssetRef{{ID: 101, Name: name, Size: int64(len(downloadTestBytes)), URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/101"}, {ID: 102, Name: name + ".sig", Size: 64, URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/102"}}
+			value = []updatetransport.AssetRef{{ID: 101, Name: name, Size: int64(len(downloadTestBytes)), URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/101"}, {ID: 102, Name: name + ".sig", Size: 384, URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/102"}}
 		default:
 			return nil, fmt.Errorf("unexpected parent HTTP %s", r.URL)
 		}
@@ -136,9 +188,8 @@ func downloadPipeline(t *testing.T, tag string, draft bool) (applicationPackageD
 		return downloadTestResponse(body), err
 	})}
 	directory := t.TempDir()
-	key := downloadTestKey()
 
-	return applicationPackageDownload{source: updatetransport.NewGitHub(client), key: base64.StdEncoding.EncodeToString(key[ed25519.SeedSize:]), stageDirectory: filepath.Join(directory, "stages"), packageDirectory: filepath.Join(directory, "packages")}, application.DownloadTarget{OS: runtime.GOOS, Arch: runtime.GOARCH, Installation: kind, CLIPath: cli, CLIVersion: downloadTestBuild, IncludePrerelease: true}
+	return applicationPackageDownload{source: updatetransport.NewGitHub(client), key: base64.StdEncoding.EncodeToString(downloadPublicKey), stageDirectory: filepath.Join(directory, "stages"), packageDirectory: filepath.Join(directory, "packages")}, application.DownloadTarget{OS: runtime.GOOS, Arch: runtime.GOARCH, Installation: kind, CLIPath: cli, CLIVersion: downloadTestBuild, IncludePrerelease: true}
 }
 
 func TestApplicationDownloadUsesRealCachedCLIAndReverifiesRetainedPackage(t *testing.T) {

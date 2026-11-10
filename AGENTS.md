@@ -6,7 +6,7 @@ See CLAUDE.md for the working rules. Module map:
   dispatches the private `_application-stage` worker before ordinary commands.
   `_application-verify` uses the same bounded protocol with a local-only asset
   source; neither command accepts extra arguments or a request-supplied key.
-  `main.updatePublicKey` is a compiled-only base64 Ed25519 public key; empty
+  `main.updatePublicKey` is compiled-only base64 RSA-3072 SPKI DER; empty
   builds refuse staging. The worker runs only in a marked private cache
   operation, without watch ownership, a native window or installer execution.
   Normal dispatch
@@ -200,8 +200,11 @@ See CLAUDE.md for the working rules. Module map:
   owned selection to the pinned headless Wails pkg/updater, fetching the exact
   raw sibling signature and streaming only the owned package URL. It requires
   exact actual size, bounds reads/time and strips credentials on HTTPS-only
-  redirects. The staging caller must supply the compiled trust key to Wails;
-  Provider Download success alone is not authentication. HistoryCache stores
+  redirects. Composition supplies the compiled RSA-3072 key to Provider.
+  Download succeeds only after exact-size streaming and mandatory SHA-256/RSA
+  verification through Go crypto/rsa. Wails supplies staging; its digest-only
+  configuration is never sufficient authentication. Worker IPC and retained
+  catalogs use version 2 and reject legacy Ed25519 formats. HistoryCache stores
   versioned display metadata for the compiled source in application-history,
   bounded to 20 MiB/1000 records with private atomic file replacement. Missing,
   corrupt, foreign-source or unsupported snapshots fail explicitly. Package

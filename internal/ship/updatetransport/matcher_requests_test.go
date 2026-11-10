@@ -33,7 +33,7 @@ func TestMatchAssetsRejectsUnsupportedRequestsEvenWithMatchingNames(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			input := []updatetransport.Asset{{Name: tc.filename, Size: 1}, {Name: tc.filename + ".sig", Size: 64}}
+			input := []updatetransport.Asset{{Name: tc.filename, Size: 1}, {Name: tc.filename + ".sig", Size: rawSignatureSize}}
 
 			match, err := updatetransport.MatchAssets(updatetransport.MatchRequest{
 				ReleaseTag: tc.tag, OS: tc.platform, Arch: tc.arch, Installation: tc.kind,
@@ -50,7 +50,7 @@ func TestMatchAssetsRequiresNormalizedLinuxFilename(t *testing.T) {
 
 	input := []updatetransport.Asset{
 		{Name: "garminctl_1.2.0-rc.1_linux_amd64.deb", Size: 1},
-		{Name: "garminctl_1.2.0-rc.1_linux_amd64.deb.sig", Size: 64},
+		{Name: "garminctl_1.2.0-rc.1_linux_amd64.deb.sig", Size: rawSignatureSize},
 	}
 
 	match, err := updatetransport.MatchAssets(updatetransport.MatchRequest{

@@ -34,7 +34,7 @@ func workerRequest(t *testing.T, directory string) map[string]any {
 	keyHash := sha256.Sum256(stageTestPublicKey())
 
 	return map[string]any{
-		stageProtocolField: 1, stageOperationField: operation, "buildVersion": stageTestVersion,
+		stageProtocolField: 2, stageOperationField: operation, "buildVersion": stageTestVersion,
 		"keyId": hex.EncodeToString(keyHash[:]), "target": target, "release": release,
 	}
 }
@@ -47,7 +47,7 @@ func TestStageWorkerRejectsUntrustedProtocolBeforeHTTP(t *testing.T) {
 		edit   func(map[string]any)
 		suffix string
 	}{
-		{name: "protocol", edit: func(r map[string]any) { r[stageProtocolField] = 2 }},
+		{name: "protocol", edit: func(r map[string]any) { r[stageProtocolField] = 1 }},
 		{name: "operation", edit: func(r map[string]any) { r[stageOperationField] = strings.Repeat("b", 64) }},
 		{name: "build", edit: func(r map[string]any) { r["buildVersion"] = "other" }},
 		{name: "key fingerprint", edit: func(r map[string]any) { r["keyId"] = strings.Repeat("b", 64) }},

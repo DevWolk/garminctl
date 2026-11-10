@@ -1,48 +1,59 @@
 package updatetransport
 
 import (
+	"bytes"
 	"context"
-	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
-// Provider adapts one selected release to Wails' download/verification flow.
-// Application must admit the release; the staging caller must pin PublicKey.
+// Provider authenticates one selected package before Wails can complete staging.
+// Application admits the release; composition supplies the compiled public key.
 // Provider neither installs a package nor chooses a release or trust root.
 type Provider struct {
-	client  *http.Client
-	request MatchRequest
-	record  ResolvedRelease
+	client    *http.Client
+	request   MatchRequest
+	record    ResolvedRelease
+	key       *rsa.PublicKey
+	mu        sync.Mutex
+	signature []byte
 }
 
 var _ updater.Provider = (*Provider)(nil)
 
 // NewProvider copies the selected metadata and borrows a bounded transport.
 // It revalidates references so mutable DTOs cannot introduce arbitrary URLs.
-func NewProvider(client *http.Client, request MatchRequest, record ResolvedRelease) (*Provider, error) {
+func NewProvider(client *http.Client, request MatchRequest, record ResolvedRelease, publicKey []byte) (*Provider, error) {
+	key, err := parsePublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateResolved(request, record); err != nil {
 		return nil, err
 	}
 
-	return &Provider{client: assetHTTPClient(client), request: request, record: record}, nil
+	return &Provider{client: assetHTTPClient(client), request: request, record: record, key: key}, nil
 }
 
 // Name identifies this selected-release source to the Wails updater.
 func (p *Provider) Name() string { return "garminctl-selected-release" }
 
 // Check fetches the exact sibling signature, without a second release lookup.
-// Its result is unverified until Wails authenticates the downloaded bytes.
+// Its result is metadata only; Download authenticates bytes against the pin.
 func (p *Provider) Check(ctx context.Context, request updater.CheckRequest) (*updater.Release, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	if p == nil || p.client == nil {
+	if p == nil || p.client == nil || p.key == nil {
 		return nil, errors.New("release provider is not configured")
 	}
 
@@ -58,33 +69,33 @@ func (p *Provider) Check(ctx context.Context, request updater.CheckRequest) (*up
 		return nil, err
 	}
 
+	p.mu.Lock()
+	p.signature = bytes.Clone(signature)
+	p.mu.Unlock()
+
 	return &updater.Release{
 		Version: strings.TrimPrefix(p.record.Release.Tag, "v"), Name: p.record.Release.Name,
 		Notes: p.record.Release.Notes, PublishedAt: p.record.Release.PublishedAt,
-		Artifact: p.artifact(),
-		Verification: &updater.Verification{
-			DigestAlgo: "sha256", SignatureAlgo: "ed25519", Signature: signature,
-		},
+		Artifact:     p.artifact(),
+		Verification: &updater.Verification{DigestAlgo: "sha256"},
 	}, nil
 }
 
 // Download streams only the owned package URL, enforcing its declared size.
-// Success means an exact-size stream, not an authenticated or installed file.
+// Success requires the exact size and a valid RSA signature; it does not install.
 func (p *Provider) Download(ctx context.Context, release *updater.Release, dst io.Writer, progress func(int64, int64)) error {
+	_, err := p.download(ctx, release, dst, progress)
+	return err
+}
+
+func (p *Provider) download(ctx context.Context, release *updater.Release, dst io.Writer, progress func(int64, int64)) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
-	if p == nil || p.client == nil {
-		return errors.New("release provider is not configured")
-	}
-
-	if err := p.validateDownload(release); err != nil {
-		return err
-	}
-
-	if dst == nil {
-		return errors.New("package destination is required")
+	signature, err := p.downloadSignature(release, dst)
+	if err != nil {
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
@@ -92,11 +103,44 @@ func (p *Provider) Download(ctx context.Context, release *updater.Release, dst i
 
 	body, err := p.openAsset(ctx, p.record.Package)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer body.Close()
 
-	return copyPackage(ctx, dst, body, p.record.Package.Size, progress)
+	digest := sha256.New()
+	if err := copyPackage(ctx, io.MultiWriter(dst, digest), body, p.record.Package.Size, progress); err != nil {
+		return nil, err
+	}
+
+	if err := verifyPackageSignature(ctx, p.key, digest.Sum(nil), signature); err != nil {
+		return nil, err
+	}
+
+	return signature, nil
+}
+
+func (p *Provider) downloadSignature(release *updater.Release, dst io.Writer) ([]byte, error) {
+	if p == nil || p.client == nil || p.key == nil {
+		return nil, errors.New("release provider is not configured")
+	}
+
+	if err := p.validateDownload(release); err != nil {
+		return nil, err
+	}
+
+	if dst == nil {
+		return nil, errors.New("package destination is required")
+	}
+
+	p.mu.Lock()
+	signature := bytes.Clone(p.signature)
+	p.mu.Unlock()
+
+	if len(signature) != packageSignatureSize {
+		return nil, errors.New("download requires a checked package signature")
+	}
+
+	return signature, nil
 }
 
 func (p *Provider) artifact() updater.Artifact {
@@ -112,8 +156,8 @@ func (p *Provider) validateDownload(release *updater.Release) error {
 	}
 
 	v := release.Verification
-	if v == nil || v.DigestAlgo != "sha256" || v.SignatureAlgo != "ed25519" || len(v.Signature) != ed25519.SignatureSize || len(v.Digest) != 0 {
-		return errors.New("download requires the selected raw signature contract")
+	if v == nil || v.DigestAlgo != "sha256" || v.SignatureAlgo != "" || len(v.Signature) != 0 || len(v.Digest) != 0 {
+		return errors.New("download requires the selected RSA provider contract")
 	}
 
 	return nil

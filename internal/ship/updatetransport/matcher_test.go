@@ -10,15 +10,42 @@ import (
 )
 
 const (
-	windowsOS      = "windows"
-	linuxOS        = "linux"
-	amd64Arch      = "amd64"
-	arm64Arch      = "arm64"
-	tag120         = "v1.2.0"
-	setup120       = "garminctl_v1.2.0_windows_amd64_setup.exe"
-	zip120         = "garminctl_1.2.0_windows_amd64.zip"
-	maxPackageSize = 512 << 20
+	windowsOS        = "windows"
+	linuxOS          = "linux"
+	amd64Arch        = "amd64"
+	arm64Arch        = "arm64"
+	tag120           = "v1.2.0"
+	setup120         = "garminctl_v1.2.0_windows_amd64_setup.exe"
+	zip120           = "garminctl_1.2.0_windows_amd64.zip"
+	maxPackageSize   = 512 << 20
+	rawSignatureSize = 384
 )
+
+func TestMatchAssetsRSAContractRejectsLegacySignatures(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		size  int64
+		valid bool
+	}{
+		{name: "RSA-3072", size: rawSignatureSize, valid: true},
+		{name: "legacy Ed25519", size: 64},
+		{name: "short RSA", size: rawSignatureSize - 1},
+		{name: "long RSA", size: rawSignatureSize + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			assets := []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: setup120 + ".sig", Size: tc.size}}
+
+			got, err := updatetransport.MatchAssets(setupRequest(), assets)
+			if (err == nil) != tc.valid || (got != nil) != tc.valid {
+				t.Fatalf("signature size %d: match=%+v error=%v", tc.size, got, err)
+			}
+		})
+	}
+}
 
 func TestMatchAssetsPackagingMatrix(t *testing.T) {
 	t.Parallel()
@@ -44,7 +71,7 @@ func TestMatchAssetsPackagingMatrix(t *testing.T) {
 
 			assets := []updatetransport.Asset{
 				{Name: "checksums.txt", Size: 200},
-				{Name: tc.filename + ".sig", Size: 64},
+				{Name: tc.filename + ".sig", Size: rawSignatureSize},
 				{Name: tc.filename, Size: 1234},
 				{Name: "windows-signing-certificate.pem", Size: 400},
 			}
@@ -69,7 +96,7 @@ func setupRequest() updatetransport.MatchRequest {
 }
 
 func assetPair(name string) []updatetransport.Asset {
-	return []updatetransport.Asset{{Name: name, Size: 2}, {Name: name + ".sig", Size: 64}}
+	return []updatetransport.Asset{{Name: name, Size: 2}, {Name: name + ".sig", Size: rawSignatureSize}}
 }
 
 func TestMatchAssetsDoesNotDependOnOrderOrChoosePortableForSetup(t *testing.T) {
@@ -77,9 +104,9 @@ func TestMatchAssetsDoesNotDependOnOrderOrChoosePortableForSetup(t *testing.T) {
 
 	assets := []updatetransport.Asset{
 		{Name: zip120, Size: 1},
-		{Name: zip120 + ".sig", Size: 64},
+		{Name: zip120 + ".sig", Size: rawSignatureSize},
 		{Name: setup120, Size: 3},
-		{Name: setup120 + ".sig", Size: 64},
+		{Name: setup120 + ".sig", Size: rawSignatureSize},
 	}
 
 	for _, reverse := range []struct {
@@ -114,11 +141,11 @@ func TestMatchAssetsRejectsMissingAmbiguousOrWrongNames(t *testing.T) {
 		assets []updatetransport.Asset
 	}{
 		{name: "empty"},
-		{name: "only portable", assets: []updatetransport.Asset{{Name: zip120, Size: 2}, {Name: zip120 + ".sig", Size: 64}}},
+		{name: "only portable", assets: []updatetransport.Asset{{Name: zip120, Size: 2}, {Name: zip120 + ".sig", Size: rawSignatureSize}}},
 		{name: "missing signature", assets: []updatetransport.Asset{{Name: setup120, Size: 2}}},
-		{name: "wrong signature", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: zip120 + ".sig", Size: 64}}},
-		{name: "duplicate package", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: setup120, Size: 3}, {Name: setup120 + ".sig", Size: 64}}},
-		{name: "duplicate signature", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: setup120 + ".sig", Size: 64}, {Name: setup120 + ".sig", Size: 64}}},
+		{name: "wrong signature", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: zip120 + ".sig", Size: rawSignatureSize}}},
+		{name: "duplicate package", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: setup120, Size: 3}, {Name: setup120 + ".sig", Size: rawSignatureSize}}},
+		{name: "duplicate signature", assets: []updatetransport.Asset{{Name: setup120, Size: 2}, {Name: setup120 + ".sig", Size: rawSignatureSize}, {Name: setup120 + ".sig", Size: rawSignatureSize}}},
 		{name: "wrong version", assets: assetPair("garminctl_v1.3.0_windows_amd64_setup.exe")},
 		{name: "unprefixed setup for prefixed tag", assets: assetPair("garminctl_1.2.0_windows_amd64_setup.exe")},
 		{name: "path suffix", assets: assetPair("../" + setup120)},
@@ -144,12 +171,12 @@ func TestMatchAssetsSizeBounds(t *testing.T) {
 		payload, signature int64
 		valid              bool
 	}{
-		{name: "one byte", payload: 1, signature: 64, valid: true},
-		{name: "maximum", payload: maxPackageSize, signature: 64, valid: true},
-		{name: "empty package", signature: 64},
-		{name: "negative package", payload: -1, signature: 64},
-		{name: "overlong package", payload: maxPackageSize + 1, signature: 64},
-		{name: "overflow sized package", payload: math.MaxInt64, signature: 64},
+		{name: "one byte", payload: 1, signature: rawSignatureSize, valid: true},
+		{name: "maximum", payload: maxPackageSize, signature: rawSignatureSize, valid: true},
+		{name: "empty package", signature: rawSignatureSize},
+		{name: "negative package", payload: -1, signature: rawSignatureSize},
+		{name: "overlong package", payload: maxPackageSize + 1, signature: rawSignatureSize},
+		{name: "overflow sized package", payload: math.MaxInt64, signature: rawSignatureSize},
 		{name: "unknown signature", payload: 1},
 		{name: "negative signature", payload: 1, signature: -1},
 		{name: "short signature", payload: 1, signature: 63},

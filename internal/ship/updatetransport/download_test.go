@@ -64,7 +64,7 @@ func TestProviderBoundsPackageReadWithoutTrustingContentLength(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: body, ContentLength: fixture.record.Package.Size}, nil
 	})}
 
-	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+	provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 	if err != nil {
 		t.Fatal(err)
 	}

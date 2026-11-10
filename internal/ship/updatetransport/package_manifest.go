@@ -35,7 +35,7 @@ func newPackageManifest(target MatchRequest, release ResolvedRelease, digest, ke
 
 	release.Release.Name = ""
 	release.Release.Notes = ""
-	manifest := packageManifest{Version: 1, Source: releasesEndpoint, KeyID: key, Target: target, Release: release, Digest: digest}
+	manifest := packageManifest{Version: 2, Source: releasesEndpoint, KeyID: key, Target: target, Release: release, Digest: digest}
 	id, err := packageIdentity(manifest)
 	manifest.ID = id
 
@@ -44,10 +44,11 @@ func newPackageManifest(target MatchRequest, release ResolvedRelease, digest, ke
 
 func packageIdentity(manifest packageManifest) (string, error) {
 	identity := struct {
-		Target MatchRequest `json:"target"`
-		Digest string       `json:"digest"`
-		KeyID  string       `json:"keyId"`
-	}{manifest.Target, manifest.Digest, manifest.KeyID}
+		Version int          `json:"version"`
+		Target  MatchRequest `json:"target"`
+		Digest  string       `json:"digest"`
+		KeyID   string       `json:"keyId"`
+	}{manifest.Version, manifest.Target, manifest.Digest, manifest.KeyID}
 
 	data, err := json.Marshal(identity)
 	if err != nil {
@@ -157,7 +158,7 @@ func (c *PackageCache) readManifest(ctx context.Context, id string) (packageMani
 }
 
 func (c *PackageCache) validateManifest(id string, manifest packageManifest) error {
-	if manifest.Version != 1 || manifest.Source != releasesEndpoint || manifest.KeyID != c.stager.key || manifest.ID != id || !validPackageID(manifest.Digest) {
+	if manifest.Version != 2 || manifest.Source != releasesEndpoint || manifest.KeyID != c.stager.key || manifest.ID != id || !validPackageID(manifest.Digest) {
 		return errors.New("package manifest schema, source or compiled key does not match")
 	}
 
@@ -188,5 +189,5 @@ func copyPackagePair(ctx context.Context, source, destination string, release Re
 		return err
 	}
 
-	return copyRetainedFile(ctx, root, release.Signature.Name, destination, release.Signature.Name, 64)
+	return copyRetainedFile(ctx, root, release.Signature.Name, destination, release.Signature.Name, packageSignatureSize)
 }

@@ -27,7 +27,7 @@ func stageTestFault(input []byte) (bool, error) {
 		return true, err
 	}
 
-	event := map[string]any{stageProtocolField: 1, stageOperationField: request.Operation, "kind": "progress", "written": 1, "total": len(stageData)}
+	event := map[string]any{stageProtocolField: 2, stageOperationField: request.Operation, "kind": "progress", "written": 1, "total": len(stageData)}
 	switch strings.TrimPrefix(request.Target.ReleaseTag, "v1.2.0-") {
 	case "missing-complete":
 		return true, json.NewEncoder(os.Stdout).Encode(event)
@@ -60,7 +60,7 @@ func stageTestFault(input []byte) (bool, error) {
 			return true, err
 		}
 
-		if err := root.WriteFile(request.Release.Signature.Name, bytes.Repeat([]byte{1}, 64), 0o600); err != nil {
+		if err := root.WriteFile(request.Release.Signature.Name, bytes.Repeat([]byte{1}, rawSignatureSize), 0o600); err != nil {
 			return true, err
 		}
 
@@ -125,7 +125,7 @@ func TestStagerRefusesMismatchedCompiledIdentity(t *testing.T) {
 			if mismatch == "version" {
 				config.BuildVersion = "different-build"
 			} else {
-				config.PublicKey = bytes.Repeat([]byte{2}, 32)
+				config.PublicKey = otherStagePublicKey(t)
 			}
 
 			stager, err := updatetransport.NewStager(config)

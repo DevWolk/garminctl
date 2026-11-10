@@ -152,7 +152,7 @@ func verifyStagedFiles(ctx context.Context, directory string, release ResolvedRe
 		return err
 	}
 
-	if len(signature) != 64 {
+	if len(signature) != packageSignatureSize {
 		return errors.New("invalid retained signature")
 	}
 
@@ -171,9 +171,9 @@ func readStagedSignature(root *os.Root, name string) ([]byte, error) {
 		return nil, err
 	}
 
-	if !info.Mode().IsRegular() || info.Size() != 64 {
+	if !info.Mode().IsRegular() || info.Size() != packageSignatureSize {
 		return nil, errors.New("invalid retained signature type or size")
 	}
 
-	return io.ReadAll(io.LimitReader(file, 65))
+	return io.ReadAll(io.LimitReader(file, packageSignatureSize+1))
 }

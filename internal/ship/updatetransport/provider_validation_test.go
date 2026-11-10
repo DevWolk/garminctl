@@ -42,7 +42,7 @@ func TestNewProviderRevalidatesSelectedMetadataWithoutHTTP(t *testing.T) {
 
 			calls := []string{}
 
-			got, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record)
+			got, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record, fixture.key)
 			if got != nil || err == nil || len(calls) != 0 {
 				t.Fatalf("provider=%+v error=%v calls=%v", got, err, calls)
 			}
@@ -81,8 +81,8 @@ func TestProviderRejectsChangedDownloadContractBeforeHTTP(t *testing.T) {
 		{name: "architecture", edit: func(r *updater.Release) { r.Artifact.Arch = arm64Arch }},
 		{name: "no verification", edit: func(r *updater.Release) { r.Verification = nil }},
 		{name: "digest algorithm", edit: func(r *updater.Release) { r.Verification.DigestAlgo = "sha512" }},
-		{name: "signature algorithm", edit: func(r *updater.Release) { r.Verification.SignatureAlgo = "" }},
-		{name: "missing signature", edit: func(r *updater.Release) { r.Verification.Signature = nil }},
+		{name: "signature algorithm", edit: func(r *updater.Release) { r.Verification.SignatureAlgo = "ed25519" }},
+		{name: "caller signature", edit: func(r *updater.Release) { r.Verification.Signature = []byte("caller signature") }},
 		{name: "caller digest", edit: func(r *updater.Release) { r.Verification.Digest = []byte("caller digest") }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestProviderRejectsChangedDownloadContractBeforeHTTP(t *testing.T) {
 func TestProviderRejectsMissingOrOverlongSignatureBodies(t *testing.T) {
 	t.Parallel()
 
-	for _, size := range []int{0, 63, 65, 1 << 20} {
+	for _, size := range []int{0, 64, rawSignatureSize - 1, rawSignatureSize + 1, 1 << 20} {
 		t.Run(strconv.Itoa(size), func(t *testing.T) {
 			t.Parallel()
 
@@ -135,7 +135,7 @@ func TestProviderPreservesSignatureReadAndHTTPFailures(t *testing.T) {
 				return &http.Response{StatusCode: status, Body: body}, nil
 			})}
 
-			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record)
+			provider, err := updatetransport.NewProvider(client, fixture.request, fixture.record, fixture.key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,5 +165,66 @@ func TestProviderZeroAndNilDownload(t *testing.T) {
 	provider, calls := newFixtureProvider(t, signedFixture(t))
 	if err := provider.Download(t.Context(), nil, io.Discard, nil); err == nil || len(*calls) != 0 {
 		t.Fatalf("nil download error=%v calls=%v", err, *calls)
+	}
+}
+
+func TestProviderRejectsUnconfiguredKeyBeforeHTTP(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		key  []byte
+	}{
+		{name: "missing"},
+		{name: "legacy raw key", key: bytes.Repeat([]byte{3}, 32)},
+		{name: "malformed SPKI", key: []byte("untrusted key")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := signedFixture(t)
+			calls := []string{}
+
+			provider, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record, tc.key)
+			if err == nil || provider != nil || len(calls) != 0 {
+				t.Fatalf("provider=%+v error=%v calls=%v", provider, err, calls)
+			}
+		})
+	}
+}
+
+func TestProviderOwnsKeyAndRejectsFeedKeySubstitution(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"caller key mutation", "feed key substitution"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture := signedFixture(t)
+
+			key := bytes.Clone(fixture.key)
+			if name == "feed key substitution" {
+				key = otherStagePublicKey(t)
+			}
+
+			calls := []string{}
+
+			provider, err := updatetransport.NewProvider(assetClient(t, fixture, &calls), fixture.request, fixture.record, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			key[0] ^= 1
+
+			release, err := provider.Check(t.Context(), checkRequest())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			release.Metadata = map[string]any{"publicKey": bytes.Clone(fixture.key), "signatureAlgo": "none"}
+
+			err = provider.Download(t.Context(), release, io.Discard, nil)
+			if (err == nil) != (name == "caller key mutation") {
+				t.Fatalf("download error=%v", err)
+			}
+		})
 	}
 }

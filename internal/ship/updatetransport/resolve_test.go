@@ -64,7 +64,7 @@ func apiAsset(id int64, name string, size int64) updatetransport.AssetRef {
 }
 
 func resolvePair() []updatetransport.AssetRef {
-	return []updatetransport.AssetRef{apiAsset(101, setup120, 1234), apiAsset(708, setup120+".sig", 64)}
+	return []updatetransport.AssetRef{apiAsset(101, setup120, 1234), apiAsset(708, setup120+".sig", rawSignatureSize)}
 }
 
 func tagRecord() map[string]any {

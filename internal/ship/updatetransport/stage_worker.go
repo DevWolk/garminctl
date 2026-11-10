@@ -1,7 +1,6 @@
 package updatetransport
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -52,7 +51,7 @@ func RunStageWorker(ctx context.Context, config WorkerConfig, input io.Reader, o
 		return errors.New("staging requires the native CLI platform")
 	}
 
-	provider, err := NewProvider(config.HTTPClient, request.Target, request.Release)
+	provider, err := NewProvider(config.HTTPClient, request.Target, request.Release, config.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -92,7 +91,7 @@ func downloadWorkerStage(ctx context.Context, config WorkerConfig, request stage
 	flow := updater.New(host)
 	if err := flow.Init(updater.Config{
 		CurrentVersion: config.BuildVersion, Platform: request.Target.OS, Arch: request.Target.Arch,
-		PublicKey: bytes.Clone(config.PublicKey), Providers: []updater.Provider{mirror}, Window: updater.WindowNone,
+		Providers: []updater.Provider{mirror}, Window: updater.WindowNone,
 	}); err != nil {
 		return nil, nil, err
 	}
@@ -195,17 +194,13 @@ type stageMirror struct {
 	signature []byte
 }
 
-func (p *stageMirror) Check(ctx context.Context, request updater.CheckRequest) (*updater.Release, error) {
-	release, err := p.Provider.Check(ctx, request)
+func (p *stageMirror) Download(ctx context.Context, release *updater.Release, dst io.Writer, progress func(int64, int64)) error {
+	signature, err := p.download(ctx, release, io.MultiWriter(dst, p.snapshot, p.digest), progress)
 	if err == nil {
-		p.signature = bytes.Clone(release.Verification.Signature)
+		p.signature = signature
 	}
 
-	return release, err
-}
-
-func (p *stageMirror) Download(ctx context.Context, release *updater.Release, dst io.Writer, progress func(int64, int64)) error {
-	return p.Provider.Download(ctx, release, io.MultiWriter(dst, p.snapshot, p.digest), progress)
+	return err
 }
 
 type stageHost struct {

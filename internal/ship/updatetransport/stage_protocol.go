@@ -2,7 +2,6 @@ package updatetransport
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +16,7 @@ const StageCommand = "_application-stage"
 const VerifyCommand = "_application-verify"
 
 const (
-	stageProtocol   = 1
+	stageProtocol   = 2
 	maxStageRequest = 64 << 10
 	maxStageFrame   = 4 << 10
 	maxStageOutput  = 8 << 20
@@ -51,8 +50,8 @@ type StageProgress struct {
 }
 
 func keyID(key []byte) (string, error) {
-	if len(key) != ed25519.PublicKeySize {
-		return "", errors.New("application staging requires a compiled 32-byte public key")
+	if err := ValidatePublicKey(key); err != nil {
+		return "", err
 	}
 
 	digest := sha256.Sum256(key)

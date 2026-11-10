@@ -2,7 +2,6 @@ package updatetransport
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"io"
 	"net/http"
@@ -78,7 +77,7 @@ func (p *Provider) readSignature(ctx context.Context) ([]byte, error) {
 	}
 	defer body.Close()
 
-	signature, err := io.ReadAll(io.LimitReader(body, ed25519.SignatureSize+1))
+	signature, err := io.ReadAll(io.LimitReader(body, packageSignatureSize+1))
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +86,8 @@ func (p *Provider) readSignature(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 
-	if len(signature) != ed25519.SignatureSize {
-		return nil, errors.New("release signature must contain exactly 64 raw bytes")
+	if len(signature) != packageSignatureSize {
+		return nil, errors.New("release signature must contain exactly 384 raw bytes")
 	}
 
 	return signature, nil

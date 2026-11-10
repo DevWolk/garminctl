@@ -97,11 +97,11 @@ func TestGitHubResolveUsesMatcherAndRejectsDuplicateIDs(t *testing.T) {
 		assets []updatetransport.AssetRef
 	}{
 		{name: "empty"},
-		{name: "wrong package and signature", assets: []updatetransport.AssetRef{apiAsset(101, zip120, 2), apiAsset(708, zip120+".sig", 64)}},
-		{name: "bad package size", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 0), apiAsset(708, setup120+".sig", 64)}},
+		{name: "wrong package and signature", assets: []updatetransport.AssetRef{apiAsset(101, zip120, 2), apiAsset(708, zip120+".sig", rawSignatureSize)}},
+		{name: "bad package size", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 0), apiAsset(708, setup120+".sig", rawSignatureSize)}},
 		{name: "bad signature size", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 1), apiAsset(708, setup120+".sig", 63)}},
-		{name: "same id used twice", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 1), apiAsset(101, setup120+".sig", 64)}},
-		{name: "duplicate name with distinct ids", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 1), apiAsset(102, setup120, 2), apiAsset(708, setup120+".sig", 64)}},
+		{name: "same id used twice", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 1), apiAsset(101, setup120+".sig", rawSignatureSize)}},
+		{name: "duplicate name with distinct ids", assets: []updatetransport.AssetRef{apiAsset(101, setup120, 1), apiAsset(102, setup120, 2), apiAsset(708, setup120+".sig", rawSignatureSize)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
