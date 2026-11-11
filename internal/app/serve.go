@@ -51,6 +51,10 @@ func Serve(ctx context.Context, addr string, open watchsession.Opener, autoSync 
 // the listener and drains/closes the supplied runtime when serving ends.
 func ServeListener(ctx context.Context, listener net.Listener, open watchsession.Opener, autoSync bool, version string) error {
 	runtime := NewRuntime(ctx, open)
+	return serveListenerRuntime(listener, runtime, autoSync, version)
+}
+
+func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, autoSync bool, version string) error {
 	account := gc.New(gc.DefaultStorePath())
 
 	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{

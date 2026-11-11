@@ -10,8 +10,35 @@ import (
 
 type applicationNativeReader struct {
 	*ApplicationReads
-	download *application.DownloadReleaseAction
-	disabled string
+	download    *application.DownloadReleaseAction
+	disabled    string
+	maintenance func(context.Context) (func(), error)
+}
+
+func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {
+	reader, err := newApplicationNativeReader(config, compiledKey)
+	if err != nil {
+		return nil, err
+	}
+
+	address := ""
+	if config.Inventory.BackendURL != nil {
+		address = config.Inventory.BackendURL.String()
+	}
+
+	reader.maintenance = b.maintenanceFor(address, config.Inventory.BackendOwned)
+
+	return reader, nil
+}
+
+// TryMaintenance borrows only the bound owned backend's existing admission gate.
+// It is an internal capability, not a method on the native Wails Service.
+func (r *applicationNativeReader) TryMaintenance(ctx context.Context) (func(), error) {
+	if r.maintenance == nil {
+		return nil, errors.New("owned backend control is not configured")
+	}
+
+	return r.maintenance(ctx)
 }
 
 func newApplicationNativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {

@@ -47,6 +47,10 @@ See CLAUDE.md for the working rules. Module map:
   `ui/native` binds Info/History/Check and StartDownload/DownloadStatus/
   CancelDownload. App assembles these lazily from compiled version/key and trusted
   backend identity. Registration does no IO and creates no watch runtime.
+  App's ApplicationBackend binds an internal maintenance capability to the same
+  owned runtime only after the native host reserves its listener. Reused or stale
+  backend capabilities fail; the Wails Service exposes no maintenance method.
+  Cancellation returns the existing Gate ticket; stopping cannot be reversed.
   One download holds the existing window Scope until worker/cache cleanup ends.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and

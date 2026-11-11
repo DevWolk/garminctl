@@ -43,11 +43,12 @@ func run() error {
 		return devicehost.Open(ctx, *root, "")
 	}
 
+	backend := new(app.ApplicationBackend)
 	serve := func(ctx context.Context, listener net.Listener) error {
-		return app.ServeListener(ctx, listener, open, *root == "", version)
+		return backend.ServeListener(ctx, listener, open, *root == "", version)
 	}
 
 	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(scope desktop.Scope) []application.Service {
-		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope)}
+		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope, backend)}
 	})
 }

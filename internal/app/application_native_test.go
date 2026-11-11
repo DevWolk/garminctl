@@ -27,7 +27,7 @@ func TestApplicationNativeCompositionRegistersConcreteReadServiceWithoutIO(t *te
 	t.Parallel()
 
 	scope := &unavailableNativeScope{}
-	binding := app.NewApplicationNativeService("v1.2.3", "", scope)
+	binding := app.NewApplicationNativeService("v1.2.3", "", scope, new(app.ApplicationBackend))
 
 	service, ok := binding.Instance().(*applicationnative.Service)
 	if !ok {
