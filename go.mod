@@ -1,6 +1,6 @@
 module github.com/DevWolk/garminctl
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/google/gousb v1.1.3
