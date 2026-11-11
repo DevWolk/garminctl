@@ -7,7 +7,9 @@ See CLAUDE.md for the working rules. Module map:
   `_application-verify` uses the same bounded protocol with a local-only asset
   source; neither command accepts extra arguments or a request-supplied key.
   `main.updatePublicKey` is compiled-only base64 RSA-3072 SPKI DER; empty
-  builds refuse staging. The worker runs only in a marked private cache
+  builds refuse staging. Make/GoReleaser embed `build/update-public-key.b64`,
+  the existing certificate's public key. Release signing reuses the existing
+  Windows PFX secrets; PR package signing stays disabled. The worker runs only in a marked private cache
   operation, without watch ownership, a native window or installer execution.
   Normal dispatch
   calls `cli.Run` in `internal/app/cli`, which parses global flags (output goes

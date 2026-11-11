@@ -33,6 +33,7 @@ jobs:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
       snapshot: ${{ github.event_name != 'push' }}
       signing_mode: ${{ vars.WINDOWS_SIGNING_MODE || 'none' }}
+      sign_updates: true
     secrets:
       WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
       WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
@@ -45,6 +46,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: garminctl-packages
@@ -57,4 +61,5 @@ jobs:
         run: |
           cd dist/assets
           sha256sum --check checksums.txt
+          bash "$GITHUB_WORKSPACE/scripts/sign-update-packages.sh" verify "$GITHUB_WORKSPACE/dist/assets"
           gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG" ./*

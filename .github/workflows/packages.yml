@@ -12,6 +12,9 @@ on:
       signing_mode:
         type: string
         default: none
+      sign_updates:
+        type: boolean
+        default: false
     secrets:
       WINDOWS_SIGNING_PFX_BASE64:
         required: false
@@ -36,9 +39,16 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
           SIGNING_MODE: ${{ inputs.signing_mode }}
+          SIGN_UPDATES: ${{ inputs.sign_updates }}
         run: |
           [[ "$PACKAGE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           [[ "$SIGNING_MODE" == none || "$SIGNING_MODE" == certificate ]]
+          if [[ "$SIGN_UPDATES" == true && "$SIGNING_MODE" != certificate ]]; then
+            echo 'Updater release requires existing Windows certificate mode' >&2
+            exit 1
+          fi
+          printf 'APPLICATION_UPDATE_PUBLIC_KEY=%s\n' "$(cat build/update-public-key.b64)" >> "$GITHUB_ENV"
+          printf 'PACKAGE_VERSION_NO_V=%s\n' "${PACKAGE_VERSION#v}" >> "$GITHUB_ENV"
       - name: Build toolchain and run quality gate
         run: |
           make image-build
@@ -60,13 +70,25 @@ jobs:
           WINDOWS_SIGNING_MODE: ${{ inputs.signing_mode }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
-      - name: Assemble final assets and checksums
+      - name: Assemble final assets
         run: |
           mkdir -p dist/assets
           cp dist/*_setup.exe dist/*.deb dist/*.rpm dist/release/*.zip dist/release/*.tar.gz dist/assets/
           if [[ -f dist/windows-signing-certificate.pem ]]; then
             cp dist/windows-signing-certificate.pem dist/assets/
           fi
+      - name: Sign updater packages with existing certificate
+        if: inputs.sign_updates
+        env:
+          WINDOWS_SIGNING_MODE: ${{ inputs.signing_mode }}
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+        run: docker compose -f docker/docker-compose.yml exec -T -e WINDOWS_SIGNING_MODE -e WINDOWS_SIGNING_PFX_BASE64 -e WINDOWS_SIGNING_PASSWORD go bash scripts/sign-update-packages.sh sign dist/assets
+      - name: Check final updater signatures
+        if: inputs.sign_updates
+        run: docker compose -f docker/docker-compose.yml exec -T go bash scripts/sign-update-packages.sh verify dist/assets
+      - name: Calculate final checksums after signatures
+        run: |
           cd dist/assets
           sha256sum -- * > checksums.txt
       - name: Upload installable build

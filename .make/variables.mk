@@ -1,7 +1,9 @@
 COMPOSE_FILE := docker/docker-compose.yml
 GO_SERVICE := go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -X main.version=$(VERSION)
+APPLICATION_UPDATE_PUBLIC_KEY := $(strip $(file <build/update-public-key.b64))
+export APPLICATION_UPDATE_PUBLIC_KEY
+LDFLAGS := -X main.version=$(VERSION) -X main.updatePublicKey=$(APPLICATION_UPDATE_PUBLIC_KEY)
 DESKTOP_TAGS := desktop,production,gtk3
 export WINDOWS_SIGNING_MODE ?= none
 export WINDOWS_SIGNING_DIR

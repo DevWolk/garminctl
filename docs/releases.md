@@ -27,6 +27,20 @@ disabled; native Linux USB support is supplied by the DEB/RPM packages.
 
 ## Configure Windows signing
 
+Application update packages reuse this Windows signing identity. No additional
+updater signing secret is required. `build/update-public-key.b64` contains only
+the existing certificate's public RSA key, compiled into CLI and desktop builds.
+It is not a private key or an extra certificate to install.
+
+The release workflow enables `sign_updates` and requires `certificate` mode.
+After Authenticode and packaging, it signs every Setup/DEB/RPM/archive with the
+same PFX and verifies each raw `.sig` against the compiled public key. Checksums
+include those signatures. Publication verifies them again without the PFX.
+Ordinary PR package checks leave `sign_updates` disabled and receive no signing
+secrets. Signed package preparation does not install or roll back the application.
+Releases without the required `.sig` assets are rejected by package preparation;
+the Releases page remains available for manual downloads.
+
 [`sign-windows.sh`](../scripts/sign-windows.sh) defaults to
 `WINDOWS_SIGNING_MODE=none`. Its supported modes are:
 
