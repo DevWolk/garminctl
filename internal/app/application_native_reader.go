@@ -11,6 +11,7 @@ import (
 type applicationNativeReader struct {
 	*ApplicationReads
 	download    *application.DownloadReleaseAction
+	preflight   *application.PreflightAction
 	disabled    string
 	maintenance func(context.Context) (func(), error)
 }
@@ -53,11 +54,22 @@ func newApplicationNativeReader(config ApplicationReadConfig, compiledKey string
 	if keyErr == nil {
 		source := updatetransport.NewGitHub(config.ReleaseClient)
 		result.download = application.NewDownloadReleaseAction(reads, applicationReleaseFeed{source: source}, applicationPackageDownload{source: source, key: compiledKey})
+		result.preflight = application.NewPreflightAction(reads, applicationPackageStore{key: compiledKey}, result.TryMaintenance)
 	} else {
 		result.disabled = "This build has no trusted update verification key. Use the Releases link for manual downloads."
 	}
 
 	return result, nil
+}
+
+// Preflight verifies a retained update and current-version recovery package internally.
+// It exposes no additional method on the Wails Service.
+func (r *applicationNativeReader) Preflight(ctx context.Context, request application.PreflightRequest) (*application.PreparedUpdate, error) {
+	if r.preflight == nil {
+		return nil, errors.New(r.disabled)
+	}
+
+	return r.preflight.Run(ctx, request)
 }
 
 func (r *applicationNativeReader) DownloadDisabledReason() string { return r.disabled }

@@ -46,6 +46,11 @@ type applicationBackendFixture struct {
 
 func serveApplicationBackend(t *testing.T) *applicationBackendFixture {
 	t.Helper()
+	return serveApplicationBackendVersion(t, "v1.2.3")
+}
+
+func serveApplicationBackendVersion(t *testing.T, version string) *applicationBackendFixture {
+	t.Helper()
 	config := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", config)
 	t.Setenv("APPDATA", config)
@@ -70,7 +75,7 @@ func serveApplicationBackend(t *testing.T) *applicationBackendFixture {
 	go func() {
 		defer close(fixture.done)
 
-		if err := fixture.control.ServeListener(ctx, ready, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, "v1.2.3"); err != nil {
+		if err := fixture.control.ServeListener(ctx, ready, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, version); err != nil {
 			t.Errorf("owned backend: %v", err)
 		}
 	}()

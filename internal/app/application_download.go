@@ -3,10 +3,8 @@ package app
 import (
 	"context"
 	"errors"
-	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/paths"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
 )
 
@@ -38,12 +36,7 @@ func (d applicationPackageDownload) Download(ctx context.Context, selected appli
 
 	stageDir, packageDir := d.directories()
 
-	stager, err := updatetransport.NewStager(updatetransport.StagerConfig{CLIPath: target.CLIPath, BuildVersion: target.CLIVersion, PublicKey: key, CacheDir: stageDir})
-	if err != nil {
-		return nil, err
-	}
-
-	cache, err := updatetransport.NewPackageCache(packageDir, stager)
+	stager, cache, err := newApplicationPackageCache(key, target, stageDir, packageDir)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +72,7 @@ func (d applicationPackageDownload) Download(ctx context.Context, selected appli
 }
 
 func (d applicationPackageDownload) directories() (string, string) {
-	stage, packages := d.stageDirectory, d.packageDirectory
-	if stage == "" {
-		stage = applicationStageCache()
-	}
-
-	if packages == "" {
-		packages = filepath.Join(paths.Cache(), "application-packages")
-	}
-
-	return stage, packages
+	return applicationPackageDirectories(d.stageDirectory, d.packageDirectory)
 }
 
 func existingApplicationPackage(ctx context.Context, cache *updatetransport.PackageCache, target updatetransport.MatchRequest, selected updatetransport.ResolvedRelease, progress func(application.DownloadProgress)) (*updatetransport.CachedPackage, error) {

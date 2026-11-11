@@ -51,6 +51,11 @@ See CLAUDE.md for the working rules. Module map:
   owned runtime only after the native host reserves its listener. Reused or stale
   backend capabilities fail; the Wails Service exposes no maintenance method.
   Cancellation returns the existing Gate ticket; stopping cannot be reversed.
+  Application's PreflightAction borrows that ticket, re-observes installation,
+  and verifies both selected and current-version retained packages offline.
+  App supplies PackageCache.Open through a narrow port with the compiled key.
+  PreparedUpdate owns independent copies until Close; errors close partial
+  copies and return admission. Preflight adds no Wails/HTTP/MCP method.
   One download holds the existing window Scope until worker/cache cleanup ends.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and
