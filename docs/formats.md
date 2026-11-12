@@ -214,5 +214,6 @@ app installations.
 [`paths.Cache`](../internal/paths/paths.go) uses the OS cache directory, falling
 back to the temporary directory, under `garminctl/`. It holds settings schemas,
 registry backups and per-device caches. The default Connect token store uses
-`os.UserConfigDir()/garminctl/garmin-connect.json`, falling back to the current
-directory if no config directory is available.
+`os.UserConfigDir()/garminctl/garmin-connect.json`. An unavailable config
+directory is reported as a store error; it does not fall back to the working
+directory.

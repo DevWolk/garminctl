@@ -48,6 +48,9 @@ type PreparedUpdate struct {
 	info            PreflightInfo
 	current, update VerifiedPackage
 	release         func()
+	lifetime        context.Context //nolint:containedctx // This owned preparation cancels and joins its derived lifetime at Close.
+	cancel          context.CancelFunc
+	mu              sync.Mutex
 	once            sync.Once
 	closeErr        error
 }
@@ -57,7 +60,14 @@ func (p *PreparedUpdate) Info() PreflightInfo { return p.info }
 
 // Close joins copy cleanup before returning maintenance; repeated calls share its error.
 func (p *PreparedUpdate) Close() error {
+	if p.cancel != nil {
+		p.cancel()
+	}
+
 	p.once.Do(func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+
 		if p.update != nil {
 			p.closeErr = errors.Join(p.closeErr, p.update.Close())
 		}
@@ -100,7 +110,8 @@ func (a *PreflightAction) Run(ctx context.Context, request PreflightRequest) (re
 		return nil, errors.New("application preflight is not configured")
 	}
 
-	prepared := new(PreparedUpdate)
+	lifetime, cancel := context.WithCancel(ctx)
+	prepared := &PreparedUpdate{lifetime: lifetime, cancel: cancel}
 
 	defer func() {
 		if result == nil {

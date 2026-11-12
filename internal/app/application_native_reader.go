@@ -10,10 +10,12 @@ import (
 
 type applicationNativeReader struct {
 	*ApplicationReads
-	download    *application.DownloadReleaseAction
-	preflight   *application.PreflightAction
-	disabled    string
-	maintenance func(context.Context) (func(), error)
+	download        *application.DownloadReleaseAction
+	preflight       *application.PreflightAction
+	snapshot        *application.BackupDataAction
+	snapshotContext func(context.Context) (context.Context, context.CancelFunc, error)
+	disabled        string
+	maintenance     func(context.Context) (func(), error)
 }
 
 func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {
@@ -28,6 +30,7 @@ func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiled
 	}
 
 	reader.maintenance = b.maintenanceFor(address, config.Inventory.BackendOwned)
+	reader.snapshotContext = b.snapshotContextFor(address, config.Inventory.BackendOwned)
 
 	return reader, nil
 }
@@ -55,6 +58,7 @@ func newApplicationNativeReader(config ApplicationReadConfig, compiledKey string
 		source := updatetransport.NewGitHub(config.ReleaseClient)
 		result.download = application.NewDownloadReleaseAction(reads, applicationReleaseFeed{source: source}, applicationPackageDownload{source: source, key: compiledKey})
 		result.preflight = application.NewPreflightAction(reads, applicationPackageStore{key: compiledKey}, result.TryMaintenance)
+		result.snapshot = application.NewBackupDataAction(applicationDataSnapshots{})
 	} else {
 		result.disabled = "This build has no trusted update verification key. Use the Releases link for manual downloads."
 	}

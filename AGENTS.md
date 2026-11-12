@@ -56,6 +56,13 @@ See CLAUDE.md for the working rules. Module map:
   App supplies PackageCache.Open through a narrow port with the compiled key.
   PreparedUpdate owns independent copies until Close; errors close partial
   copies and return admission. Preflight adds no Wails/HTTP/MCP method.
+  BackupDataAction selects opaque account/MFA, upload-ledger and existing watch
+  recovery files. App binds it to the same owned runtime and hostfile's protected
+  atomic snapshots under the config directory's application-backups. Close cancels
+  and joins an active copy before releasing verified packages; a competing copy
+  refuses without cancelling the first. Snapshot errors resume the live backend.
+  Browser profiles and retained package/history stores remain in place; no restore,
+  installer or extra native Service method is exposed.
   One download holds the existing window Scope until worker/cache cleanup ends.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and
