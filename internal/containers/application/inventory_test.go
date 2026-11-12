@@ -110,7 +110,7 @@ func TestInventoryRequiresConfirmedMatchingOwnership(t *testing.T) {
 			i.Desktop.UserDirectory = true
 			i.CLI.UserDirectory = true
 		}},
-		{"setup", "setup", func(i *application.LocalInventory) {
+		{preflightKindSetup, preflightKindSetup, func(i *application.LocalInventory) {
 			i.OS = "windows"
 			i.Desktop.Name = "garmin-desktop.exe"
 			i.CLI.Name = "garminctl.exe"

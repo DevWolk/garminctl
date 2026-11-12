@@ -17,6 +17,7 @@ const (
 	preflightArchAMD64    = "amd64"
 	preflightTestWindows  = "windows"
 	preflightKindPortable = "portable"
+	preflightKindSetup    = "setup"
 )
 
 type preflightInventory struct {
@@ -393,7 +394,7 @@ func TestPreflightSupportedTargetsAndExplicitPrerelease(t *testing.T) {
 	for _, test := range []struct{ name, platform, arch, kind string }{
 		{name: "DEB", platform: preflightTestLinux, arch: preflightArchAMD64, kind: downloadTestDEB},
 		{name: "RPM", platform: preflightTestLinux, arch: preflightArchAMD64, kind: "rpm"},
-		{name: "Setup", platform: preflightTestWindows, arch: preflightArchAMD64, kind: "setup"},
+		{name: "Setup", platform: preflightTestWindows, arch: preflightArchAMD64, kind: preflightKindSetup},
 		{name: "Linux portable", platform: preflightTestLinux, arch: "arm64", kind: preflightKindPortable},
 		{name: "Windows portable", platform: preflightTestWindows, arch: "arm64", kind: preflightKindPortable},
 	} {

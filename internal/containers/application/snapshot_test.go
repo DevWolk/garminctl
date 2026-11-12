@@ -275,3 +275,32 @@ func TestBackupDataConcurrentRequestDoesNotCancelActiveCopy(t *testing.T) {
 		}
 	})
 }
+
+func TestBackupDataPortBusyErrorReleasesItsOwnPreparation(t *testing.T) {
+	t.Parallel()
+
+	inventory, packages, request := preflightFixture()
+	gate := new(lifecycle.Gate)
+
+	prepared, err := application.NewPreflightAction(inventory, packages, gate.TryMaintenance).Run(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		if err := prepared.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	store := dataSnapshotStore{create: func(context.Context, application.PreflightInfo) (*application.DataSnapshot, error) {
+		return nil, application.ErrPreparationBusy
+	}}
+
+	result, err := application.NewBackupDataAction(store).Run(t.Context(), prepared)
+	if result != nil || !errors.Is(err, application.ErrPreparationBusy) {
+		t.Fatalf("port refusal=%+v %v", result, err)
+	}
+
+	assertPreflightReleased(t, gate, packages)
+}

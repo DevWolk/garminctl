@@ -46,6 +46,7 @@ type PreflightInfo struct {
 // The caller must close it, including after caller/window cancellation.
 type PreparedUpdate struct {
 	info            PreflightInfo
+	snapshot        *DataSnapshot
 	current, update VerifiedPackage
 	release         func()
 	lifetime        context.Context //nolint:containedctx // This owned preparation cancels and joins its derived lifetime at Close.

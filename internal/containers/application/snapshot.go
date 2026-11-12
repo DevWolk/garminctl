@@ -36,7 +36,11 @@ func (a *BackupDataAction) Run(ctx context.Context, prepared *PreparedUpdate) (*
 
 	var result *DataSnapshot
 
+	entered := false
+
 	err := prepared.withInfo(ctx, func(bound context.Context, info PreflightInfo) error {
+		entered = true
+
 		if a.store == nil {
 			return errors.New("application data backup is not configured")
 		}
@@ -52,10 +56,17 @@ func (a *BackupDataAction) Run(ctx context.Context, prepared *PreparedUpdate) (*
 			return errors.New("application data backup returned an invalid receipt")
 		}
 
-		return bound.Err()
+		if err := bound.Err(); err != nil {
+			return err
+		}
+
+		retained := *result
+		prepared.snapshot = &retained
+
+		return nil
 	})
 	if err != nil {
-		if !errors.Is(err, ErrPreparationBusy) {
+		if entered || !errors.Is(err, ErrPreparationBusy) {
 			err = errors.Join(err, prepared.Close())
 		}
 

@@ -63,6 +63,13 @@ See CLAUDE.md for the working rules. Module map:
   refuses without cancelling the first. Snapshot errors resume the live backend.
   Browser profiles and retained package/history stores remain in place; no restore,
   installer or extra native Service method is exposed.
+  InstallHandoffAction consumes a preparation with its own retained snapshot,
+  requires explicit consent and resolved edits, and rechecks inventory before
+  payload preparation and owned-backend stop. Its platform ports prepare an
+  independently owned payload, join the backend, then attempt Commit once.
+  Returned state distinguishes uncommitted, stop requested, commit attempted
+  and accepted; errors never imply safe replay. Production OS launcher and
+  native installation UI are not wired by this core contract.
   One download holds the existing window Scope until worker/cache cleanup ends.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and
