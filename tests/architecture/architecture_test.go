@@ -22,6 +22,9 @@ const (
 	architectureModule      = "github.com/DevWolk/garminctl"
 	architectureCGODisabled = "CGO_ENABLED=0"
 	architectureUpdater     = "github.com/wailsapp/wails/v3/pkg/updater"
+	architectureWindows     = "golang.org/x/sys/windows"
+	architectureUnix        = "golang.org/x/sys/unix"
+	architectureRegistry    = "golang.org/x/sys/windows/registry"
 )
 
 type architectureView struct {
@@ -357,13 +360,13 @@ func architectureCoreImportViolation(from, to string) string {
 }
 
 func architectureApprovedLibrary(from, to string) bool {
-	// Only the selected-release transport may use the pinned headless updater.
-	// This exact import does not admit its providers or the native runtime.
-	if architectureInternal(from) == "ship/updatetransport" && to == architectureUpdater {
-		return true
+	// The release transport uses the headless updater and native parent-process
+	// handles. Exact packages exclude providers, registry and the native runtime.
+	if architectureInternal(from) == "ship/updatetransport" {
+		return to == architectureUpdater || to == architectureUnix || to == architectureWindows
 	}
 	// Read-only installation inventory may query this exact registry package.
-	if architectureInternal(from) == "ship/hostinfo" && to == "golang.org/x/sys/windows/registry" {
+	if architectureInternal(from) == "ship/hostinfo" && to == architectureRegistry {
 		return true
 	}
 
@@ -371,8 +374,8 @@ func architectureApprovedLibrary(from, to string) bool {
 		"device/mtp":             {"github.com/google/gousb"},
 		"ciqstore":               {"golang.org/x/net/html"},
 		"gc":                     {"golang.org/x/net/publicsuffix"},
-		"hostfile":               {"golang.org/x/sys/windows"},
-		"hostexec":               {"golang.org/x/sys/windows"},
+		"hostfile":               {architectureWindows},
+		"hostexec":               {architectureWindows},
 		"containers/application": {"golang.org/x/mod/semver"}, // pinned SemVer policy without the Wails runtime
 	}
 	for owner, libraries := range allow {

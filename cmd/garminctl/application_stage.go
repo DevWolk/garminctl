@@ -28,16 +28,33 @@ func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
 		worker = app.RunApplicationStage
 	case app.ApplicationVerifyCommand:
 		worker = app.RunApplicationVerify
+	case app.ApplicationInstallCommand:
+		worker = runInstallerWorker
 	default:
 		return cli.Run(version, args, stdout, stderr)
 	}
 
 	if len(args) != 1 {
-		return clix.UsageErrorf("private staging command takes no arguments")
+		return clix.UsageErrorf("private application command takes no arguments")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	return worker(ctx, version, updatePublicKey, input, stdout)
+}
+
+func runInstallerWorker(ctx context.Context, version, key string, input io.Reader, output io.Writer) error {
+	return installerPipeScope(func() error { return app.RunApplicationInstall(ctx, version, key, input, output) })
+}
+
+func installerPipeScope(run func() error) error {
+	// A lost acknowledgement on fd 1 must return EPIPE instead of terminating a
+	// committed executor before it can wait for its parent and finish its work.
+	broken := make(chan os.Signal, 1)
+
+	signal.Notify(broken, syscall.SIGPIPE)
+	defer signal.Stop(broken)
+
+	return run()
 }

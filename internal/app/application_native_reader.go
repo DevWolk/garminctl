@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
@@ -16,6 +17,7 @@ type applicationNativeReader struct {
 	snapshotContext func(context.Context) (context.Context, context.CancelFunc, error)
 	disabled        string
 	maintenance     func(context.Context) (func(), error)
+	handoff         *application.InstallHandoffAction
 }
 
 func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {
@@ -30,7 +32,11 @@ func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiled
 	}
 
 	reader.maintenance = b.maintenanceFor(address, config.Inventory.BackendOwned)
+
 	reader.snapshotContext = b.snapshotContextFor(address, config.Inventory.BackendOwned)
+	if reader.disabled == "" {
+		reader.handoff = application.NewInstallHandoffAction(reader.ApplicationReads, applicationInstallerPort{key: compiledKey, args: slices.Clone(config.RestartArgs)}, b.stopFor(address, config.Inventory.BackendOwned))
+	}
 
 	return reader, nil
 }

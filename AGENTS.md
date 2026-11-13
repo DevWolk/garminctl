@@ -9,8 +9,17 @@ See CLAUDE.md for the working rules. Module map:
   `main.updatePublicKey` is compiled-only base64 RSA-3072 SPKI DER; empty
   builds refuse staging. Make/GoReleaser embed `build/update-public-key.b64`,
   the existing certificate's public key. Release signing reuses the existing
-  Windows PFX secrets; PR package signing stays disabled. The worker runs only in a marked private cache
+  Windows PFX secrets; PR package signing stays disabled. The staging/verifying worker runs only in a marked private cache
   operation, without watch ownership, a native window or installer execution.
+  `_application-install` is a separate private cached executor. Bounded Ready/
+  Commit IPC binds the real parent, build, compiled key and copied package.
+  Before Commit, cancellation kills/joins only that helper and removes its
+  operation. After one attempt it waits for parent exit, verifies bytes again,
+  runs Setup or the Linux package manager and checks CLI version before restart.
+  Its private CLI scope handles SIGPIPE so a lost reply returns EPIPE without
+  terminating an accepted executor; ordinary command signal policy is unchanged.
+  An acknowledged handoff does not prove installation/startup. Native Apply is
+  not exposed yet; installer/GUI execution and rollback acceptance remain open.
   Normal dispatch
   calls `cli.Run` in `internal/app/cli`, which parses global flags (output goes
   to the `cli` writers so tests can run commands over a dump) and dispatches through
@@ -232,9 +241,9 @@ See CLAUDE.md for the working rules. Module map:
   catalogs use version 2 and reject legacy Ed25519 formats. HistoryCache stores
   versioned display metadata for the compiled source in application-history,
   bounded to 20 MiB/1000 records with private atomic file replacement. Missing,
-  corrupt, foreign-source or unsupported snapshots fail explicitly. Package
-  retention/recovery storage is separate; there is no installer or new watch
-  owner. Stager runs a private cached CLI with bounded
+  corrupt, foreign-source or unsupported snapshots fail explicitly. HistoryCache
+  creates no installer or watch owner; package retention/recovery storage is
+  separate. Stager runs a private cached CLI with bounded
   versioned IPC, operation/build/key identity and joined cancellation/cleanup.
   Worker retains the original signed stream and .sig before Wails archive
   extraction, then parent verifies the retained digest after child exit.
@@ -249,6 +258,15 @@ See CLAUDE.md for the working rules. Module map:
   falls back to HTTP. Manifests have bounded reads and safe hex IDs; normal
   errors clean only owned pending/operation directories. No automatic eviction,
   process-crash sweep or installation is performed by this service.
+  Installer owns a separate application-installing operation and private helper.
+  It copies verified bytes before Ready and accepts one Commit. The helper uses
+  pidfd on Linux or a Windows process handle to wait for its actual parent, then
+  verifies RSA again. Setup keeps the observed InstallDir; DEB/RPM use fixed
+  pkexec/package-manager argv, never direct writes to managed executables.
+  Committed OS transactions are not killed on monitoring timeout. Operation logs
+  and a bounded result remain for diagnosis; no replay, eviction or sweep is
+  added. App binds this port to the existing owned backend stop/join; reused
+  backends are refused. Native Apply/GUI restart acceptance is still separate.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.

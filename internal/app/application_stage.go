@@ -19,6 +19,9 @@ const ApplicationStageCommand = updatetransport.StageCommand
 // ApplicationVerifyCommand is the private offline-verification subprocess.
 const ApplicationVerifyCommand = updatetransport.VerifyCommand
 
+// ApplicationInstallCommand is the native-confirmed cached executor entry.
+const ApplicationInstallCommand = updatetransport.InstallCommand
+
 // NewApplicationPackageCache retains packages separately from stage operations.
 // Both factories require the same compiled key and create no watch runtime.
 func NewApplicationPackageCache(cliPath, version, compiledKey string) (*updatetransport.PackageCache, error) {
@@ -56,6 +59,10 @@ func RunApplicationVerify(ctx context.Context, version, compiledKey string, inpu
 }
 
 func runApplicationWorker(ctx context.Context, version, compiledKey string, input io.Reader, output io.Writer, worker func(context.Context, updatetransport.WorkerConfig, io.Reader, io.Writer) error) error {
+	return runApplicationWorkerAt(ctx, version, compiledKey, input, output, applicationStageCache(), worker)
+}
+
+func runApplicationWorkerAt(ctx context.Context, version, compiledKey string, input io.Reader, output io.Writer, cache string, worker func(context.Context, updatetransport.WorkerConfig, io.Reader, io.Writer) error) error {
 	key, err := applicationStageKey(compiledKey)
 	if err != nil {
 		return err
@@ -67,7 +74,7 @@ func runApplicationWorker(ctx context.Context, version, compiledKey string, inpu
 	}
 
 	directory := filepath.Dir(executable)
-	if err := validateApplicationStageLocation(applicationStageCache(), directory); err != nil {
+	if err := validateApplicationStageLocation(cache, directory); err != nil {
 		return err
 	}
 

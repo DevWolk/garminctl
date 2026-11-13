@@ -1,0 +1,80 @@
+package updatetransport
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"io"
+)
+
+// InstallCommand is the private cached CLI installer executor, never a public API.
+const InstallCommand = "_application-install"
+
+const installProtocol = 1
+
+// InstallOptions comes from observed local installation and native startup arguments.
+type InstallOptions struct {
+	Root    string   `json:"root"`
+	Desktop string   `json:"desktop"`
+	CLI     string   `json:"cli"`
+	Args    []string `json:"args"`
+}
+
+type installRequest struct {
+	Protocol     int             `json:"protocol"`
+	Operation    string          `json:"operation"`
+	BuildVersion string          `json:"buildVersion"`
+	KeyID        string          `json:"keyId"`
+	OwnerPID     int             `json:"ownerPid"`
+	Target       MatchRequest    `json:"target"`
+	Release      ResolvedRelease `json:"release"`
+	Digest       string          `json:"digest"`
+	Install      InstallOptions  `json:"install"`
+}
+
+type installDecision struct {
+	Protocol  int    `json:"protocol"`
+	Operation string `json:"operation"`
+	Commit    bool   `json:"commit"`
+}
+
+type installEvent struct {
+	Protocol     int    `json:"protocol"`
+	Operation    string `json:"operation"`
+	BuildVersion string `json:"buildVersion"`
+	KeyID        string `json:"keyId"`
+	Kind         string `json:"kind"`
+}
+
+func readInstallFrame(reader *bufio.Reader, value any) error {
+	data, err := reader.ReadSlice('\n')
+	if err != nil {
+		return err
+	}
+
+	if len(data) > maxStageRequest {
+		return errors.New("installer frame exceeds the byte limit")
+	}
+
+	return decodeStageJSON(data, value)
+}
+
+func writeInstallFrame(output interface{ Write([]byte) (int, error) }, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	if len(data)+1 > maxStageRequest {
+		return errors.New("installer frame exceeds the byte limit")
+	}
+
+	data = append(data, '\n')
+
+	n, err := output.Write(data)
+	if err == nil && n != len(data) {
+		return io.ErrShortWrite
+	}
+
+	return err
+}

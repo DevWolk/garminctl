@@ -89,6 +89,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	if len(os.Args) == 2 && os.Args[1] == updatetransport.InstallCommand {
+		if err := RunApplicationInstall(context.Background(), downloadTestBuild, base64.StdEncoding.EncodeToString(downloadPublicKey), os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		os.Exit(0)
+	}
+
 	if len(os.Args) != 2 || (os.Args[1] != updatetransport.StageCommand && os.Args[1] != updatetransport.VerifyCommand) {
 		os.Exit(m.Run())
 	}

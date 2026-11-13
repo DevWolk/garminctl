@@ -49,6 +49,6 @@ func run() error {
 	}
 
 	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(scope desktop.Scope) []application.Service {
-		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope, backend)}
+		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope, backend, os.Args[1:]...)}
 	})
 }

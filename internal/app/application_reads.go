@@ -15,6 +15,7 @@ type ApplicationReadConfig struct {
 	Inventory        ApplicationInventoryConfig
 	ReleaseClient    *http.Client
 	HistoryDirectory string
+	RestartArgs      []string
 }
 
 // ApplicationReads assembles metadata Actions without a watch runtime.

@@ -56,7 +56,8 @@ func applicationPreflightFixture(t *testing.T) *preflightNativeFixture {
 	cacheRoot := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheRoot)
 	t.Setenv("LOCALAPPDATA", cacheRoot)
-	f := &preflightNativeFixture{backend: serveApplicationBackendVersion(t, downloadTestBuild)}
+
+	f := &preflightNativeFixture{}
 	pipeline, target := downloadPipeline(t, applicationDownloadTag, false)
 	pipeline.stageDirectory = applicationStageCache()
 	pipeline.packageDirectory = filepath.Join(paths.Cache(), "application-packages")
@@ -75,6 +76,10 @@ func applicationPreflightFixture(t *testing.T) *preflightNativeFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Retaining fixtures needs no backend; start its bounded lifetime only when
+	// the scenario is ready to exercise maintenance and HTTP operations.
+	f.backend = serveApplicationBackendVersion(t, downloadTestBuild)
 
 	endpoint, err := url.Parse(f.backend.address)
 	if err != nil {
