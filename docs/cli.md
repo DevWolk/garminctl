@@ -47,6 +47,8 @@ These commands need neither a watch nor a running desktop/backend:
 ```text
 application recovery list       List retained package metadata for this OS/architecture.
 application recovery export ID  Verify and copy the selected package for manual recovery.
+application recovery snapshots  List local application backup metadata.
+application recovery inspect ID Verify a backup's retained files without restoring them.
 ```
 
 Use an ID from `list`. The list is metadata, not proof of authenticity. Export
@@ -69,6 +71,19 @@ With `-json`, `list` returns `verified: false` and a `packages` array. Successfu
 `path`, `signaturePath`, `manualInstallationRequired: true` and
 `dataCompatibility: "not_checked"`. A verification failure returns no success
 JSON. No command argument or environment variable selects the signing key.
+
+`snapshots` and `inspect` read the configured user's `garminctl/application-backups`
+directory under the OS config directory. They work without a build signing key.
+Listing returns metadata only. Inspection checks the local manifest, filenames,
+sizes and SHA-256 digests, rejects unexpected/missing files and enforces private
+backup permissions. It shows relative file names and hashes, never token contents.
+It does not read or replace current account files.
+
+For snapshot inspection, `verified: true` means that retained files match their
+local manifest; it is not release-signature verification or a compatibility
+decision. JSON identifies this as `verification: "local_manifest"` and retains
+`dataCompatibility: "not_checked"`. Neither command restores data or authorizes
+an installer. Use a snapshot ID from `snapshots`; paths cannot be supplied.
 
 ## Files and device information
 

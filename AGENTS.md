@@ -101,6 +101,11 @@ See CLAUDE.md for the working rules. Module map:
   under application-recovery. It creates no backend/watch owner, starts no
   installer and restores no data. An older package does not prove compatibility;
   automated rollback, explicit restore and native repair acceptance remain open.
+  `recovery snapshots|inspect ID` reads the configured application-backups root
+  through hostfile.SnapshotReader. List is metadata-only; inspect verifies local
+  manifest/layout/hash consistency and Application's allowed state paths, without
+  a build key, backend or watch. Output omits file contents; no restore or schema
+  compatibility is inferred. Snapshot inspection may tighten backup permissions.
   Missing compiled key disables preparation while keeping
   metadata reads available. Native Apply uses a blocking progress dialog and
   existing unsaved-edit confirmation. No public HTTP/MCP installer or rollback UI.

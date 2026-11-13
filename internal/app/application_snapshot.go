@@ -81,7 +81,7 @@ func (b *ApplicationBackend) snapshotContextFor(address string, owned bool) func
 	}
 }
 
-// BackupData is internal preparation; native Service exposes no backup/install method.
+// BackupData is internal to the owned preparation and installation pipeline.
 func (r *applicationNativeReader) BackupData(ctx context.Context, prepared *application.PreparedUpdate) (*application.DataSnapshot, error) {
 	if r.snapshotContext == nil || r.snapshot == nil {
 		return nil, abortApplicationSnapshot(prepared, errors.New("owned application data backup is not configured"))

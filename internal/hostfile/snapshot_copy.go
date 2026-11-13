@@ -146,6 +146,10 @@ func writeSnapshotManifest(ctx context.Context, root *os.Root, manifest Snapshot
 		return err
 	}
 
+	if len(data) > snapshotManifestLimit {
+		return errors.New("snapshot manifest exceeds the byte limit")
+	}
+
 	file, err := root.OpenFile("manifest.json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err

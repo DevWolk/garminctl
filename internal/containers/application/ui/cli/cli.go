@@ -13,14 +13,17 @@ import (
 )
 
 const (
-	listCommand     = "list"
-	recoveryCommand = "recovery"
-	exportCommand   = "export"
+	listCommand      = "list"
+	recoveryCommand  = "recovery"
+	exportCommand    = "export"
+	snapshotsCommand = "snapshots"
+	inspectCommand   = "inspect"
 )
 
 // Command borrows a lazy app composition and creates no watch or native runtime.
 type Command struct {
 	Recovery    func() (*application.RecoveryAction, error)
+	Snapshots   func() (*application.RecoverySnapshotsAction, error)
 	Out, ErrOut *clix.Printer
 	JSON        bool
 }
@@ -30,14 +33,20 @@ func (c *Command) Run(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("application", flag.ContinueOnError)
 	fs.SetOutput(c.ErrOut)
 
-	fs.Usage = func() { c.ErrOut.Println("Usage: garminctl [-json] application recovery list|export CACHE_ID") }
+	fs.Usage = func() {
+		c.ErrOut.Println("Usage: garminctl [-json] application recovery list|export CACHE_ID|snapshots|inspect SNAPSHOT_ID")
+	}
 	if err := clix.ParseFlags(fs, args); err != nil {
 		return err
 	}
 
 	args = fs.Args()
 	if !validRecoveryArgs(args) {
-		return clix.UsageErrorf("usage: application recovery list | application recovery export CACHE_ID")
+		return clix.UsageErrorf("usage: application recovery list|export CACHE_ID|snapshots|inspect SNAPSHOT_ID")
+	}
+
+	if args[1] == snapshotsCommand || args[1] == inspectCommand {
+		return c.snapshots(ctx, args[1:])
 	}
 
 	if c.Recovery == nil {
@@ -77,11 +86,11 @@ func validRecoveryArgs(args []string) bool {
 		return false
 	}
 
-	if args[1] == listCommand {
+	if args[1] == listCommand || args[1] == snapshotsCommand {
 		return len(args) == 2
 	}
 
-	if args[1] != exportCommand || len(args) != 3 {
+	if (args[1] != exportCommand && args[1] != inspectCommand) || len(args) != 3 {
 		return false
 	}
 

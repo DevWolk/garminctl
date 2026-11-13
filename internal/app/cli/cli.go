@@ -87,6 +87,8 @@ Commands:
   desktop                         open the installed native app
   application recovery list       list retained application packages (metadata only)
   application recovery export ID  verify and export a package for manual recovery
+  application recovery snapshots  list local application backup metadata
+  application recovery inspect ID verify a backup's files without restoring data
   serve [-addr 127.0.0.1:8787] [-autosync=false]
                                   run the web UI, HTTP API and HTTP MCP server
   mcp                             run the MCP server on stdio
@@ -206,13 +208,13 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn jobCommand, args []s
 // plainCommands are the commands that do not need the watch.
 func (c *cli) plainCommands() map[string]plainCommand {
 	return map[string]plainCommand{
-		"version":     c.version,
-		"devices":     c.devices,
-		"serve":       c.serve,
-		"desktop":     c.desktop,
-		"autostart":   c.autostart,
-		"mcp":         c.mcp,
-		"application": c.application,
+		"version":              c.version,
+		"devices":              c.devices,
+		"serve":                c.serve,
+		"desktop":              c.desktop,
+		"autostart":            c.autostart,
+		"mcp":                  c.mcp,
+		applicationCommandName: c.application,
 	}
 }
 

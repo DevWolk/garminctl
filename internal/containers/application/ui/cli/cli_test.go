@@ -84,7 +84,7 @@ func TestRecoveryCLIDistinguishesMetadataAndVerifiedExport(t *testing.T) {
 func TestRecoveryCLIValidatesBeforeComposition(t *testing.T) {
 	t.Parallel()
 
-	for _, args := range [][]string{nil, {recoveryCommand}, {recoveryCommand, listCommand, "extra"}, {recoveryCommand, exportCommand}, {recoveryCommand, exportCommand, "../outside"}, {recoveryCommand, exportCommand, strings.Repeat("a", 64), "extra"}, {recoveryCommand, "install"}, {recoveryCommand, listCommand, "--public-key=foreign"}} {
+	for _, args := range [][]string{nil, {recoveryCommand}, {recoveryCommand, listCommand, "extra"}, {recoveryCommand, exportCommand}, {recoveryCommand, exportCommand, "../outside"}, {recoveryCommand, exportCommand, strings.Repeat("a", 64), "extra"}, {recoveryCommand, "install"}, {recoveryCommand, listCommand, "--public-key=foreign"}, {recoveryCommand, snapshotsCommand, "extra"}, {recoveryCommand, inspectCommand}, {recoveryCommand, inspectCommand, "../outside"}} {
 		t.Run(strings.Join(args, "/"), func(t *testing.T) {
 			t.Parallel()
 			cli, _, _ := newRecoveryCommand(t, false)
