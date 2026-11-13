@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const script = readFileSync(path.join(__dirname, '../internal/web/ui/application.js'), 'utf8');
 const downloadScript = readFileSync(path.join(__dirname, '../internal/web/ui/application-download.js'), 'utf8');
+const installScript = readFileSync(path.join(__dirname, '../internal/web/ui/application-install.js'), 'utf8');
 
 // A deliberately small DOM port: unsafe HTML writes fail instead of parsing it.
 class Element {
@@ -16,7 +17,9 @@ class Element {
   setAttribute(name, value) { this.attributes.set(name, value); }
   removeAttribute(name) { this.attributes.delete(name); if (name === 'value') delete this.value; }
   addEventListener(name, callback) { this.events.set(name, callback); }
-  fire(name) { return this.events.get(name)(); }
+  fire(name, ...args) { return this.events.get(name)(...args); }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 }
 function fixture(fetch = async () => { throw new Error('Unexpected network'); }, clock = {}) {
   const nodes = new Map();
@@ -24,6 +27,7 @@ function fixture(fetch = async () => { throw new Error('Unexpected network'); },
   const window = {};
   const context = vm.createContext({window, document: {getElementById: id => get(id.replace('application-', '')), createElement: () => new Element()}, fetch, AbortSignal, Date, setTimeout: clock.setTimeout || (() => 1), clearTimeout: clock.clearTimeout || (() => {})});
   vm.runInContext(downloadScript, context);
+  vm.runInContext(installScript, context);
   vm.runInContext(script, context);
   return {page: window.applicationPage, get};
 }
@@ -128,8 +132,10 @@ test('desktop bridge supplies typed reads and preparation methods and routes Hel
   vm.runInNewContext(source,{window,document,Call:{ByName:(...args)=>{calls.push(args);return Promise.resolve();}},Clipboard:{SetText:()=>{}},Events:{On:(name,handler)=>{assert.equal(name,'desktop:action');event=handler;}},navigate:(...args)=>{navigation=args;}});
   assert.equal(calls.length,1);
   await bridge.info();await bridge.history(false);await bridge.check(true);await bridge.downloadStatus();await bridge.startDownload('v1.2.0',false);await bridge.cancelDownload(7);
+  await bridge.installationStatus();await bridge.startInstallation({tag:'v1.2.0',cacheId:'cached'},{confirmed:true,editsResolved:true});await bridge.cancelInstallation(8);
+  await bridge.savedPackages(true);
   const prefix='github.com/DevWolk/garminctl/internal/containers/application/ui/native.Service.';
-  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true],[prefix+'DownloadStatus'],[prefix+'StartDownload','v1.2.0',false],[prefix+'CancelDownload',7]]);
+  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true],[prefix+'DownloadStatus'],[prefix+'StartDownload','v1.2.0',false],[prefix+'CancelDownload',7],[prefix+'InstallationStatus'],[prefix+'StartInstallation',{tag:'v1.2.0',cacheId:'cached'},{confirmed:true,editsResolved:true}],[prefix+'CancelInstallation',8],[prefix+'SavedPackages',true]]);
   await event({data:'application'});
   assert.deepEqual(navigation,['application','']);
 });
@@ -203,4 +209,93 @@ test('late status response cannot overwrite cancellation or a newer observation'
   assert.match(ui.get('download-status').textContent,/Download canceled/);
   assert.equal(ui.get('download-start').disabled,false);
   assert.equal(clock.size(),0);
+});
+
+function readyPackage() {return {id:1,tag:release.tag,phase:'ready',active:false,result:{tag:release.tag,cacheId:'retained-id',digest:'signed-digest',bytes:20}};}
+function idleInstallation() {return {id:0,phase:'idle',active:false,canCancel:false,stopRequested:false};}
+
+test('installation needs explicit confirmation and cannot start while merely visiting or selecting',async()=>{
+  const ui=fixture();let starts=0,confirms=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:async()=>idleInstallation(),confirmInstallation:async tag=>{assert.equal(tag,release.tag);confirms++;return false;},startInstallation:async()=>{starts++;}}));
+  await ui.page.activate();
+  assert.equal(starts,0);assert.equal(confirms,0);assert.equal(ui.get('install-start').disabled,false);
+  await ui.get('install-start').fire('click');
+  assert.equal(starts,0);assert.equal(confirms,1);assert.equal(ui.get('install-dialog').open,undefined);
+  ui.get('release').value='1';await ui.get('release').fire('change');
+  // An unavailable release cannot select a different package through stale download state.
+  await ui.page.activate();assert.equal(starts,0);
+});
+
+test('confirmed install blocks edits, polls preparation and refuses cancellation after handoff',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleInstallation(),starts=0,cancels=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:async()=>current,confirmInstallation:async()=>true,startInstallation:async(request,consent)=>{
+    assert.deepEqual(JSON.parse(JSON.stringify(request)),{tag:release.tag,cacheId:'retained-id',includePrerelease:false});
+    assert.deepEqual(JSON.parse(JSON.stringify(consent)),{confirmed:true,editsResolved:true});
+    starts++;return current={id:1,tag:release.tag,phase:'verifying',active:true,canCancel:true};
+  },cancelInstallation:async()=>{cancels++;}}));
+  await ui.page.activate();await ui.get('install-start').fire('click');
+  assert.equal(starts,1);assert.equal(ui.get('install-dialog').open,true);assert.equal(ui.page.installing(),true);
+  assert.equal(ui.get('download-start').disabled,true);assert.equal(ui.get('check').disabled,true);
+  await ui.get('install-start').fire('click');assert.equal(starts,1);
+  current={...current,phase:'handoff',canCancel:false};await clock.tick();
+  let prevented=false;
+  await ui.get('install-dialog').fire('cancel',{preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);assert.equal(cancels,0);assert.equal(ui.get('install-cancel').disabled,true);assert.equal(ui.get('install-dialog').open,true);
+  current={...current,phase:'accepted',active:false,stopRequested:true};await clock.tick();
+  assert.match(ui.get('install-detail').textContent,/Do not retry/);assert.equal(ui.page.installing(),true);
+});
+
+test('lost installation start reply is resolved by status without replay; cancellation waits for cleanup',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleInstallation(),starts=0,cancels=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:async()=>current,confirmInstallation:async()=>true,startInstallation:async()=>{
+    starts++;current={id:1,tag:release.tag,phase:'backing-up',active:true,canCancel:true};throw new Error('lost reply');
+  },cancelInstallation:async id=>{assert.equal(id,1);cancels++;return current={...current,phase:'canceling',canCancel:false};}}));
+  await ui.page.activate();await ui.get('install-start').fire('click');
+  assert.equal(ui.get('install-dialog').open,true);assert.match(ui.get('install-status').textContent,/Reading status/);
+  await ui.get('install-start').fire('click');assert.equal(starts,1);
+  await clock.tick();await ui.get('install-cancel').fire('click');
+  assert.equal(cancels,1);assert.equal(ui.get('install-dialog').open,true);assert.equal(ui.page.installing(),true);
+  current={...current,phase:'canceled',active:false};await clock.tick();
+  assert.equal(ui.get('install-dialog').open,false);assert.equal(ui.page.installing(),false);assert.equal(starts,1);
+});
+
+test('reload observes installation without starting it; stopped failure requires closing the app',async()=>{
+  const ui=fixture();let starts=0,closes=0;
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:async()=>({id:3,phase:'failed',active:false,stopRequested:true,error:'Shutdown deadline expired'}),startInstallation:async()=>{starts++;},closeWindow:async()=>{closes++;}}));
+  await ui.page.activate();
+  assert.equal(starts,0);assert.equal(ui.get('install-dialog').open,true);assert.match(ui.get('install-detail').textContent,/Close and restart/);
+  assert.equal(ui.get('install-cancel').textContent,'Close application');
+  await ui.get('install-cancel').fire('click');assert.equal(closes,1);assert.equal(starts,0);
+});
+
+test('desktop confirmation resolves unsaved edits and blocks reload while installation owns the window',async()=>{
+  const source=readFileSync(path.join(__dirname,'../internal/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
+  let bridge,event;const prompts=[],calls=[],pending=new Map([['setting',1]]);let installing=false,answer=false,reloads=0;
+  const window={applicationPage:{attach:value=>{bridge=value;},installing:()=>installing}};
+  vm.runInNewContext(source,{window,document:{addEventListener:()=>{}},Call:{ByName:(...args)=>{calls.push(args);return Promise.resolve();}},Clipboard:{SetText:()=>{}},Events:{On:(_,fn)=>{event=fn;}},state:{pending,appPending:new Map(),cloudPending:new Map()},confirmDialog:async value=>{prompts.push(value);return answer;},location:{reload(){reloads++;}}});
+  assert.equal(await bridge.confirmInstallation(release.tag),false);assert.equal(prompts.length,1);
+  answer=true;assert.equal(await bridge.confirmInstallation(release.tag),true);assert.equal(prompts.length,3);assert.equal(pending.size,1);
+  installing=true;await event({data:'reload'});assert.equal(reloads,0);
+  await event({data:'close'});assert.match(calls.at(-1)[0],/desktop.App.FinishClose$/);
+});
+
+test('saved packages remain selectable after app restart without network or a new download',async()=>{
+  const ui=fixture();let starts=0,lists=0;
+  await ui.page.attach(bridge({history:async()=>null,downloadStatus:async()=>idleDownload(),installationStatus:async()=>idleInstallation(),savedPackages:async pre=>{lists++;assert.equal(pre,false);return [{tag:release.tag,cacheId:'offline-id',prerelease:false}];},confirmInstallation:async()=>true,startInstallation:async req=>{starts++;assert.equal(req.cacheId,'offline-id');return {id:1,phase:'failed',active:false,error:'fixture refusal before handoff'};}}));
+  await ui.page.activate();
+  assert.equal(lists,1);assert.equal(starts,0);assert.equal(ui.get('install-package').children[0].textContent,release.tag);assert.equal(ui.get('install-start').disabled,false);
+  await ui.get('install-start').fire('click');assert.equal(starts,1);
+});
+
+test('late installation status cannot re-enable cancellation after a newer cancel decision',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleInstallation(),deferStatus=false,resolveStatus;
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:()=>deferStatus?new Promise(done=>{resolveStatus=done;}):Promise.resolve(current),confirmInstallation:async()=>true,startInstallation:async()=>current={id:1,tag:release.tag,phase:'verifying',active:true,canCancel:true},cancelInstallation:async()=>current={...current,phase:'canceling',canCancel:false}}));
+  await ui.page.activate();await ui.get('install-start').fire('click');
+  deferStatus=true;const observing=ui.page.activate();await Promise.resolve();
+  await ui.get('install-cancel').fire('click');
+  resolveStatus({id:1,tag:release.tag,phase:'verifying',active:true,canCancel:true});await observing;
+  assert.equal(ui.get('install-cancel').disabled,true);assert.match(ui.get('install-detail').textContent,/Canceling preparation/);
 });

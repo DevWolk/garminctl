@@ -112,5 +112,5 @@ window.createApplicationDownload = ({selection, busy, changed}) => {
   button.addEventListener('click', start);
   cancel.addEventListener('click', stop);
   update();
-  return {active, refresh, update, attach(bridge) { native = bridge; }};
+  return {active, refresh, update, package() { return state?.phase === 'ready' && state.result ? {...state.result} : null; }, attach(bridge) { native = bridge; }};
 };

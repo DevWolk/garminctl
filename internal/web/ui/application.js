@@ -11,18 +11,27 @@
   let active = false;
   let busy = false;
   let history = null;
+  let installations = null;
   const downloads = window.createApplicationDownload({
     selection: () => {
       const release = history?.history?.[Number(choices.value)];
       return release ? {tag: release.tag, includePrerelease: channel.checked} : null;
     },
-    busy: () => busy,
+    busy: () => busy || !!installations?.active() || !!installations?.leaving(),
+    changed: updateControls,
+  });
+  installations = window.createApplicationInstall({
+    downloaded: () => downloads.package(),
+    prerelease: () => channel.checked,
+    busy: () => busy || downloads.active(),
     changed: updateControls,
   });
   function updateControls() {
-    check.disabled = channel.disabled = busy || downloads.active();
-    choices.disabled = !history?.history?.length || busy || downloads.active();
+    const locked = busy || downloads.active() || !!installations?.active() || !!installations?.leaving();
+    check.disabled = channel.disabled = locked;
+    choices.disabled = !history?.history?.length || locked;
     downloads.update();
+    installations?.update();
   }
 
   function text(name, value) { get(name).textContent = value; }
@@ -81,7 +90,7 @@
     status.textContent = [available, (result.fromCache ? 'Saved history. Last checked: ' : 'Checked: ') + checked + '.', result.refreshError ? 'Could not refresh: ' + result.refreshError : '', result.cacheError ? 'Could not save history: ' + result.cacheError : ''].filter(Boolean).join(' ');
   }
   async function readHistory(refresh) {
-    if (!native || busy || downloads.active()) return;
+    if (!native || busy || downloads.active() || installations.active() || installations.leaving()) return;
     setBusy(true);
     try {
       renderHistory(await (refresh ? native.check(channel.checked) : native.history(channel.checked)));
@@ -90,7 +99,7 @@
       // A failed channel switch must not retain releases from another channel.
       if (!refresh) renderHistory(null);
       status.textContent = 'Could not read releases: ' + errorText(error);
-    } finally { setBusy(false); }
+    } finally { setBusy(false); await installations.refresh(); }
   }
   async function readNative() {
     setBusy(true);
@@ -98,6 +107,7 @@
       Promise.resolve().then(() => native.info()),
       Promise.resolve().then(() => native.history(channel.checked)),
       downloads.refresh(),
+      installations.refresh(),
     ]);
     if (results[0].status === 'fulfilled') inventory(results[0].value);
     else text('inventory-note', 'Could not read installed versions: ' + errorText(results[0].reason));
@@ -122,7 +132,7 @@
   choices.addEventListener('change', notes);
   window.applicationPage = {
     activate() {
-      if (active) return native ? downloads.refresh() : undefined;
+      if (active) return native ? Promise.all([downloads.refresh(), installations.refresh()]) : undefined;
       active = true;
       return native ? readNative() : readBrowser();
     },
@@ -130,9 +140,12 @@
       if (native) return;
       native = bridge;
       downloads.attach(bridge);
+      installations.attach(bridge);
       page.hidden = false;
       get('browser').hidden = true;
       if (active) return readNative();
+      return installations.refresh(true);
     },
+    installing() { return installations.active() || installations.leaving(); },
   };
 })();

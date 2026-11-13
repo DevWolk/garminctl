@@ -10,6 +10,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/application"
 )
 
+const phaseCanceling = "canceling"
+
 // Scope borrows the host's existing admission, cancellation and join boundary.
 type Scope interface {
 	Acquire() (context.Context, func(), error)
@@ -31,9 +33,11 @@ type Service struct {
 	factory      Factory
 	mu           sync.Mutex
 	reader       Reader
-	downloadMu   sync.Mutex
+	operationMu  sync.Mutex
 	operation    *downloadOperation
 	nextDownload uint64
+	installation *installationOperation
+	nextInstall  uint64
 }
 
 // NewService constructs no runtime, requests or background work.

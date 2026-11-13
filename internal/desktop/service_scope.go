@@ -33,6 +33,14 @@ func (s serviceScope) Backend() (string, bool, error) {
 	return s.app.backend.URL.String(), s.app.backend.cancel != nil, nil
 }
 
+// ExitForUpdate is available only to the composed native service, after it has
+// released its own Scope. shutdown can then join remaining work without a cycle.
+func (s serviceScope) ExitForUpdate() {
+	s.app.closing.Store(true)
+	s.app.operations.cancel()
+	s.app.host.Quit()
+}
+
 func nativeServices(service *App, registrars []ServiceRegistrar) []application.Service {
 	services := []application.Service{application.NewService(service)}
 	for _, register := range registrars {

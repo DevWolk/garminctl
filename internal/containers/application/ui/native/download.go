@@ -62,12 +62,12 @@ func (s *Service) StartDownload(tag string, includePrerelease bool) (*DownloadSt
 		return nil, errors.New(reason)
 	}
 
-	s.downloadMu.Lock()
-	if s.operation != nil && s.operation.state.Active {
-		s.downloadMu.Unlock()
+	s.operationMu.Lock()
+	if err := s.preparationErrorLocked(); err != nil {
+		s.operationMu.Unlock()
 		release()
 
-		return nil, errors.New("an application download is already running")
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Minute)
@@ -75,7 +75,7 @@ func (s *Service) StartDownload(tag string, includePrerelease bool) (*DownloadSt
 	operation := &downloadOperation{state: DownloadState{ID: s.nextDownload, Tag: tag, DownloadProgress: application.DownloadProgress{Phase: "checking"}, Active: true}, cancel: cancel}
 	s.operation = operation
 	initial := cloneDownloadState(operation.state)
-	s.downloadMu.Unlock()
+	s.operationMu.Unlock()
 
 	go func() {
 		defer release()
@@ -91,8 +91,8 @@ func (s *Service) StartDownload(tag string, includePrerelease bool) (*DownloadSt
 // DownloadStatus survives page reload while the window owns the operation.
 func (s *Service) DownloadStatus() (*DownloadState, error) {
 	return invokeRead(s, func(_ context.Context, r Reader) (*DownloadState, error) {
-		s.downloadMu.Lock()
-		defer s.downloadMu.Unlock()
+		s.operationMu.Lock()
+		defer s.operationMu.Unlock()
 
 		state := DownloadState{Phase: "idle"}
 		if s.operation != nil {
@@ -112,15 +112,15 @@ func (s *Service) DownloadStatus() (*DownloadState, error) {
 // CancelDownload affects only the supplied current operation, never a successor.
 func (s *Service) CancelDownload(id uint64) (*DownloadState, error) {
 	return invokeRead(s, func(context.Context, Reader) (*DownloadState, error) {
-		s.downloadMu.Lock()
-		defer s.downloadMu.Unlock()
+		s.operationMu.Lock()
+		defer s.operationMu.Unlock()
 
 		if s.operation == nil || s.operation.state.ID != id {
 			return nil, errors.New("download is no longer current")
 		}
 
 		if s.operation.state.Active {
-			s.operation.state.Phase = "canceling"
+			s.operation.state.Phase = phaseCanceling
 			s.operation.cancel()
 		}
 
@@ -129,17 +129,17 @@ func (s *Service) CancelDownload(id uint64) (*DownloadState, error) {
 }
 
 func (s *Service) updateDownload(op *downloadOperation, p application.DownloadProgress) {
-	s.downloadMu.Lock()
-	defer s.downloadMu.Unlock()
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 
-	if s.operation == op && op.state.Active && op.state.Phase != "canceling" {
+	if s.operation == op && op.state.Active && op.state.Phase != phaseCanceling {
 		op.state.DownloadProgress = p
 	}
 }
 
 func (s *Service) finishDownload(ctx context.Context, op *downloadOperation, result *application.DownloadResult, err error) {
-	s.downloadMu.Lock()
-	defer s.downloadMu.Unlock()
+	s.operationMu.Lock()
+	defer s.operationMu.Unlock()
 
 	op.state.Active = false
 	if errors.Is(ctx.Err(), context.Canceled) {

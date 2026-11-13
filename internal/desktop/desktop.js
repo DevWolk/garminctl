@@ -19,9 +19,29 @@ window.runtime.ClipboardSetText = Clipboard.SetText;
     downloadStatus: () => applicationCall('DownloadStatus'),
     startDownload: (tag, includePrerelease) => applicationCall('StartDownload', tag, includePrerelease),
     cancelDownload: (id) => applicationCall('CancelDownload', id),
+    installationStatus: () => applicationCall('InstallationStatus'),
+    savedPackages: (includePrerelease) => applicationCall('SavedPackages', includePrerelease),
+    startInstallation: (request, consent) => applicationCall('StartInstallation', request, consent),
+    cancelInstallation: (id) => applicationCall('CancelInstallation', id),
+    confirmInstallation,
+    closeWindow: () => native.FinishClose(),
   });
   let confirming = false;
+  async function confirmInstallation(tag) {
+    if (confirming) return false;
+    confirming = true;
+    try {
+      if (state.pending.size || state.appPending.size || state.cloudPending.size) {
+        if (!await confirmDialog({title:'Discard unsaved changes if the app closes?', body:'<p>Your unapplied changes will be lost when installation closes the application.</p>', ok:'Continue'})) return false;
+      }
+      return await confirmDialog({title:'Install ' + tag + ' and restart?', body:'<p>The app will verify the update and recovery package, back up local data, close, and start the system installer. System authorization may be required. Cancellation is available only before handoff.</p>', ok:'Install and restart'});
+    } finally { confirming = false; }
+  }
   async function action(name) {
+    if (window.applicationPage.installing?.()) {
+      if (name === 'close') await native.FinishClose();
+      return;
+    }
     if (name === 'back') { history.back(); return; }
     if (name === 'application') { navigate('application', ''); return; }
     if (name === 'mcp') { navigate('ai', ''); return; }

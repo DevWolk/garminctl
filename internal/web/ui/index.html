@@ -354,6 +354,11 @@
           <progress id="application-download-progress" aria-label="Package download" hidden></progress>
           <p id="application-download-detail" class="hint"></p>
           <p id="application-download-status" class="hint" role="status" aria-live="polite"></p>
+          <label for="application-install-package">Saved update packages</label>
+          <select id="application-install-package" disabled></select>
+          <p class="hint">Saved packages are verified again before installation. The current version’s recovery package must also be saved.</p>
+          <button class="btn" type="button" id="application-install-start" disabled hidden>Install saved release…</button>
+          <p id="application-install-status" class="hint" role="status" aria-live="polite"></p>
         </div>
       </div>
       <p class="hint"><a href="https://github.com/DevWolk/garminctl/releases" target="_blank" rel="noopener noreferrer">Browse all releases on GitHub</a></p>
@@ -474,6 +479,13 @@
   </div>
 </div>
 
+          <dialog id="application-install-dialog" class="dialog" closedby="none" aria-labelledby="application-install-title" aria-describedby="application-install-detail">
+            <h2 id="application-install-title">Preparing application update</h2>
+            <p id="application-install-detail" role="status" aria-live="polite"></p>
+            <progress aria-label="Preparing application update"></progress>
+            <div class="dialog-actions"><button class="btn" type="button" id="application-install-cancel" autofocus>Cancel preparation</button></div>
+          </dialog>
+
 <dialog id="dlg" class="dialog" closedby="any" aria-labelledby="dlg-title">
   <form method="dialog">
     <h2 id="dlg-title">Confirm</h2>
@@ -490,6 +502,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="/face.js"></script>
 <script src="/application-download.js"></script>
+<script src="/application-install.js"></script>
 <script src="/application.js"></script>
 <script src="/app.js"></script>
 <script src="/mcp.js"></script>

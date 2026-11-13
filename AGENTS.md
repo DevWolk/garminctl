@@ -19,7 +19,8 @@ See CLAUDE.md for the working rules. Module map:
   Its private CLI scope handles SIGPIPE so a lost reply returns EPIPE without
   terminating an accepted executor; ordinary command signal policy is unchanged.
   An acknowledged handoff does not prove installation/startup. Native Apply is
-  not exposed yet; installer/GUI execution and rollback acceptance remain open.
+  composed over the same owned backend; installer/GUI execution and rollback
+  acceptance remain open.
   Normal dispatch
   calls `cli.Run` in `internal/app/cli`, which parses global flags (output goes
   to the `cli` writers so tests can run commands over a dump) and dispatches through
@@ -54,7 +55,8 @@ See CLAUDE.md for the working rules. Module map:
   then rechecks exact-tag/channel metadata before package IO. App maps its ports
   to the existing resolver, cached CLI stager and protected PackageCache.
   `ui/native` binds Info/History/Check and StartDownload/DownloadStatus/
-  CancelDownload. App assembles these lazily from compiled version/key and trusted
+  CancelDownload, SavedPackages and StartInstallation/InstallationStatus/
+  CancelInstallation. App assembles these lazily from compiled version/key and trusted
   backend identity. Registration does no IO and creates no watch runtime.
   App's ApplicationBackend binds an internal maintenance capability to the same
   owned runtime only after the native host reserves its listener. Reused or stale
@@ -64,21 +66,28 @@ See CLAUDE.md for the working rules. Module map:
   and verifies both selected and current-version retained packages offline.
   App supplies PackageCache.Open through a narrow port with the compiled key.
   PreparedUpdate owns independent copies until Close; errors close partial
-  copies and return admission. Preflight adds no Wails/HTTP/MCP method.
+  copies and return admission. Preflight is internal to native installation;
+  HTTP/MCP receive no installation or maintenance capability.
   BackupDataAction selects opaque account/MFA, upload-ledger and existing watch
   recovery files. App binds it to the same owned runtime and hostfile's protected
   atomic snapshots under the config directory's application-backups. Close cancels
   and joins an active copy before releasing verified packages; a competing copy
   refuses without cancelling the first. Snapshot errors resume the live backend.
-  Browser profiles and retained package/history stores remain in place; no restore,
-  installer or extra native Service method is exposed.
+  Browser profiles and retained package/history stores remain in place. Native
+  installation consumes this snapshot; no standalone backup/restore method exists.
   InstallHandoffAction consumes a preparation with its own retained snapshot,
   requires explicit consent and resolved edits, and rechecks inventory before
   payload preparation and owned-backend stop. Its platform ports prepare an
   independently owned payload, join the backend, then attempt Commit once.
   Returned state distinguishes uncommitted, stop requested, commit attempted
-  and accepted; errors never imply safe replay. Production OS launcher and
-  native installation UI are not wired by this core contract.
+  and accepted; errors never imply safe replay. App supplies the private OS
+  helper; ui/native owns one window-scoped download or installation at a time.
+  SavedPackages lists bounded eligible metadata without maintenance or byte
+  verification; Apply verifies both packages again. Explicit UI consent precedes
+  preflight/backup/handoff. Cancel remains active until cleanup joins. Accepted
+  or uncertain Commit releases its Scope before ExitForUpdate, avoiding shutdown
+  waiting on itself. A stop request is not proof of successful shutdown; the
+  UI exposes that distinction and prevents replay. Reload resumes status only.
   One download holds the existing window Scope until worker/cache cleanup ends.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and
@@ -87,7 +96,8 @@ See CLAUDE.md for the working rules. Module map:
   refreshes the release feed or starts a download. Notes are text, progress counts
   bytes and reload only resumes status polling. Browser access shows backend
   metadata and Releases. Missing compiled key disables preparation while keeping
-  metadata reads available. No public HTTP/MCP installer or install/rollback UI.
+  metadata reads available. Native Apply uses a blocking progress dialog and
+  existing unsaved-edit confirmation. No public HTTP/MCP installer or rollback UI.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden
   listing. Non-CGO CLI builds retain WPD/DirFS support. Linux packages include
@@ -266,7 +276,7 @@ See CLAUDE.md for the working rules. Module map:
   Committed OS transactions are not killed on monitoring timeout. Operation logs
   and a bounded result remain for diagnosis; no replay, eviction or sweep is
   added. App binds this port to the existing owned backend stop/join; reused
-  backends are refused. Native Apply/GUI restart acceptance is still separate.
+  backends are refused. Native GUI/installation/restart acceptance is separate.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.

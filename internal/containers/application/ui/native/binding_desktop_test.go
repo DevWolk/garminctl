@@ -9,7 +9,7 @@ import (
 	applicationnative "github.com/DevWolk/garminctl/internal/containers/application/ui/native"
 )
 
-func TestNativeApplicationBindingHasOnlyReadsAndPreparationMethods(t *testing.T) {
+func TestNativeApplicationBindingHasOnlyDeclaredNativeMethods(t *testing.T) {
 	t.Parallel()
 
 	binding := applicationnative.Binding(&windowFixture{}, nil)
@@ -19,11 +19,11 @@ func TestNativeApplicationBindingHasOnlyReadsAndPreparationMethods(t *testing.T)
 		t.Fatalf("binding=%v", typ)
 	}
 
-	if typ.NumMethod() != 6 {
+	if typ.NumMethod() != 10 {
 		t.Fatalf("methods=%d", typ.NumMethod())
 	}
 
-	for _, name := range []string{"Info", "History", "Check", "StartDownload", "DownloadStatus", "CancelDownload"} {
+	for _, name := range []string{"Info", "History", "Check", "StartDownload", "DownloadStatus", "CancelDownload", "StartInstallation", "InstallationStatus", "CancelInstallation", "SavedPackages"} {
 		if _, ok := typ.MethodByName(name); !ok {
 			t.Fatalf("missing %s", name)
 		}

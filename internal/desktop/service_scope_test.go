@@ -114,3 +114,36 @@ func TestNativeServicesRegisterBeforeBackendWithoutStartingWork(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNativeUpdateExitCancelsOtherReadsAndDoesNotVetoQuit(t *testing.T) {
+	t.Parallel()
+
+	host := new(fakeWindowHost)
+	a := &App{host: host}
+	a.startup(t.Context())
+	a.Ready()
+	scope := serviceScope{app: a}
+
+	ctx, release, err := scope.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	release()
+
+	host.quit = func() {
+		if ctx.Err() == nil || a.beforeClose(t.Context()) {
+			t.Error("update exit did not cancel scope or bypass resolved edit guard")
+		}
+
+		if err := a.shutdown(); err != nil {
+			t.Error(err)
+		}
+	}
+
+	scope.ExitForUpdate()
+
+	if host.quits != 1 {
+		t.Fatal("update did not quit native host")
+	}
+}

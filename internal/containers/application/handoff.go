@@ -6,7 +6,10 @@ import (
 )
 
 // InstallConsent is supplied only after the native caller resolves user edits.
-type InstallConsent struct{ Confirmed, EditsResolved bool }
+type InstallConsent struct {
+	Confirmed     bool `json:"confirmed"`
+	EditsResolved bool `json:"editsResolved"`
+}
 
 // InstallationInput lends verified copies during Prepare; paths never come from a request.
 type InstallationInput struct {
