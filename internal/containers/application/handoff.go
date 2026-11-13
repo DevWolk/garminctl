@@ -85,7 +85,7 @@ func (a *InstallHandoffAction) Run(ctx context.Context, prepared *PreparedUpdate
 		result = &InstallHandoffResult{From: info.Current.Tag, To: info.Update.Tag, SnapshotID: prepared.snapshot.ID}
 		input := InstallationInput{Info: info, Snapshot: *prepared.snapshot, Current: prepared.current, Update: prepared.update}
 
-		return a.transfer(bound, input, result)
+		return a.transfer(bound, input, result, prepared)
 	})
 	if entered || !errors.Is(err, ErrPreparationBusy) {
 		err = errors.Join(err, prepared.Close())
@@ -143,7 +143,7 @@ func (a *InstallHandoffAction) recheck(ctx context.Context, expected InventoryRe
 	return nil
 }
 
-func (a *InstallHandoffAction) transfer(ctx context.Context, input InstallationInput, result *InstallHandoffResult) (err error) {
+func (a *InstallHandoffAction) transfer(ctx context.Context, input InstallationInput, result *InstallHandoffResult, prepared *PreparedUpdate) (err error) {
 	pending, err := a.installer.Prepare(ctx, input)
 	if pending != nil {
 		defer func() { err = errors.Join(err, pending.Close()) }()
@@ -161,13 +161,17 @@ func (a *InstallHandoffAction) transfer(ctx context.Context, input InstallationI
 		return err
 	}
 
+	if err := errors.Join(ctx.Err(), prepared.lifetime.Err()); err != nil {
+		return err
+	}
+
 	result.State = HandoffStopRequested
 
 	if err := a.stopOwned(ctx); err != nil {
 		return err
 	}
 
-	if err := ctx.Err(); err != nil {
+	if err := errors.Join(ctx.Err(), prepared.lifetime.Err()); err != nil {
 		return err
 	}
 
