@@ -14,12 +14,12 @@ import (
 // ApplicationBackend lends an owned backend's maintenance admission to Application.
 // Its zero value creates no runtime and performs no IO.
 type ApplicationBackend struct {
-	mu      sync.Mutex
-	runtime *process.Runtime
-	address string
-	started bool
-	done    chan struct{}
-	runErr  error
+	mu, dataRestoreMu sync.Mutex
+	runtime           *process.Runtime
+	address           string
+	started           bool
+	done              chan struct{}
+	runErr            error
 }
 
 // ServeListener starts the owned backend after the native host has reserved its listener.

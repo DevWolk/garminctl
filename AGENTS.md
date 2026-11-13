@@ -75,6 +75,14 @@ See CLAUDE.md for the working rules. Module map:
   refuses without cancelling the first. Snapshot errors resume the live backend.
   Browser profiles and retained package/history stores remain in place. Native
   installation consumes this snapshot; no standalone backup/restore method exists.
+  RestoreDataAction is internal: it reviews an explicit older data snapshot
+  against a current safety copy and borrowed verified package pair. Its one-use
+  plan requires exact consent and resolved edits. App binds it to successful
+  stop/join of the same owned backend and excludes concurrent restore actions.
+  Hostfile rechecks retained/live bytes, stages selected files privately, then
+  replaces/removes only reviewed selected state. Partial results keep both
+  backups and never replay/undo automatically. No public restore method or
+  compatibility verdict exists; native rollback orchestration remains open.
   InstallHandoffAction consumes a preparation with its own retained snapshot,
   requires explicit consent and resolved edits, and rechecks inventory before
   payload preparation and owned-backend stop. Its platform ports prepare an
