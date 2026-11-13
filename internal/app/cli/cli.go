@@ -85,6 +85,8 @@ Commands:
   backup DIR [-skip Music,Podcasts,Audiobooks]
                                   copy the watch's storage to a folder
   desktop                         open the installed native app
+  application recovery list       list retained application packages (metadata only)
+  application recovery export ID  verify and export a package for manual recovery
   serve [-addr 127.0.0.1:8787] [-autosync=false]
                                   run the web UI, HTTP API and HTTP MCP server
   mcp                             run the MCP server on stdio
@@ -104,7 +106,8 @@ type cli struct {
 	out     *printer // program output
 	errOut  *printer // prompts and diagnostics
 	// buildVersion names the build for the version command and the servers.
-	buildVersion string
+	buildVersion    string
+	updatePublicKey string
 }
 
 // jobCommand runs after the initial watch lease has been released.
@@ -116,7 +119,13 @@ type plainCommand func(ctx context.Context, args []string) error
 // Run executes one command line, writing program output to stdout and
 // prompts and diagnostics to stderr. version names the build.
 func Run(version string, args []string, stdout, stderr io.Writer) error {
-	c := &cli{out: newPrinter(stdout), errOut: newPrinter(stderr), buildVersion: version}
+	return RunWithUpdateKey(version, "", args, stdout, stderr)
+}
+
+// RunWithUpdateKey adds only the build-time public pin for application recovery.
+// Command arguments and environment variables cannot choose the trust root.
+func RunWithUpdateKey(version, compiledKey string, args []string, stdout, stderr io.Writer) error {
+	c := &cli{out: newPrinter(stdout), errOut: newPrinter(stderr), buildVersion: version, updatePublicKey: compiledKey}
 
 	return errors.Join(c.run(args), c.out.Err())
 }
@@ -197,12 +206,13 @@ func (c *cli) runDevice(ctx context.Context, cmd string, fn jobCommand, args []s
 // plainCommands are the commands that do not need the watch.
 func (c *cli) plainCommands() map[string]plainCommand {
 	return map[string]plainCommand{
-		"version":   c.version,
-		"devices":   c.devices,
-		"serve":     c.serve,
-		"desktop":   c.desktop,
-		"autostart": c.autostart,
-		"mcp":       c.mcp,
+		"version":     c.version,
+		"devices":     c.devices,
+		"serve":       c.serve,
+		"desktop":     c.desktop,
+		"autostart":   c.autostart,
+		"mcp":         c.mcp,
+		"application": c.application,
 	}
 }
 

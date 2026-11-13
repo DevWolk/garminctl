@@ -18,7 +18,7 @@ var updatePublicKey string
 
 func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return cli.Run(version, args, stdout, stderr)
+		return cli.RunWithUpdateKey(version, updatePublicKey, args, stdout, stderr)
 	}
 
 	var worker func(context.Context, string, string, io.Reader, io.Writer) error
@@ -31,7 +31,7 @@ func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
 	case app.ApplicationInstallCommand:
 		worker = runInstallerWorker
 	default:
-		return cli.Run(version, args, stdout, stderr)
+		return cli.RunWithUpdateKey(version, updatePublicKey, args, stdout, stderr)
 	}
 
 	if len(args) != 1 {

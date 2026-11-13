@@ -40,6 +40,36 @@ Standalone watch commands open their own connection. HTTP MCP and the UI share
 their server's connection; see [MCP](mcp.md). Exit codes are `0` for success,
 `1` for failure, `2` for usage errors, and `130` for interruption.
 
+## Application recovery
+
+These commands need neither a watch nor a running desktop/backend:
+
+```text
+application recovery list       List retained package metadata for this OS/architecture.
+application recovery export ID  Verify and copy the selected package for manual recovery.
+```
+
+Use an ID from `list`. The list is metadata, not proof of authenticity. Export
+works offline with this CLI's compiled public key and retains a separate copy
+of the original package and sibling signature under the OS cache directory's
+`garminctl/application-recovery/`. It prints both paths. Missing keys, unknown
+IDs, damaged packages and invalid signatures fail without replacing installed
+files. Source installs without an embedded update key cannot export packages.
+
+Export starts no installer, stops no server and restores no data. Before manual
+installation, stop the application and its server. Use the OS installer or
+package manager; package-managed files must remain managed by that manager.
+Selecting an older package does not establish data compatibility. Compatible
+rollback and explicit restoration of incompatible data require their separate
+recovery flow. Keep the exported files until manual recovery is finished;
+automatic removal is not implemented.
+
+With `-json`, `list` returns `verified: false` and a `packages` array. Successful
+`export` returns `verified: true`, the selected package metadata, `directory`,
+`path`, `signaturePath`, `manualInstallationRequired: true` and
+`dataCompatibility: "not_checked"`. A verification failure returns no success
+JSON. No command argument or environment variable selects the signing key.
+
 ## Files and device information
 
 ```text

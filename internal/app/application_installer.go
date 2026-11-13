@@ -99,7 +99,7 @@ func (b *ApplicationBackend) stopFor(address string, owned bool) func(context.Co
 	}
 }
 
-// Handoff is internal; the native Service still exposes no installation method.
+// Handoff is internal to the owned native installation pipeline.
 func (r *applicationNativeReader) Handoff(ctx context.Context, prepared *application.PreparedUpdate, consent application.InstallConsent) (*application.InstallHandoffResult, error) {
 	if r.handoff == nil {
 		return nil, abortApplicationSnapshot(prepared, errors.New("native installer handoff is not configured"))

@@ -95,7 +95,13 @@ See CLAUDE.md for the working rules. Module map:
   The Application tab needs no watch. Opening it or changing channel never
   refreshes the release feed or starts a download. Notes are text, progress counts
   bytes and reload only resumes status polling. Browser access shows backend
-  metadata and Releases. Missing compiled key disables preparation while keeping
+  metadata and Releases. `ui/cli` supplies GUI-independent `application recovery
+  list|export ID` with app's compiled-key PackageCache binding. List is unverified
+  metadata; Export re-verifies offline and publishes a separate protected copy
+  under application-recovery. It creates no backend/watch owner, starts no
+  installer and restores no data. An older package does not prove compatibility;
+  automated rollback, explicit restore and native repair acceptance remain open.
+  Missing compiled key disables preparation while keeping
   metadata reads available. Native Apply uses a blocking progress dialog and
   existing unsaved-edit confirmation. No public HTTP/MCP installer or rollback UI.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
