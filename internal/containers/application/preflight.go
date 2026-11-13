@@ -99,6 +99,10 @@ func NewPreflightAction(inventory InventoryReader, packages PreflightPackages, m
 
 // Run returns caller-owned verified copies; any failure releases all acquired resources.
 func (a *PreflightAction) Run(ctx context.Context, request PreflightRequest) (result *PreparedUpdate, err error) {
+	return a.run(ctx, request, false)
+}
+
+func (a *PreflightAction) run(ctx context.Context, request PreflightRequest, rollback bool) (result *PreparedUpdate, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -143,7 +147,7 @@ func (a *PreflightAction) Run(ctx context.Context, request PreflightRequest) (re
 		return nil, err
 	}
 
-	current, update, err := selectPreflightPackages(rows, request, target)
+	current, update, err := selectPreflightPackages(rows, request, target, rollback)
 	if err != nil {
 		return nil, err
 	}

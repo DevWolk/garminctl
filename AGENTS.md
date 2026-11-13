@@ -83,6 +83,13 @@ See CLAUDE.md for the working rules. Module map:
   replaces/removes only reviewed selected state. Partial results keep both
   backups and never replay/undo automatically. No public restore method or
   compatibility verdict exists; native rollback orchestration remains open.
+  RollbackAction privately composes preflight/backup/restore/handoff for an
+  explicit older package and data snapshot. PreparedRollback owns its package
+  copies and maintenance; ordinary update admission still refuses downgrades.
+  Exact data consent and installer confirmation precede payload preparation,
+  owned stop, restore and at most one Commit. Partial/uncertain outcomes retain
+  both backups, never resume stopped writers or replay. Native rollback UI and
+  compatible-reader/OS acceptance remain open; no public restore API is added.
   InstallHandoffAction consumes a preparation with its own retained snapshot,
   requires explicit consent and resolved edits, and rechecks inventory before
   payload preparation and owned-backend stop. Its platform ports prepare an

@@ -36,7 +36,7 @@ func preflightTarget(info *InventoryResult) (DownloadTarget, error) {
 	return target, nil
 }
 
-func selectPreflightPackages(rows []PackageRecord, request PreflightRequest, target DownloadTarget) (PackageRecord, PackageRecord, error) {
+func selectPreflightPackages(rows []PackageRecord, request PreflightRequest, target DownloadTarget, rollback bool) (PackageRecord, PackageRecord, error) {
 	var (
 		current, update           PackageRecord
 		currentFound, updateFound bool
@@ -80,11 +80,28 @@ func selectPreflightPackages(rows []PackageRecord, request PreflightRequest, tar
 		return current, update, err
 	}
 
-	if semver.Compare(semanticVersion(update.Tag), semanticVersion(target.CLIVersion)) <= 0 {
-		return current, update, errors.New("an application update must be newer; downgrade requires explicit rollback")
+	if err := validatePreflightOrder(update.Tag, target.CLIVersion, rollback); err != nil {
+		return current, update, err
 	}
 
 	return current, update, nil
+}
+
+func validatePreflightOrder(selected, installed string, rollback bool) error {
+	order := semver.Compare(semanticVersion(selected), semanticVersion(installed))
+	if rollback {
+		if order >= 0 {
+			return errors.New("explicit rollback requires an older retained package")
+		}
+
+		return nil
+	}
+
+	if order <= 0 {
+		return errors.New("an application update must be newer; downgrade requires explicit rollback")
+	}
+
+	return nil
 }
 
 func samePackageTarget(record PackageRecord, target DownloadTarget) bool {
