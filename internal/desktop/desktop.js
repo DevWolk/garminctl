@@ -21,6 +21,10 @@ window.runtime.ClipboardSetText = Clipboard.SetText;
     cancelDownload: (id) => applicationCall('CancelDownload', id),
     installationStatus: () => applicationCall('InstallationStatus'),
     savedPackages: (includePrerelease) => applicationCall('SavedPackages', includePrerelease),
+    savedRollbacks: (includePrerelease) => applicationCall('SavedRollbacks', includePrerelease),
+    startRollback: (request) => applicationCall('StartRollback', request),
+    confirmRollback: (id, consent) => applicationCall('ConfirmRollback', id, consent),
+    confirmRollbackPreparation,
     startInstallation: (request, consent) => applicationCall('StartInstallation', request, consent),
     cancelInstallation: (id) => applicationCall('CancelInstallation', id),
     confirmInstallation,
@@ -35,6 +39,16 @@ window.runtime.ClipboardSetText = Clipboard.SetText;
         if (!await confirmDialog({title:'Discard unsaved changes if the app closes?', body:'<p>Your unapplied changes will be lost when installation closes the application.</p>', ok:'Continue'})) return false;
       }
       return await confirmDialog({title:'Install ' + tag + ' and restart?', body:'<p>The app will verify the update and recovery package, back up local data, close, and start the system installer. System authorization may be required. Cancellation is available only before handoff.</p>', ok:'Install and restart'});
+    } finally { confirming = false; }
+  }
+  async function confirmRollbackPreparation(tag) {
+    if (confirming) return false;
+    confirming = true;
+    try {
+      if (state.pending.size || state.appPending.size || state.cloudPending.size) {
+        if (!await confirmDialog({title:'Discard unsaved changes if rollback closes the app?', body:'<p>Unapplied changes will be lost if you later confirm rollback. Canceling preparation keeps them in this window.</p>', ok:'Continue'})) return false;
+      }
+      return await confirmDialog({title:'Prepare rollback to ' + tag + '?', body:'<p>The app will verify both packages and save a protected copy of current data. No data is replaced and no installation starts until you review and confirm the exact changes.</p>', ok:'Prepare review'});
     } finally { confirming = false; }
   }
   async function action(name) {

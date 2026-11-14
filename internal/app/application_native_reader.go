@@ -18,6 +18,7 @@ type applicationNativeReader struct {
 	disabled        string
 	maintenance     func(context.Context) (func(), error)
 	handoff         *application.InstallHandoffAction
+	rollbackFor     func() (*application.RollbackAction, error)
 }
 
 func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {
@@ -36,6 +37,9 @@ func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiled
 	reader.snapshotContext = b.snapshotContextFor(address, config.Inventory.BackendOwned)
 	if reader.disabled == "" {
 		reader.handoff = application.NewInstallHandoffAction(reader.ApplicationReads, applicationInstallerPort{key: compiledKey, args: slices.Clone(config.RestartArgs)}, b.stopFor(address, config.Inventory.BackendOwned))
+		reader.rollbackFor = func() (*application.RollbackAction, error) {
+			return b.rollbackAction(reader, address, config.Inventory.BackendOwned)
+		}
 	}
 
 	return reader, nil

@@ -11,6 +11,10 @@ import (
 // RetainedUpdates lists eligible display metadata without maintenance or opening bytes.
 // Run still rechecks inventory, verifies both packages and requires recovery.
 func (a *PreflightAction) RetainedUpdates(ctx context.Context, prerelease bool) ([]PackageRecord, error) {
+	return a.retained(ctx, prerelease, false)
+}
+
+func (a *PreflightAction) retained(ctx context.Context, prerelease, rollback bool) ([]PackageRecord, error) {
 	if a.inventory == nil || a.packages == nil {
 		return nil, errors.New("application package inventory is unavailable")
 	}
@@ -35,7 +39,7 @@ func (a *PreflightAction) RetainedUpdates(ctx context.Context, prerelease bool) 
 
 	result := make([]PackageRecord, 0, len(rows))
 	for _, row := range rows {
-		if validatePreflightPackage(row, target, prerelease) != nil || semver.Compare(semanticVersion(row.Tag), semanticVersion(target.CLIVersion)) <= 0 {
+		if validatePreflightPackage(row, target, prerelease) != nil || validatePreflightOrder(row.Tag, target.CLIVersion, rollback) != nil {
 			continue
 		}
 

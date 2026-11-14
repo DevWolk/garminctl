@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,6 +21,9 @@ type UpdateHost interface{ ExitForUpdate() }
 
 // InstallationState describes one attempt; acceptance never proves OS installation.
 type InstallationState struct {
+	Kind          string                            `json:"kind,omitempty"`
+	Review        *application.DataRestoreView      `json:"review,omitempty"`
+	Restore       *application.DataRestoreResult    `json:"restore,omitempty"`
 	ID            uint64                            `json:"id"`
 	Tag           string                            `json:"tag,omitempty"`
 	Phase         string                            `json:"phase"`
@@ -31,8 +35,9 @@ type InstallationState struct {
 }
 
 type installationOperation struct {
-	state  InstallationState
-	cancel context.CancelFunc
+	state        InstallationState
+	cancel       context.CancelFunc
+	confirmation chan application.RollbackConsent
 }
 
 // StartInstallation requires explicit consent and accepts only a retained cache ID.
@@ -65,6 +70,21 @@ func (s *Service) StartInstallation(request application.PreflightRequest, consen
 }
 
 func (s *Service) installationSource() (context.Context, func(), Installer, UpdateHost, error) {
+	ctx, release, reader, host, err := s.ownedInstallationSource()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	installer, ok := reader.(Installer)
+	if !ok {
+		release()
+		return nil, nil, nil, nil, errors.New("application installation is unavailable")
+	}
+
+	return ctx, release, installer, host, nil
+}
+
+func (s *Service) ownedInstallationSource() (context.Context, func(), Reader, UpdateHost, error) {
 	if s.scope == nil {
 		return nil, nil, nil, nil, errors.New("native window is not configured")
 	}
@@ -86,14 +106,12 @@ func (s *Service) installationSource() (context.Context, func(), Installer, Upda
 	}
 
 	reader, err := s.source()
-
-	installer, ok := reader.(Installer)
-	if err != nil || !ok {
+	if err != nil {
 		release()
-		return nil, nil, nil, nil, errors.Join(err, errors.New("application installation is unavailable"))
+		return nil, nil, nil, nil, err
 	}
 
-	return ctx, release, installer, host, nil
+	return ctx, release, reader, host, nil
 }
 
 func (s *Service) runInstallation(ctx context.Context, release func(), installer Installer, host UpdateHost, op *installationOperation, request application.PreflightRequest, consent application.InstallConsent) {
@@ -102,8 +120,11 @@ func (s *Service) runInstallation(ctx context.Context, release func(), installer
 
 	result, err := installer.Install(ctx, request, consent, func(phase string) { s.updateInstallation(op, phase) })
 
-	exit := s.finishInstallation(ctx, op, result, err)
-	if exit {
+	s.finishAndExit(ctx, release, host, op, result, err)
+}
+
+func (s *Service) finishAndExit(ctx context.Context, release func(), host UpdateHost, op *installationOperation, result *application.InstallHandoffResult, err error) {
+	if s.finishInstallation(ctx, op, result, err) {
 		if err != nil {
 			slog.Error("application installer handoff has an uncertain outcome; automatic retry is disabled", "error", err)
 		}
@@ -200,6 +221,15 @@ func (s *Service) finishInstallation(ctx context.Context, op *installationOperat
 }
 
 func cloneInstallationState(state InstallationState) *InstallationState {
+	if state.Review != nil {
+		state.Review = cloneRollbackReview(*state.Review)
+	}
+
+	if state.Restore != nil {
+		value := *state.Restore
+		state.Restore = &value
+	}
+
 	if state.Result != nil {
 		value := *state.Result
 		state.Result = &value
@@ -228,4 +258,9 @@ func (s *Service) preparationErrorLocked() error {
 	}
 
 	return nil
+}
+
+func cloneRollbackReview(value application.DataRestoreView) *application.DataRestoreView {
+	value.Changes = slices.Clone(value.Changes)
+	return &value
 }

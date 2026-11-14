@@ -56,7 +56,7 @@ See CLAUDE.md for the working rules. Module map:
   to the existing resolver, cached CLI stager and protected PackageCache.
   `ui/native` binds Info/History/Check and StartDownload/DownloadStatus/
   CancelDownload, SavedPackages and StartInstallation/InstallationStatus/
-  CancelInstallation. App assembles these lazily from compiled version/key and trusted
+  CancelInstallation plus SavedRollbacks/StartRollback/ConfirmRollback. App assembles these lazily from compiled version/key and trusted
   backend identity. Registration does no IO and creates no watch runtime.
   App's ApplicationBackend binds an internal maintenance capability to the same
   owned runtime only after the native host reserves its listener. Reused or stale
@@ -82,14 +82,18 @@ See CLAUDE.md for the working rules. Module map:
   Hostfile rechecks retained/live bytes, stages selected files privately, then
   replaces/removes only reviewed selected state. Partial results keep both
   backups and never replay/undo automatically. No public restore method or
-  compatibility verdict exists; native rollback orchestration remains open.
+  compatibility verdict exists. Native rollback uses an explicit data review.
   RollbackAction privately composes preflight/backup/restore/handoff for an
   explicit older package and data snapshot. PreparedRollback owns its package
   copies and maintenance; ordinary update admission still refuses downgrades.
   Exact data consent and installer confirmation precede payload preparation,
   owned stop, restore and at most one Commit. Partial/uncertain outcomes retain
-  both backups, never resume stopped writers or replay. Native rollback UI and
-  compatible-reader/OS acceptance remain open; no public restore API is added.
+  both backups, never resume stopped writers or replay. Native selection/review
+  and confirmation share the existing installation operation/Scope. Review holds
+  maintenance until exact consent or joined cancellation; reload observes only.
+  The confirming RPC releases its own lease before waking the worker. Compatible
+  keep-current-data rollback and OS acceptance remain open; no standalone public
+  restore API is added.
   InstallHandoffAction consumes a preparation with its own retained snapshot,
   requires explicit consent and resolved edits, and rechecks inventory before
   payload preparation and owned-backend stop. Its platform ports prepare an
@@ -115,7 +119,8 @@ See CLAUDE.md for the working rules. Module map:
   metadata; Export re-verifies offline and publishes a separate protected copy
   under application-recovery. It creates no backend/watch owner, starts no
   installer and restores no data. An older package does not prove compatibility;
-  automated rollback, explicit restore and native repair acceptance remain open.
+  native rollback restores only explicitly reviewed data; compatible rollback
+  and native repair acceptance remain open.
   `recovery snapshots|inspect ID` reads the configured application-backups root
   through hostfile.SnapshotReader. List is metadata-only; inspect verifies local
   manifest/layout/hash consistency and Application's allowed state paths, without

@@ -19,11 +19,11 @@ func TestNativeApplicationBindingHasOnlyDeclaredNativeMethods(t *testing.T) {
 		t.Fatalf("binding=%v", typ)
 	}
 
-	if typ.NumMethod() != 10 {
+	if typ.NumMethod() != 13 {
 		t.Fatalf("methods=%d", typ.NumMethod())
 	}
 
-	for _, name := range []string{"Info", "History", "Check", "StartDownload", "DownloadStatus", "CancelDownload", "StartInstallation", "InstallationStatus", "CancelInstallation", "SavedPackages"} {
+	for _, name := range []string{"Info", "History", "Check", "StartDownload", "DownloadStatus", "CancelDownload", "StartInstallation", "InstallationStatus", "CancelInstallation", "SavedPackages", "SavedRollbacks", "StartRollback", "ConfirmRollback"} {
 		if _, ok := typ.MethodByName(name); !ok {
 			t.Fatalf("missing %s", name)
 		}

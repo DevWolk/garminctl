@@ -134,8 +134,9 @@ test('desktop bridge supplies typed reads and preparation methods and routes Hel
   await bridge.info();await bridge.history(false);await bridge.check(true);await bridge.downloadStatus();await bridge.startDownload('v1.2.0',false);await bridge.cancelDownload(7);
   await bridge.installationStatus();await bridge.startInstallation({tag:'v1.2.0',cacheId:'cached'},{confirmed:true,editsResolved:true});await bridge.cancelInstallation(8);
   await bridge.savedPackages(true);
+  await bridge.savedRollbacks(true);await bridge.startRollback({package:{tag:'v0.9.0',cacheId:'old'},snapshotId:'backup'});await bridge.confirmRollback(9,{data:{reviewId:'review'}});
   const prefix='github.com/DevWolk/garminctl/internal/containers/application/ui/native.Service.';
-  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true],[prefix+'DownloadStatus'],[prefix+'StartDownload','v1.2.0',false],[prefix+'CancelDownload',7],[prefix+'InstallationStatus'],[prefix+'StartInstallation',{tag:'v1.2.0',cacheId:'cached'},{confirmed:true,editsResolved:true}],[prefix+'CancelInstallation',8],[prefix+'SavedPackages',true]]);
+  assert.deepEqual(calls.slice(1),[[prefix+'Info'],[prefix+'History',false],[prefix+'Check',true],[prefix+'DownloadStatus'],[prefix+'StartDownload','v1.2.0',false],[prefix+'CancelDownload',7],[prefix+'InstallationStatus'],[prefix+'StartInstallation',{tag:'v1.2.0',cacheId:'cached'},{confirmed:true,editsResolved:true}],[prefix+'CancelInstallation',8],[prefix+'SavedPackages',true],[prefix+'SavedRollbacks',true],[prefix+'StartRollback',{package:{tag:'v0.9.0',cacheId:'old'},snapshotId:'backup'}],[prefix+'ConfirmRollback',9,{data:{reviewId:'review'}}]]);
   await event({data:'application'});
   assert.deepEqual(navigation,['application','']);
 });
@@ -277,6 +278,7 @@ test('desktop confirmation resolves unsaved edits and blocks reload while instal
   vm.runInNewContext(source,{window,document:{addEventListener:()=>{}},Call:{ByName:(...args)=>{calls.push(args);return Promise.resolve();}},Clipboard:{SetText:()=>{}},Events:{On:(_,fn)=>{event=fn;}},state:{pending,appPending:new Map(),cloudPending:new Map()},confirmDialog:async value=>{prompts.push(value);return answer;},location:{reload(){reloads++;}}});
   assert.equal(await bridge.confirmInstallation(release.tag),false);assert.equal(prompts.length,1);
   answer=true;assert.equal(await bridge.confirmInstallation(release.tag),true);assert.equal(prompts.length,3);assert.equal(pending.size,1);
+  assert.equal(await bridge.confirmRollbackPreparation('v0.9.0'),true);assert.equal(prompts.length,5);assert.equal(pending.size,1);assert.match(prompts[4].body,/No data is replaced/);
   installing=true;await event({data:'reload'});assert.equal(reloads,0);
   await event({data:'close'});assert.match(calls.at(-1)[0],/desktop.App.FinishClose$/);
 });
@@ -298,4 +300,76 @@ test('late installation status cannot re-enable cancellation after a newer cance
   await ui.get('install-cancel').fire('click');
   resolveStatus({id:1,tag:release.tag,phase:'verifying',active:true,canCancel:true});await observing;
   assert.equal(ui.get('install-cancel').disabled,true);assert.match(ui.get('install-detail').textContent,/Canceling preparation/);
+});
+
+function rollbackOption() {return {tag:'v0.9.0',cacheId:'old-package',snapshotId:'old-data',files:1,createdAt:'2026-11-01T10:00:00Z'};}
+function rollbackReview() {return {reviewId:'review-a',from:'v1.0.0',to:'v0.9.0',targetSnapshotId:'old-data',safetySnapshotId:'new-data',changes:[{area:'config',path:'<img src=x onerror=alert(1)>',operation:'replace',bytes:12}]};}
+function reviewingRollback() {return {id:4,kind:'rollback',tag:'v0.9.0',phase:'review',active:true,canCancel:true,review:rollbackReview()};}
+
+test('rollback lists local choices and waits for an explicit reviewed data confirmation',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);
+  let current=idleInstallation(),starts=0,confirms=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,savedRollbacks:async()=>[rollbackOption()],confirmRollbackPreparation:async()=>true,startRollback:async req=>{
+    starts++;assert.equal(req.package.cacheId,'old-package');assert.equal(req.snapshotId,'old-data');
+    return current={id:4,kind:'rollback',phase:'verifying',active:true,canCancel:true};
+  },confirmRollback:async(id,consent)=>{confirms++;assert.equal(id,4);assert.equal(consent.data.reviewId,'review-a');assert.equal(consent.data.confirmed,true);assert.equal(consent.installation.editsResolved,true);return current={...current,phase:'handoff',canCancel:false};}}));
+  await ui.page.activate();
+  assert.equal(starts,0);assert.equal(confirms,0);assert.equal(ui.get('install-rollback-start').disabled,false);
+  await ui.get('install-rollback-start').fire('click');
+  assert.equal(starts,1);assert.equal(confirms,0);assert.equal(ui.get('install-dialog').open,true);
+  current=reviewingRollback();await clock.tick();
+  assert.equal(ui.get('install-review').hidden,false);assert.equal(ui.get('install-review-confirm').disabled,true);
+  assert.equal(ui.get('install-review-files').children.length,1);
+  assert.match(ui.get('install-review-files').children[0].textContent,/<img src=x/);
+  assert.match(ui.get('install-review-backups').textContent,/old-data.*new-data/);
+  ui.get('install-review-consent').checked=true;await ui.get('install-review-consent').fire('change');
+  await ui.get('install-review-confirm').fire('click');
+  assert.equal(confirms,1);assert.equal(ui.get('install-cancel').disabled,true);
+});
+
+test('reload resumes rollback review without preparing or confirming; a changed review clears consent',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);let current=reviewingRollback(),starts=0,confirms=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,startRollback:async()=>{starts++;},confirmRollback:async()=>{confirms++;}}));
+  await ui.page.activate();
+  assert.equal(starts,0);assert.equal(confirms,0);assert.equal(ui.get('install-dialog').open,true);
+  assert.equal(ui.get('install-review-consent').checked,false);
+  ui.get('install-review-consent').checked=true;await ui.get('install-review-consent').fire('change');
+  current={...current,review:{...current.review,reviewId:'replacement-review'}};await clock.tick();
+  assert.equal(ui.get('install-review-consent').checked,false);assert.equal(ui.get('install-review-confirm').disabled,true);
+});
+
+test('lost rollback confirmation reply polls status and never automatically confirms twice',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);let current=reviewingRollback(),confirms=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,confirmRollback:async()=>{confirms++;current={...current,phase:'handoff',canCancel:false};throw new Error('lost confirmation reply');}}));
+  await ui.page.activate();ui.get('install-review-consent').checked=true;await ui.get('install-review-consent').fire('change');
+  await ui.get('install-review-confirm').fire('click');
+  assert.equal(confirms,1);assert.equal(ui.get('install-review-confirm').disabled,true);assert.equal(ui.get('install-dialog').open,true);
+  await clock.tick();assert.equal(confirms,1);assert.equal(ui.get('install-cancel').disabled,true);
+});
+
+test('rollback cancellation keeps the modal until cleanup; partial restore does not invite restart',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);let current=reviewingRollback(),cancels=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,cancelInstallation:async()=>{cancels++;return current={...current,phase:'canceling',canCancel:false};}}));
+  await ui.page.activate();
+  await ui.get('install-dialog').fire('cancel',{preventDefault(){}});
+  assert.equal(cancels,1);assert.equal(ui.get('install-dialog').open,true);assert.equal(ui.get('install-review-confirm').disabled,true);
+  current={...current,phase:'canceled',active:false};await clock.tick();assert.equal(ui.get('install-dialog').open,false);
+  current={...current,phase:'failed',stopRequested:true,restore:{attempted:true,completed:false,replaced:1,removed:0},error:'fixture partial failure'};
+  await ui.page.activate();assert.equal(ui.get('install-dialog').open,true);assert.match(ui.get('install-detail').textContent,/recover manually/i);assert.doesNotMatch(ui.get('install-detail').textContent,/restart the app manually/i);
+});
+
+test('a lost rollback confirmation that was not delivered requires cancel before a new review',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);let current=reviewingRollback(),confirms=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,confirmRollback:async()=>{confirms++;throw new Error('request not delivered');}}));
+  await ui.page.activate();ui.get('install-review-consent').checked=true;await ui.get('install-review-consent').fire('change');
+  await ui.get('install-review-confirm').fire('click');await clock.tick();
+  assert.equal(confirms,1);assert.equal(ui.get('install-review-confirm').disabled,true);assert.equal(ui.get('install-cancel').disabled,false);
+});
+
+test('corrupt rollback metadata does not disable an otherwise valid ordinary update',async()=>{
+  const ui=fixture();
+  await ui.page.attach(bridge({downloadStatus:async()=>idleDownload(),installationStatus:async()=>idleInstallation(),savedPackages:async()=>[{tag:release.tag,cacheId:'available-update'}],savedRollbacks:async()=>{throw new Error('corrupt backup metadata');},startInstallation:async()=>{throw new Error('not clicked');},confirmInstallation:async()=>true}));
+  await ui.page.activate();
+  assert.equal(ui.get('install-start').disabled,false);assert.equal(ui.get('install-rollback-start').disabled,true);
+  assert.match(ui.get('install-rollback-note').textContent,/corrupt backup metadata/);
 });

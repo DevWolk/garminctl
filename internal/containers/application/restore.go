@@ -16,28 +16,37 @@ import (
 
 // RestoreChange is a reviewed replacement or removal of selected local data.
 type RestoreChange struct {
-	Area, Path, Operation string
-	Bytes                 int64
+	Area      string `json:"area"`
+	Path      string `json:"path"`
+	Operation string `json:"operation"`
+	Bytes     int64  `json:"bytes"`
 }
 
 // DataRestoreView describes explicit backup restoration, not schema compatibility.
 type DataRestoreView struct {
-	ReviewID, TargetSnapshotID, SafetySnapshotID string
-	From, To                                     string
-	Changes                                      []RestoreChange
+	ReviewID         string          `json:"reviewId"`
+	TargetSnapshotID string          `json:"targetSnapshotId"`
+	SafetySnapshotID string          `json:"safetySnapshotId"`
+	From             string          `json:"from"`
+	To               string          `json:"to"`
+	Changes          []RestoreChange `json:"changes"`
 }
 
 // DataRestoreResult preserves an attempted operation even when it fails.
 type DataRestoreResult struct {
-	TargetSnapshotID, SafetySnapshotID string
-	Attempted, Completed               bool
-	Replaced, Removed                  int
+	TargetSnapshotID string `json:"targetSnapshotId"`
+	SafetySnapshotID string `json:"safetySnapshotId"`
+	Attempted        bool   `json:"attempted"`
+	Completed        bool   `json:"completed"`
+	Replaced         int    `json:"replaced"`
+	Removed          int    `json:"removed"`
 }
 
 // RestoreConsent binds explicit consent to the exact reviewed file set.
 type RestoreConsent struct {
-	Confirmed, EditsResolved bool
-	ReviewID                 string
+	Confirmed     bool   `json:"confirmed"`
+	EditsResolved bool   `json:"editsResolved"`
+	ReviewID      string `json:"reviewId"`
 }
 
 // DataRestorations rechecks retained and live bytes at the mutation boundary.

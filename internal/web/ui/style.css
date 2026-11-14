@@ -411,3 +411,6 @@ table.files td.chk { width: 28px; }
 
 #application-download-progress { inline-size: min(100%, 24rem); }
 #application-download-status { overflow-wrap: anywhere; }
+
+#application-install-review-files { max-block-size: 35vh; overflow: auto; overflow-wrap: anywhere; }
+#application-install-review-backups { overflow-wrap: anywhere; }

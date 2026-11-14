@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	installTestTag    = "v4.5.6"
-	installStopFailed = "stop failed"
+	installTestTag        = "v4.5.6"
+	installStopFailed     = "stop failed"
+	installPhaseCanceling = "canceling"
 )
 
 type installWindow struct {
@@ -154,7 +155,7 @@ func TestNativeInstallCancelRetainsOwnershipUntilCleanup(t *testing.T) {
 	<-entered
 
 	canceled, err := s.CancelInstallation(first.ID)
-	if err != nil || !canceled.Active || canceled.Phase != "canceling" {
+	if err != nil || !canceled.Active || canceled.Phase != installPhaseCanceling {
 		t.Fatalf("cancel=%+v %v", canceled, err)
 	}
 

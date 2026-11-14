@@ -7,8 +7,8 @@ import (
 
 // RollbackRequest explicitly selects the retained package and older data copy.
 type RollbackRequest struct {
-	Package    PreflightRequest
-	SnapshotID string
+	Package    PreflightRequest `json:"package"`
+	SnapshotID string           `json:"snapshotId"`
 }
 
 // RollbackView binds both package versions and the data review to one preparation.
@@ -19,8 +19,8 @@ type RollbackView struct {
 
 // RollbackConsent separately confirms installer handoff and the exact data restore.
 type RollbackConsent struct {
-	Installation InstallConsent
-	Data         RestoreConsent
+	Installation InstallConsent `json:"installation"`
+	Data         RestoreConsent `json:"data"`
 }
 
 // RollbackResult records irreversible stop, data effects and uncertain installer commit.

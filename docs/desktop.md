@@ -133,10 +133,38 @@ release** verifies and saves the package locally. **Cancel download** waits for
 worker cleanup; reloading the page resumes observation of the same operation.
 Preparation requires confirmed installation ownership and matching desktop/CLI
 builds. A missing key or an unsupported installation is reported explicitly.
-This page does not install updates.
+**Install saved release…** verifies both the selected update and a retained
+package of the current version, saves a protected data backup and asks before
+handoff. Active watch jobs or a separately owned backend prevent preparation.
+Cancellation is available before handoff and waits for cleanup. Once the system
+installer takes ownership, its outcome must be checked after restart; an accepted
+handoff does not prove successful installation.
 The **Updates** tab manages watch software and apps. The GitHub packages do not
 configure an APT/DNF repository, so system updates alone will not fetch newer
 versions of garminctl.
+
+### Restore an older version and its data
+
+In **Application**, select an older saved version and its matching data backup
+under **Return to an older version**. **Prepare rollback review…** verifies the
+packages and saves a fresh copy of current data. It does not restore or install
+yet. Review the two backup IDs and every listed file replacement/removal, then
+check the explicit consent box and choose **Restore backup and install older
+version**. Cancel keeps the current files and waits for preparation cleanup.
+
+This flow restores the selected backup rather than asserting that an older
+version can read current data. Newer changes to listed files remain only in the
+fresh safety backup. Other files, browser data and retained packages stay in
+place. Reload resumes the same review and never confirms it automatically.
+
+Restoration across files is not atomic. A failure may leave a partial data set
+or an uncertain installer outcome. Do not repeat the operation; retain both
+backup IDs and the packages for manual recovery. The GUI-independent
+`garminctl application recovery snapshots` lists backups and
+`garminctl application recovery inspect ID` checks an explicit copy.
+`garminctl application recovery list` lists retained packages;
+`garminctl application recovery export ID` verifies and exports a manual repair
+package. These CLI commands do not restore data or run an installer.
 
 ### Uninstall
 

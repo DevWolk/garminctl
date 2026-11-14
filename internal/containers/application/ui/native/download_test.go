@@ -91,12 +91,12 @@ func TestNativeDownloadCancellationWaitsForCleanupAndRejectsSecondStart(t *testi
 	}
 
 	canceling, err := service.CancelDownload(initial.ID)
-	if err != nil || !canceling.Active || canceling.Phase != "canceling" {
+	if err != nil || !canceling.Active || canceling.Phase != installPhaseCanceling {
 		t.Fatalf("cancel=%+v %v", canceling, err)
 	}
 
 	current, err := service.DownloadStatus()
-	if err != nil || !current.Active || current.Phase != "canceling" {
+	if err != nil || !current.Active || current.Phase != installPhaseCanceling {
 		t.Fatalf("cleanup bypassed: %+v %v", current, err)
 	}
 
