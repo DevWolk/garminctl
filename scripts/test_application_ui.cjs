@@ -373,3 +373,36 @@ test('corrupt rollback metadata does not disable an otherwise valid ordinary upd
   assert.equal(ui.get('install-start').disabled,false);assert.equal(ui.get('install-rollback-start').disabled,true);
   assert.match(ui.get('install-rollback-note').textContent,/corrupt backup metadata/);
 });
+
+test('compatible rollback explicitly requests preserving data and never shows restore consent',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);
+  let current=idleInstallation(),starts=0,confirms=0;
+  await ui.page.attach(bridge({installationStatus:async()=>current,savedRollbacks:async()=>[rollbackOption()],confirmRollbackPreparation:async()=>true,
+    startRollback:async request=>{starts++;assert.equal(request.keepCurrentData,true);return current={...reviewingRollback(),review:{...rollbackReview(),reviewId:'keep-review',keepCurrentData:true,changes:[]}};},
+    confirmRollback:async(id,consent)=>{confirms++;assert.equal(consent.data.reviewId,'keep-review');return current={...current,phase:'handoff',canCancel:false};},
+  }));
+  await ui.page.activate();ui.get('install-rollback-keep').checked=true;
+  await ui.get('install-rollback-start').fire('click');
+  assert.equal(starts,1);assert.equal(confirms,0);assert.equal(ui.get('install-review-files').children.length,0);
+  assert.match(ui.get('install-review-consent-label').textContent,/keeping current data/);
+  assert.doesNotMatch(ui.get('install-review-consent-label').textContent,/replace or remove/);
+  assert.match(ui.get('install-review-confirm').textContent,/Keep current data/);
+  assert.match(ui.get('install-review-backups').textContent,/Current data will stay/);
+  assert.equal(ui.get('install-rollback-keep').disabled,true);
+  ui.get('install-review-consent').checked=true;await ui.get('install-review-consent').fire('change');
+  await ui.get('install-review-confirm').fire('click');
+  assert.equal(confirms,1);assert.match(ui.get('install-detail').textContent,/Keeping current data/);
+});
+
+test('unknown compatibility refuses preparation without silently restoring a backup',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);let starts=0,current=idleInstallation();
+  await ui.page.attach(bridge({installationStatus:async()=>current,savedRollbacks:async()=>[rollbackOption()],confirmRollbackPreparation:async()=>true,startRollback:async request=>{
+    starts++;assert.equal(request.keepCurrentData,true);
+    return current={id:5,kind:'rollback',phase:'failed',active:false,canCancel:false,error:'data format compatibility is unknown'};
+  }}));
+  await ui.page.activate();ui.get('install-rollback-keep').checked=true;
+  await ui.get('install-rollback-start').fire('click');
+  assert.equal(starts,1);assert.equal(ui.get('install-dialog').open,false);
+  assert.match(ui.get('install-status').textContent,/compatibility is unknown/);
+  assert.equal(ui.get('install-rollback-keep').checked,true);
+});

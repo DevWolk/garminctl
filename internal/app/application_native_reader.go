@@ -68,7 +68,7 @@ func newApplicationNativeReader(config ApplicationReadConfig, compiledKey string
 		source := updatetransport.NewGitHub(config.ReleaseClient)
 		result.download = application.NewDownloadReleaseAction(reads, applicationReleaseFeed{source: source}, applicationPackageDownload{source: source, key: compiledKey})
 		result.preflight = application.NewPreflightAction(reads, applicationPackageStore{key: compiledKey}, result.TryMaintenance)
-		result.snapshot = application.NewBackupDataAction(applicationDataSnapshots{})
+		result.snapshot = application.NewBackupDataAction(applicationDataSnapshots{build: config.Inventory.DesktopVersion})
 	} else {
 		result.disabled = "This build has no trusted update verification key. Use the Releases link for manual downloads."
 	}

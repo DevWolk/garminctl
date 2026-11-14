@@ -24,6 +24,7 @@ type RestoreChange struct {
 
 // DataRestoreView describes explicit backup restoration, not schema compatibility.
 type DataRestoreView struct {
+	KeepCurrentData  bool            `json:"keepCurrentData,omitempty"`
 	ReviewID         string          `json:"reviewId"`
 	TargetSnapshotID string          `json:"targetSnapshotId"`
 	SafetySnapshotID string          `json:"safetySnapshotId"`

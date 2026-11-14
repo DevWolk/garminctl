@@ -92,8 +92,13 @@ See CLAUDE.md for the working rules. Module map:
   and confirmation share the existing installation operation/Scope. Review holds
   maintenance until exact consent or joined cancellation; reload observes only.
   The confirming RPC releases its own lease before waking the worker. Compatible
-  keep-current-data rollback and OS acceptance remain open; no standalone public
-  restore API is added.
+  keep-current-data rollback requires matching explicit StateFormats provenance
+  in the older backup and fresh safety copy. App uses gc/connect reader checks
+  and hostfile's read-only live/hash inspection before and after owned stop.
+  Unknown/legacy formats refuse without falling back to restoration; the two
+  modes have different review identities. Persisted account/watch files are not
+  migrated. Native/OS acceptance remains open; no standalone public restore API
+  is added.
   InstallHandoffAction consumes a preparation with its own retained snapshot,
   requires explicit consent and resolved edits, and rechecks inventory before
   payload preparation and owned-backend stop. Its platform ports prepare an

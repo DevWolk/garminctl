@@ -13,9 +13,14 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 
-type applicationDataSnapshots struct{}
+type applicationDataSnapshots struct{ build string }
 
-func (applicationDataSnapshots) Create(ctx context.Context, info application.PreflightInfo) (*application.DataSnapshot, error) {
+type applicationBackupMetadata struct {
+	Current, Update application.PackageRecord
+	Formats         *application.StateFormats `json:",omitempty"`
+}
+
+func (s applicationDataSnapshots) Create(ctx context.Context, info application.PreflightInfo) (*application.DataSnapshot, error) {
 	account := gc.DefaultStorePath()
 	if account == "" {
 		return nil, errors.New("application data directory is unavailable")
@@ -23,13 +28,19 @@ func (applicationDataSnapshots) Create(ctx context.Context, info application.Pre
 
 	config := filepath.Dir(account)
 
-	metadata, err := json.Marshal(struct{ Current, Update application.PackageRecord }{Current: info.Current, Update: info.Update})
+	value := applicationBackupMetadata{Current: info.Current, Update: info.Update}
+	if s.build != "" && s.build == info.Current.Tag && s.build == info.Inventory.CLI.Version {
+		formats := application.CurrentStateFormats()
+		value.Formats = &formats
+	}
+
+	metadata, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
 
 	store := hostfile.NewSnapshotStore(filepath.Join(config, "application-backups"), []hostfile.SnapshotSource{
-		{Name: "config", Directory: config}, {Name: "cache", Directory: paths.Cache()},
+		{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()},
 	}, applicationSnapshotPath)
 
 	result, err := store.Create(ctx, metadata)

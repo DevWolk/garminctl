@@ -55,7 +55,10 @@ func serveApplicationBackendVersion(t *testing.T, version string) *applicationBa
 	t.Setenv("XDG_CONFIG_HOME", config)
 	t.Setenv("APPDATA", config)
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)
+	// The fixture owns cancellation through cleanup. An unrelated wall-clock
+	// expiry can tear down a healthy backend while cached CLI setup is still
+	// running on a loaded runner; shutdown itself has a bounded join below.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
 
 	var listen net.ListenConfig
 

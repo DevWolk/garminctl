@@ -7,7 +7,7 @@ import (
 )
 
 // rollbackAction binds internal rollback to the existing owned reader and backend.
-// It is not registered on the native Service or any HTTP/MCP/CLI endpoint.
+// Native receives only its opaque preparation; no HTTP/MCP/CLI endpoint exposes it.
 func (b *ApplicationBackend) rollbackAction(reader *applicationNativeReader, address string, owned bool) (*application.RollbackAction, error) {
 	if reader == nil || reader.preflight == nil || reader.snapshot == nil || reader.handoff == nil {
 		return nil, errors.New("owned application rollback is not configured")
@@ -18,5 +18,5 @@ func (b *ApplicationBackend) rollbackAction(reader *applicationNativeReader, add
 		return nil, err
 	}
 
-	return application.NewRollbackAction(reader.preflight, reader.snapshot, restore, reader.handoff), nil
+	return application.NewCompatibleRollbackAction(reader.preflight, reader.snapshot, restore, reader.handoff, applicationDataCompatibility{backend: b, address: address, owned: owned}), nil
 }

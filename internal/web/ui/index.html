@@ -363,6 +363,7 @@
             <h3>Return to an older version</h3>
             <label for="application-install-rollback-package">Saved version and data backup</label>
             <select id="application-install-rollback-package" disabled></select>
+            <label><input type="checkbox" id="application-install-rollback-keep"> Keep current data (requires compatibility check)</label>
             <p id="application-install-rollback-note" class="hint"></p>
             <p class="hint">This flow restores the selected older data backup. Current data compatibility is not confirmed. A fresh copy of newer data is saved before you review the replacements.</p>
             <button class="btn" type="button" id="application-install-rollback-start" disabled>Prepare rollback review…</button>
@@ -495,7 +496,7 @@
               <p id="application-install-review-version"></p>
               <p id="application-install-review-backups" class="hint"></p>
               <details><summary id="application-install-review-count">File changes</summary><ul id="application-install-review-files" tabindex="0" aria-label="Files replaced or removed"></ul></details>
-              <label><input type="checkbox" id="application-install-review-consent"> I agree to replace or remove the listed data. Newer changes to these files will be kept only in the safety backup.</label>
+              <label><input type="checkbox" id="application-install-review-consent"> <span id="application-install-review-consent-label">I agree to replace or remove the listed data. Newer changes to these files will be kept only in the safety backup.</span></label>
               <button class="btn primary" type="button" id="application-install-review-confirm" disabled>Restore backup and install older version</button>
             </div>
             <div class="dialog-actions"><button class="btn" type="button" id="application-install-cancel" autofocus>Cancel preparation</button></div>

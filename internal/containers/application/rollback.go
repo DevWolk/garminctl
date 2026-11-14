@@ -7,8 +7,9 @@ import (
 
 // RollbackRequest explicitly selects the retained package and older data copy.
 type RollbackRequest struct {
-	Package    PreflightRequest `json:"package"`
-	SnapshotID string           `json:"snapshotId"`
+	Package         PreflightRequest `json:"package"`
+	SnapshotID      string           `json:"snapshotId"`
+	KeepCurrentData bool             `json:"keepCurrentData,omitempty"`
 }
 
 // RollbackView binds both package versions and the data review to one preparation.
@@ -31,15 +32,21 @@ type RollbackResult struct {
 
 // PreparedRollback keeps its packages and maintenance private until Close or Run.
 type PreparedRollback struct {
-	owner    *RollbackAction
-	prepared *PreparedUpdate
-	data     *DataRestorePlan
-	used     bool
+	owner           *RollbackAction
+	prepared        *PreparedUpdate
+	data            *DataRestorePlan
+	used            bool
+	keepCurrentData bool
 }
 
 // View returns independent review data, never the underlying installation authority.
 func (p *PreparedRollback) View() RollbackView {
-	return RollbackView{Installation: p.prepared.Info(), Data: p.data.View()}
+	view := p.data.View()
+	if p.keepCurrentData {
+		view = keepDataReview(view)
+	}
+
+	return RollbackView{Installation: p.prepared.Info(), Data: view}
 }
 
 // Close cancels and joins borrowed preparation before returning admission.
@@ -47,10 +54,11 @@ func (p *PreparedRollback) Close() error { return p.prepared.Close() }
 
 // RollbackAction reuses the existing package, backup, restore and handoff owners.
 type RollbackAction struct {
-	preflight *PreflightAction
-	backup    *BackupDataAction
-	restore   *RestoreDataAction
-	handoff   *InstallHandoffAction
+	preflight     *PreflightAction
+	backup        *BackupDataAction
+	restore       *RestoreDataAction
+	handoff       *InstallHandoffAction
+	compatibility DataCompatibility
 }
 
 // NewRollbackAction creates no runtime, installer process or public endpoint.
@@ -96,7 +104,14 @@ func (a *RollbackAction) Prepare(ctx context.Context, request RollbackRequest) (
 		return nil, err
 	}
 
-	return &PreparedRollback{owner: a, prepared: prepared, data: data}, nil
+	rollback := &PreparedRollback{owner: a, prepared: prepared, data: data, keepCurrentData: request.KeepCurrentData}
+	if rollback.keepCurrentData {
+		if err := a.verifyCompatibility(ctx, rollback, false); err != nil {
+			return nil, err
+		}
+	}
+
+	return rollback, nil
 }
 
 // Run restores only after owned stop and commits the installer at most once.
@@ -121,6 +136,12 @@ func (a *RollbackAction) Run(ctx context.Context, rollback *PreparedRollback, co
 			return err
 		}
 
+		if rollback.keepCurrentData {
+			if err := a.verifyCompatibility(bound, rollback, false); err != nil {
+				return err
+			}
+		}
+
 		if err := a.handoff.recheck(bound, info.Inventory); err != nil {
 			return err
 		}
@@ -129,6 +150,10 @@ func (a *RollbackAction) Run(ctx context.Context, rollback *PreparedRollback, co
 		input := InstallationInput{Info: info, Snapshot: *rollback.prepared.snapshot, Current: rollback.prepared.current, Update: rollback.prepared.update}
 
 		return a.handoff.transfer(bound, input, &result.Handoff, rollback.prepared, func(stopped context.Context) error {
+			if rollback.keepCurrentData {
+				return a.verifyCompatibility(stopped, rollback, true)
+			}
+
 			var err error
 
 			result.Data, err = a.restore.Run(stopped, rollback.data, consent.Data)
@@ -147,7 +172,7 @@ func (a *RollbackAction) Run(ctx context.Context, rollback *PreparedRollback, co
 }
 
 func (a *RollbackAction) validate(rollback *PreparedRollback, info PreflightInfo, consent RollbackConsent) error {
-	if !consent.Data.Confirmed || !consent.Data.EditsResolved || consent.Data.ReviewID != rollback.data.view.ReviewID {
+	if !consent.Data.Confirmed || !consent.Data.EditsResolved || consent.Data.ReviewID != rollback.View().Data.ReviewID {
 		return errors.New("confirm the exact rollback data review and resolve edits")
 	}
 

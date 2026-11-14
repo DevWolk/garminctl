@@ -23,7 +23,7 @@ func (b *ApplicationBackend) restoreDataAction(address string, owned bool) (*app
 	directory := filepath.Join(config, "application-backups")
 	reader := hostfile.NewSnapshotReader(directory)
 	snapshots := application.NewRecoverySnapshotsAction(applicationRecoverySnapshots{reader: reader})
-	store := applicationDataRestorations{backend: b, address: address, owned: owned, reader: reader, restorer: hostfile.NewSnapshotRestorer(directory, []hostfile.SnapshotSource{{Name: "config", Directory: config}, {Name: "cache", Directory: paths.Cache()}}, applicationSnapshotPath)}
+	store := applicationDataRestorations{backend: b, address: address, owned: owned, reader: reader, restorer: hostfile.NewSnapshotRestorer(directory, []hostfile.SnapshotSource{{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()}}, applicationSnapshotPath)}
 
 	return application.NewRestoreDataAction(snapshots, store, b.joinedFor(address, owned)), nil
 }

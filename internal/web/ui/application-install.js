@@ -8,6 +8,7 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
   const choices = get('package');
   const rollbackChoices = get('rollback-package');
   const rollbackStart = get('rollback-start');
+  const rollbackKeep = get('rollback-keep');
   const reviewConsent = get('review-consent');
   const reviewConfirm = get('review-confirm');
   let native = null;
@@ -55,6 +56,11 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
     if (!view) return;
     get('review-version').textContent = 'Return from ' + view.from + ' to ' + view.to + '.';
     get('review-backups').textContent = 'Restore backup: ' + view.targetSnapshotId + '. Newer data saved in backup: ' + view.safetySnapshotId + '.';
+    if (view.keepCurrentData) get('review-backups').textContent = 'Current data will stay in place. Safety backup: ' + view.safetySnapshotId + '. Earlier version backup: ' + view.targetSnapshotId + '.';
+    get('review-consent-label').textContent = view.keepCurrentData
+      ? 'I agree to install the older version while keeping current data. A protected safety backup is retained.'
+      : 'I agree to replace or remove the listed data. Newer changes to these files will be kept only in the safety backup.';
+    reviewConfirm.textContent = view.keepCurrentData ? 'Keep current data and install older version' : 'Restore backup and install older version';
     get('review-count').textContent = (view.changes?.length || 0) + ' file changes';
     for (const file of view.changes || []) {
       const item = document.createElement('li');
@@ -93,6 +99,7 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
     get('rollback-section').hidden = !native?.startRollback;
     rollbackStart.disabled = !known || confirming || active() || leaving() || busy() || !rollbackSelection();
     rollbackChoices.disabled = confirming || active() || busy() || !rollbacks.length;
+    rollbackKeep.disabled = confirming || active() || busy() || !rollbacks.length;
     get('rollback-note').textContent = rollbackReadError || (rollbacks.length ? 'Packages and backups are checked again during preparation.' : 'An older saved package and its matching data backup are required. Use the Releases link for manual installation.');
     const reviewing = state?.kind === 'rollback' && state.phase === 'review';
     const canConfirm = reviewing && known && !unresolved && !submitting && !confirmationPending && !canceling;
@@ -117,7 +124,9 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
     let message = messages[phase] || (phase === 'failed' ? 'Could not prepare installation: ' + state.error : '');
     if (closeOnly) message = 'Application shutdown was requested before handoff completed. Close and restart the app manually. ' + (state.error || '');
     if (closeOnly && state.kind === 'rollback') message = 'Rollback did not complete. Keep both backups and do not retry. Close the app and recover manually using the retained package and backup IDs below. ' + (state.error || '');
-    if (state?.kind === 'rollback' && phase === 'handoff') message = 'Restoring the selected backup and handing the older version to the installer. Do not interrupt or retry.';
+    if (state?.kind === 'rollback' && phase === 'handoff') message = state.review?.keepCurrentData
+      ? 'Keeping current data and handing the older version to the installer. Do not interrupt or retry.'
+      : 'Restoring the selected backup and handing the older version to the installer. Do not interrupt or retry.';
     if (localError) message = localError;
     get('title').textContent = reviewing ? 'Review rollback' : state?.kind === 'rollback' ? 'Preparing application rollback' : 'Preparing application update';
     get('status').textContent = message;
@@ -194,7 +203,8 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
   async function beginRollback() {
     const request = rollbackSelection();
     if (rollbackStart.disabled || !request || !native?.confirmRollbackPreparation) return;
-    return beginPreparation(request, native.confirmRollbackPreparation, () => native.startRollback({package:{tag:request.tag, cacheId:request.cacheId, includePrerelease:prerelease()}, snapshotId:request.snapshotId}));
+    const keepCurrentData = rollbackKeep.checked;
+    return beginPreparation(request, native.confirmRollbackPreparation, () => native.startRollback({package:{tag:request.tag, cacheId:request.cacheId, includePrerelease:prerelease()}, snapshotId:request.snapshotId, keepCurrentData}));
   }
   async function confirmRollback() {
     if (reviewConfirm.disabled || !native?.confirmRollback || !state?.review) return;

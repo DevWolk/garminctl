@@ -57,7 +57,7 @@ func (s applicationRecoverySnapshots) Verify(ctx context.Context, id string) (*a
 }
 
 func applicationRecoverySnapshot(value hostfile.Snapshot) (*application.RecoverySnapshot, error) {
-	var metadata struct{ Current, Update application.PackageRecord }
+	var metadata applicationBackupMetadata
 
 	decoder := json.NewDecoder(bytes.NewReader(value.Metadata))
 	decoder.DisallowUnknownFields()
@@ -75,5 +75,5 @@ func applicationRecoverySnapshot(value hostfile.Snapshot) (*application.Recovery
 		files = append(files, application.SnapshotFileRecord{Area: file.Area, Path: file.Path, Digest: file.Digest, Bytes: file.Bytes})
 	}
 
-	return &application.RecoverySnapshot{ID: value.ID, CreatedAt: value.CreatedAt, Current: metadata.Current, Update: metadata.Update, Files: files, MissingSources: append([]string(nil), value.MissingSources...)}, nil
+	return &application.RecoverySnapshot{ID: value.ID, CreatedAt: value.CreatedAt, Current: metadata.Current, Update: metadata.Update, Files: files, MissingSources: append([]string(nil), value.MissingSources...), Formats: metadata.Formats}, nil
 }

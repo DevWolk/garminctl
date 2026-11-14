@@ -148,14 +148,22 @@ versions of garminctl.
 In **Application**, select an older saved version and its matching data backup
 under **Return to an older version**. **Prepare rollback review…** verifies the
 packages and saves a fresh copy of current data. It does not restore or install
-yet. Review the two backup IDs and every listed file replacement/removal, then
-check the explicit consent box and choose **Restore backup and install older
-version**. Cancel keeps the current files and waits for preparation cleanup.
+yet. To preserve current files, first select **Keep current data (requires
+compatibility check)**. Preparation requires explicit matching format
+provenance in both backups and checks the current account, MFA and upload-ledger
+reader formats. Missing, unknown or incompatible provenance refuses this mode;
+it never silently switches to restoring the older copy.
 
-This flow restores the selected backup rather than asserting that an older
-version can read current data. Newer changes to listed files remain only in the
-fresh safety backup. Other files, browser data and retained packages stay in
-place. Reload resumes the same review and never confirms it automatically.
+Review the selected mode, the two backup IDs and any file replacement/removal, then
+check the explicit consent box and choose **Restore backup and install older
+version** or **Keep current data and install older version**. Cancel keeps the
+current files and waits for preparation cleanup.
+
+Explicit restoration replaces the listed files with the selected backup; newer
+changes to them remain only in the fresh safety copy. The compatible mode makes
+no data replacements and rechecks current files after backend shutdown before
+installer handoff. Other files, browser data and retained packages stay in place.
+Reload resumes the same review and never confirms it automatically.
 
 Restoration across files is not atomic. A failure may leave a partial data set
 or an uncertain installer outcome. Do not repeat the operation; retain both

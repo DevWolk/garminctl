@@ -21,6 +21,7 @@ type RecoverySnapshot struct {
 	Current, Update PackageRecord
 	Files           []SnapshotFileRecord
 	MissingSources  []string
+	Formats         *StateFormats
 }
 
 // RecoverySnapshots reads a trusted backup root and checks its local file hashes.
@@ -120,6 +121,11 @@ func (a *RecoverySnapshotsAction) check(ctx context.Context) error {
 }
 
 func cloneRecoverySnapshot(value RecoverySnapshot) RecoverySnapshot {
+	if value.Formats != nil {
+		formats := *value.Formats
+		value.Formats = &formats
+	}
+
 	value.Files = slices.Clone(value.Files)
 	value.MissingSources = slices.Clone(value.MissingSources)
 
