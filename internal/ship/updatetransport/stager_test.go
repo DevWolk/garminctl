@@ -32,6 +32,10 @@ const stageProtocolField = "protocol"
 var stageData = []byte("synthetic installer payload; never executable")
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GARMINCTL_TEST_STARTUP_PROCESS") == "1" {
+		os.Exit(startupTestProcess())
+	}
+
 	if err := initializeStageTestKey(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

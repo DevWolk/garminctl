@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 )
 
@@ -21,11 +22,13 @@ var appIcon []byte
 // App is the small native bridge: lifecycle, browser links and file dialogs.
 // Watch operations remain in the shared local API and MCP server.
 type App struct {
-	backend    *Backend
-	host       windowHost
-	ready      atomic.Bool
-	closing    atomic.Bool
-	operations nativeOperations
+	backend     *Backend
+	host        windowHost
+	ready       atomic.Bool
+	closing     atomic.Bool
+	operations  nativeOperations
+	onReady     func(context.Context, Scope)
+	readyNotice sync.Once
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -48,6 +51,18 @@ func (a *App) beforeClose(_ context.Context) bool {
 func (a *App) Ready() {
 	a.ready.Store(true)
 	slog.Info("desktop window ready")
+
+	if a.onReady != nil {
+		a.readyNotice.Do(func() {
+			ctx, release, err := a.operations.begin()
+			if err != nil {
+				return
+			}
+			defer release()
+
+			a.onReady(ctx, serviceScope{app: a})
+		})
+	}
 }
 
 // FinishClose is called after the frontend confirms pending edits may be lost.

@@ -172,6 +172,19 @@ func TestInstallerWorkerRequiresCommitAndOwnerExitBeforeExecution(t *testing.T) 
 	}
 }
 
+func TestInstallerWorkerRefusesMissingStartupProbeBeforeReady(t *testing.T) {
+	t.Parallel()
+	config, request := installWorkerFixture(t)
+	request.OwnerPID = os.Getppid()
+
+	var output bytes.Buffer
+
+	err := RunInstallWorker(t.Context(), config, installFixtureInput(t, request, installDecision{Protocol: installProtocol, Operation: request.Operation, Commit: false}), &output)
+	if err == nil || output.Len() != 0 {
+		t.Fatalf("missing startup probe accepted before Ready: output=%q error=%v", output.String(), err)
+	}
+}
+
 func TestInstallerWorkerPreservesExplicitDEBRollbackPermission(t *testing.T) {
 	t.Parallel()
 

@@ -21,6 +21,8 @@ import (
 type InstallWorkerConfig struct {
 	Directory, BuildVersion string
 	PublicKey               []byte
+	// ProbeMCP is trusted composition's bounded initialize/ping callback, never IPC input.
+	ProbeMCP func(context.Context, string, string) error
 }
 
 type installerOwner interface {
@@ -37,7 +39,17 @@ type installHost struct {
 
 // RunInstallWorker owns the bounded helper lifetime; it opens only its real parent.
 func RunInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.ReadCloser, output io.Writer) error {
-	return runInstallWorker(ctx, config, input, output, installHost{parentPID: os.Getppid(), openOwner: openInstallerOwner, run: runNativeInstaller, restart: restartInstalledDesktop})
+	if config.ProbeMCP == nil {
+		if input != nil {
+			_ = input.Close()
+		}
+
+		return errors.New("installer requires a bounded startup MCP probe")
+	}
+
+	return runInstallWorker(ctx, config, input, output, installHost{parentPID: os.Getppid(), openOwner: openInstallerOwner, run: runNativeInstaller, restart: func(ctx context.Context, options InstallOptions, tag string) error {
+		return restartInstalledDesktop(ctx, options, tag, config.Directory, config.ProbeMCP)
+	}})
 }
 
 func runInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.ReadCloser, output io.Writer, host installHost) (err error) {

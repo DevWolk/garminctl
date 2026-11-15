@@ -10,6 +10,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/paths"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
 )
 
@@ -23,7 +24,7 @@ func RunApplicationInstall(ctx context.Context, version, key string, input io.Re
 			return errors.New("installer worker requires its owned input pipe")
 		}
 
-		return updatetransport.RunInstallWorker(ctx, updatetransport.InstallWorkerConfig{Directory: config.Directory, BuildVersion: config.BuildVersion, PublicKey: config.PublicKey}, stream, output)
+		return updatetransport.RunInstallWorker(ctx, updatetransport.InstallWorkerConfig{Directory: config.Directory, BuildVersion: config.BuildVersion, PublicKey: config.PublicKey, ProbeMCP: mcpx.ProbeServer}, stream, output)
 	})
 }
 

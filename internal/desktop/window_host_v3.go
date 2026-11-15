@@ -23,13 +23,13 @@ type v3WindowHost struct {
 
 // Run initializes single-instance ownership before starting an owned backend.
 // Native shutdown joins that backend even on framework-specific exit paths.
-func Run(start func() (*Backend, error), registrars ...ServiceRegistrar) (runErr error) {
+func Run(start func() (*Backend, error), onReady func(context.Context, Scope), registrars ...ServiceRegistrar) (runErr error) {
 	dataDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
 
-	service := new(App)
+	service := &App{onReady: onReady}
 	assets := new(nativeAssets)
 	host := newV3WindowHost(service, dataDir, assets, nativeServices(service, registrars))
 

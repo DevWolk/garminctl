@@ -93,7 +93,7 @@ func waitNativeInstaller(ctx context.Context, command *exec.Cmd) error {
 	}
 }
 
-func restartInstalledDesktop(ctx context.Context, options InstallOptions, tag string) error {
+func restartInstalledDesktop(ctx context.Context, options InstallOptions, tag, directory string, probe func(context.Context, string, string) error) error {
 	for _, path := range []string{options.CLI, options.Desktop} {
 		info, err := os.Lstat(path)
 		if err != nil {
@@ -126,17 +126,9 @@ func restartInstalledDesktop(ctx context.Context, options InstallOptions, tag st
 		return errors.New("installed CLI version does not match the selected release; use the retained package to repair")
 	}
 
-	return startInstalledDesktop(options)
-}
-
-func startInstalledDesktop(options InstallOptions) error {
-	command := exec.Command(options.Desktop, options.Args...) //nolint:gosec,noctx // Observed executable and original arguments; the restarted application outlives the completed helper.
-	command.Dir = filepath.Dir(options.Desktop)
-	hostexec.HideConsole(command)
-
-	if err := command.Start(); err != nil {
-		return fmt.Errorf("restart installed desktop: %w", err)
+	if err := startInstalledDesktop(ctx, options, tag, directory, probe); err != nil {
+		return fmt.Errorf("startup validation failed; use the retained package to repair: %w", err)
 	}
 
-	return command.Process.Release()
+	return nil
 }

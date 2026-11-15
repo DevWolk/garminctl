@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -36,6 +37,11 @@ func run() error {
 
 	flag.Parse()
 
+	startup, err := app.ApplicationStartupNotice(version)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
@@ -48,7 +54,20 @@ func run() error {
 		return backend.ServeListener(ctx, listener, open, *root == "", version)
 	}
 
-	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(scope desktop.Scope) []application.Service {
+	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(ctx context.Context, scope desktop.Scope) {
+		if startup == nil {
+			return
+		}
+
+		address, owned, err := scope.Backend()
+		if err == nil {
+			err = startup(ctx, address, owned)
+		}
+
+		if err != nil {
+			slog.Error("application startup report failed", "error", err)
+		}
+	}, func(scope desktop.Scope) []application.Service {
 		return []application.Service{app.NewApplicationNativeService(version, updatePublicKey, scope, backend, os.Args[1:]...)}
 	})
 }
