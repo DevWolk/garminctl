@@ -42,7 +42,7 @@ func nativeInstallerCommand(r installRequest, directory string) (installerInvoca
 }
 
 func runNativeInstaller(ctx context.Context, r installRequest, directory string) error {
-	invocation, err := nativeInstallerCommand(r, directory)
+	invocation, err := prepareNativeInstaller(ctx, r, directory, queryNativeVersion)
 	if err != nil {
 		return err
 	}
