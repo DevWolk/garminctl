@@ -113,8 +113,8 @@ garminctl before installing it. Stop any separate `garminctl serve` process too.
 | Windows/WSL desktop | Run the new Setup using the existing installation directory. |
 | Ubuntu DEB | Run `sudo apt install ./garminctl_NEW_VERSION_linux_amd64.deb`. |
 | Fedora RPM | Run `sudo dnf upgrade ./garminctl_NEW_VERSION_linux_amd64.rpm`. |
-| Portable CLI archive | Replace the existing CLI binary with the new one. |
-| CLI installed with Go | Run `go install github.com/DevWolk/garminctl/cmd/garminctl@latest`. |
+| Portable CLI archive | Follow the [standalone CLI replacement](cli.md#update-a-standalone-cli) in its own directory. |
+| CLI installed with Go | Use the [separate source CLI flow](cli.md#update-a-standalone-cli) with an explicit `GOBIN`. |
 
 Replace `NEW_VERSION` with the downloaded version. Packages preserve the data
 locations above. Reopen garminctl after updating; a running server must restart

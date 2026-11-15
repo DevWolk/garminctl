@@ -17,6 +17,72 @@ go install github.com/DevWolk/garminctl/cmd/garminctl@latest
 Native Linux USB builds require CGO, `pkg-config`, and libusb development headers
 (`libusb-1.0-0-dev` on Ubuntu). The [desktop packages](desktop.md) include a CLI.
 
+### Update a standalone CLI
+
+Portable archives contain only the CLI. Keep this copy in its own directory,
+separate from Windows Setup and `/usr/bin`. Choose the archive for its OS and
+architecture, verify the downloaded package, then unpack it into a temporary
+directory. Stop servers and stdio MCP clients launched from the copy being
+replaced. A running process continues using its old code until restarted.
+
+On Linux/WSL, use the explicit directory of your standalone copy. With the
+download unpacked into `./unpacked`, stage and check the new executable first.
+Set the directory below to your existing copy's directory; the example uses a
+dedicated user location:
+
+```sh
+garminctl_cli_dir="$HOME/.local/share/garminctl-cli/bin"
+mkdir -p "$garminctl_cli_dir"
+install -m 0755 ./unpacked/garminctl "$garminctl_cli_dir/garminctl.new"
+"$garminctl_cli_dir/garminctl.new" version
+```
+
+After checking the version, retain the existing executable if present, then
+replace only this copy:
+
+```sh
+if [ -f "$garminctl_cli_dir/garminctl" ]; then
+    cp -p "$garminctl_cli_dir/garminctl" "$garminctl_cli_dir/garminctl.previous"
+fi
+mv -f "$garminctl_cli_dir/garminctl.new" "$garminctl_cli_dir/garminctl"
+"$garminctl_cli_dir/garminctl" version
+```
+
+On Windows, stop processes using the selected standalone directory before
+replacing `garminctl.exe`. Keep the previous executable alongside it, verify
+the new executable by its full path and restart only the server/client using
+that copy. Do not copy a portable CLI over Setup's bundled binary. Native
+Windows replacement and lock handling have not yet been verified.
+
+For a CLI installed from Go source, select a published module version and a
+dedicated `GOBIN`. The example pins both the source version and the displayed
+build label; replace `vX.Y.Z` with the selected tag:
+
+```sh
+garminctl_version=vX.Y.Z
+garminctl_go_bin="$HOME/.local/share/garminctl-source/bin"
+mkdir -p "$garminctl_go_bin"
+GOBIN="$garminctl_go_bin" CGO_ENABLED=0 go install \
+    -ldflags "-X main.version=$garminctl_version" \
+    "github.com/DevWolk/garminctl/cmd/garminctl@$garminctl_version"
+"$garminctl_go_bin/garminctl" version
+go version -m "$garminctl_go_bin/garminctl"
+```
+
+Retain a previous source-built executable before updating it if you need a
+return path. `go install` uses `GOBIN`, not the first `garminctl` on `PATH`;
+see the [Go command reference](https://go.dev/ref/mod#go-install). Without a
+version build flag this project's source CLI displays `dev`; `go version -m`
+shows its module build information. Source installation does not build the
+desktop or embed the release updater key. Use the native package workflow to
+update the bundled desktop/CLI pair and native Linux USB support.
+
+Replacing a standalone executable does not restore configuration. Returning
+to an older executable also requires data compatibility; retain current data
+and use the [explicit recovery rules](desktop.md#restore-an-older-version-and-its-data)
+if a compatible older data set is required. Keep an unchanged executable path
+in MCP configuration, or update that configuration when choosing a new path.
+
 ## Global options
 
 ```sh
