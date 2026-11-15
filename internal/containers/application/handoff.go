@@ -16,6 +16,7 @@ type InstallationInput struct {
 	Info            PreflightInfo
 	Snapshot        DataSnapshot
 	Current, Update VerifiedPackage
+	Rollback        bool // Set only by the explicitly confirmed rollback scenario.
 }
 
 // PendingInstallation owns its payload independently of PreparedUpdate.

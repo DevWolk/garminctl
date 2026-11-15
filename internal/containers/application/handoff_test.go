@@ -93,6 +93,11 @@ func (f *handoffFixture) action(t *testing.T, prepare func(), stopErr, commitErr
 
 	installer := handoffInstaller{prepare: func(_ context.Context, input application.InstallationInput) (application.PendingInstallation, error) {
 		f.events = append(f.events, "prepare")
+
+		if input.Rollback {
+			t.Fatal("ordinary update authorized a downgrade")
+		}
+
 		if input.Info != f.prepared.Info() || input.Current.Record() != input.Info.Current || input.Update.Record() != input.Info.Update || input.Snapshot.ID != strings.Repeat("e", 64) {
 			t.Fatal("handoff changed the owned selection or snapshot")
 		}

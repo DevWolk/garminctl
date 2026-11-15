@@ -5,13 +5,46 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/hostfile"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
 )
+
+func TestApplicationInstallOptionsRestrictDowngradeToDEBRollback(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name            string
+		kind            updatetransport.InstallKind
+		rollback, allow bool
+	}{
+		{"ordinary DEB update", updatetransport.InstallDEB, false, false},
+		{"confirmed DEB rollback", updatetransport.InstallDEB, true, true},
+		{"Setup rollback", updatetransport.InstallSetup, true, false},
+		{"RPM rollback", updatetransport.InstallRPM, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			input := application.InstallationInput{Rollback: tc.rollback}
+			input.Info.Update.Installation = string(tc.kind)
+			input.Info.Inventory.Installation.Root = "/observed"
+			input.Info.Inventory.Desktop.Path = "/observed/garmin-desktop"
+			input.Info.Inventory.CLI.Path = "/observed/garminctl"
+			args := []string{"-root", "fixture"}
+
+			got := applicationInstallOptions(input, args)
+			if got.AllowDowngrade != tc.allow || got.Root != "/observed" || got.Desktop != input.Info.Inventory.Desktop.Path || got.CLI != input.Info.Inventory.CLI.Path || !slices.Equal(got.Args, args) {
+				t.Fatalf("install options=%+v", got)
+			}
+		})
+	}
+}
 
 func applicationInstallerFixture(t *testing.T) (*preflightNativeFixture, *application.PreparedUpdate) {
 	t.Helper()

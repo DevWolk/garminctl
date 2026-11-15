@@ -12,12 +12,13 @@ const InstallCommand = "_application-install"
 
 const installProtocol = 1
 
-// InstallOptions comes from observed local installation and native startup arguments.
+// InstallOptions combines observed local paths/arguments with explicit DEB rollback consent.
 type InstallOptions struct {
-	Root    string   `json:"root"`
-	Desktop string   `json:"desktop"`
-	CLI     string   `json:"cli"`
-	Args    []string `json:"args"`
+	Root           string   `json:"root"`
+	Desktop        string   `json:"desktop"`
+	CLI            string   `json:"cli"`
+	Args           []string `json:"args"`
+	AllowDowngrade bool     `json:"allowDowngrade,omitempty"`
 }
 
 type installRequest struct {

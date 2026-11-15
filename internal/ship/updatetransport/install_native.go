@@ -28,7 +28,12 @@ func nativeInstallerCommand(r installRequest, directory string) (installerInvoca
 	case InstallSetup:
 		return installerInvocation{program: path, args: []string{"/S", "/D=" + r.Install.Root}, setupRoot: r.Install.Root}, nil
 	case InstallDEB:
-		return installerInvocation{program: "/usr/bin/pkexec", args: []string{"/usr/bin/apt-get", "--yes", "--no-remove", "install", path}}, nil
+		args := []string{"/usr/bin/apt-get", "--yes", "--no-remove"}
+		if r.Install.AllowDowngrade {
+			args = append(args, "--allow-downgrades")
+		}
+
+		return installerInvocation{program: "/usr/bin/pkexec", args: append(args, "install", path)}, nil
 	case InstallRPM:
 		return installerInvocation{program: "/usr/bin/pkexec", args: []string{"/usr/bin/dnf", "--assumeyes", "install", path}}, nil
 	default:

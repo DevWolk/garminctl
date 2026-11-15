@@ -81,7 +81,7 @@ func (s rollbackInstaller) Prepare(_ context.Context, input InstallationInput) (
 		return nil, err
 	}
 
-	if input.Info.Current != s.f.packages.rows[0] || input.Info.Update != s.f.packages.rows[1] {
+	if !input.Rollback || input.Info.Current != s.f.packages.rows[0] || input.Info.Update != s.f.packages.rows[1] {
 		return nil, errors.New("wrong rollback payload")
 	}
 

@@ -140,7 +140,10 @@ func TestInstallerWorkerRequiresCommitAndOwnerExitBeforeExecution(t *testing.T) 
 				}
 
 				return fixtureInstallerOwner{closed: &closed, wait: func(context.Context) error { events = append(events, "owner exit"); return nil }}, nil
-			}, run: func(context.Context, installRequest, string) error { events = append(events, "install"); return nil }, restart: func(context.Context, InstallOptions, string) error { events = append(events, "restart"); return nil }}
+			}, run: func(context.Context, installRequest, string) error {
+				events = append(events, installTestCommand)
+				return nil
+			}, restart: func(context.Context, InstallOptions, string) error { events = append(events, "restart"); return nil }}
 
 			var output bytes.Buffer
 
@@ -151,7 +154,7 @@ func TestInstallerWorkerRequiresCommitAndOwnerExitBeforeExecution(t *testing.T) 
 
 			want := []string{}
 			if commit {
-				want = []string{"owner exit", "install", "restart"}
+				want = []string{"owner exit", installTestCommand, "restart"}
 			}
 
 			if !slices.Equal(events, want) || closed != 1 {
@@ -166,6 +169,36 @@ func TestInstallerWorkerRequiresCommitAndOwnerExitBeforeExecution(t *testing.T) 
 				t.Fatal("accepted without exact commit")
 			}
 		})
+	}
+}
+
+func TestInstallerWorkerPreservesExplicitDEBRollbackPermission(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS != "linux" {
+		t.Skip("DEB permission applies to the Linux helper")
+	}
+
+	config, request := installWorkerFixture(t)
+	request.Install.AllowDowngrade = true
+	closed, runs := 0, 0
+	host := installHost{parentPID: 42, openOwner: func(int) (installerOwner, error) {
+		return fixtureInstallerOwner{closed: &closed, wait: func(context.Context) error { return nil }}, nil
+	}, run: func(_ context.Context, got installRequest, _ string) error {
+		runs++
+
+		if !got.Install.AllowDowngrade || got.Target.Installation != InstallDEB {
+			t.Fatal("confirmed DEB rollback permission lost in worker IPC")
+		}
+
+		return nil
+	}, restart: func(context.Context, InstallOptions, string) error { return nil }}
+
+	var output bytes.Buffer
+
+	err := runInstallWorker(t.Context(), config, installFixtureInput(t, request, installDecision{Protocol: installProtocol, Operation: request.Operation, Commit: true}), &output, host)
+	if err != nil || runs != 1 || closed != 1 || !bytes.Contains(output.Bytes(), []byte(`"kind":"accepted"`)) {
+		t.Fatalf("rollback helper runs=%d closed=%d error=%v output=%q", runs, closed, err, output.String())
 	}
 }
 

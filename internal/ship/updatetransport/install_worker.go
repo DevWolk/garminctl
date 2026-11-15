@@ -130,6 +130,10 @@ func validateInstallRequest(r installRequest, c InstallWorkerConfig, identity st
 }
 
 func validateInstallOptions(target MatchRequest, options InstallOptions) error {
+	if options.AllowDowngrade && target.Installation != InstallDEB {
+		return errors.New("downgrade permission is only valid for a DEB rollback")
+	}
+
 	desktop, cli := "garmin-desktop", "garminctl"
 	if target.OS == platformWindows {
 		desktop += ".exe"
@@ -146,11 +150,15 @@ func validateInstallOptions(target MatchRequest, options InstallOptions) error {
 		}
 	}
 
-	if len(options.Args) > 8 {
+	return validateRestartArguments(options.Args)
+}
+
+func validateRestartArguments(args []string) error {
+	if len(args) > 8 {
 		return errors.New("too many native restart arguments")
 	}
 
-	for _, arg := range options.Args {
+	for _, arg := range args {
 		if len(arg) > 4096 || strings.ContainsRune(arg, 0) {
 			return errors.New("invalid native restart argument")
 		}

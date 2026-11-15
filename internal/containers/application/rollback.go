@@ -147,7 +147,7 @@ func (a *RollbackAction) Run(ctx context.Context, rollback *PreparedRollback, co
 		}
 
 		result = &RollbackResult{Handoff: InstallHandoffResult{From: info.Current.Tag, To: info.Update.Tag, SnapshotID: rollback.prepared.snapshot.ID}}
-		input := InstallationInput{Info: info, Snapshot: *rollback.prepared.snapshot, Current: rollback.prepared.current, Update: rollback.prepared.update}
+		input := InstallationInput{Info: info, Snapshot: *rollback.prepared.snapshot, Current: rollback.prepared.current, Update: rollback.prepared.update, Rollback: true}
 
 		return a.handoff.transfer(bound, input, &result.Handoff, rollback.prepared, func(stopped context.Context) error {
 			if rollback.keepCurrentData {

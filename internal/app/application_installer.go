@@ -50,12 +50,22 @@ func (p applicationInstallerPort) Prepare(ctx context.Context, input application
 
 	value := input.Info.Update
 
-	pending, err := installer.Prepare(ctx, updatetransport.MatchRequest{ReleaseTag: value.Tag, OS: value.OS, Arch: value.Arch, Installation: updatetransport.InstallKind(value.Installation)}, packageCopy.staged, updatetransport.InstallOptions{Root: input.Info.Inventory.Installation.Root, Desktop: input.Info.Inventory.Desktop.Path, CLI: input.Info.Inventory.CLI.Path, Args: p.args})
+	pending, err := installer.Prepare(ctx, updatetransport.MatchRequest{ReleaseTag: value.Tag, OS: value.OS, Arch: value.Arch, Installation: updatetransport.InstallKind(value.Installation)}, packageCopy.staged, applicationInstallOptions(input, p.args))
 	if err != nil {
 		return nil, err
 	}
 
 	return pending, nil
+}
+
+func applicationInstallOptions(input application.InstallationInput, args []string) updatetransport.InstallOptions {
+	return updatetransport.InstallOptions{
+		Root:           input.Info.Inventory.Installation.Root,
+		Desktop:        input.Info.Inventory.Desktop.Path,
+		CLI:            input.Info.Inventory.CLI.Path,
+		Args:           args,
+		AllowDowngrade: input.Rollback && input.Info.Update.Installation == string(updatetransport.InstallDEB),
+	}
 }
 
 func (b *ApplicationBackend) stopFor(address string, owned bool) func(context.Context) error {
