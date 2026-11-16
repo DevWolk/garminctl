@@ -25,6 +25,28 @@ def driver_for(pid):
     return WindowsUI(pid) if os.name == 'nt' else LinuxUI(pid)
 
 
+def find_application(desktop, previous_pid):
+    if os.name == 'nt':
+        return WindowsUI(0).command('application-process', path=str(desktop), previous=previous_pid)['pid']
+    import pyatspi
+    def read():
+        found = set()
+        for application in pyatspi.Registry.getDesktop(0):
+            pid = application.get_process_id()
+            if pid == previous_pid:
+                continue
+            try:
+                if Path(f'/proc/{pid}/exe').resolve(strict=True) != desktop.resolve():
+                    continue
+            except (FileNotFoundError, PermissionError):
+                continue
+            if any(window.name == 'garminctl' for window in application):
+                found.add(pid)
+        assert len(found) <= 1, f'Multiple restarted native windows: {found}'
+        return next(iter(found), None)
+    return wait_for(read)
+
+
 class WindowsUI:
     def __init__(self, pid):
         self.pid = pid
@@ -66,6 +88,18 @@ class WindowsUI:
 
     def menu_reload(self):
         return self.command('menu-reload')
+
+    def activate(self, pattern):
+        self.command('activate', pattern='^(?:' + pattern + ')$')
+
+    def toggle(self, pattern, checked=True):
+        self.command('toggle', pattern='^(?:' + pattern + ')$', checked=checked)
+
+    def wait_text(self, pattern):
+        return self.command('text', pattern='^(?:' + pattern + ')$')['text']
+
+    def wait_closed(self):
+        self.command('application-closed')
 
 
 class LinuxUI:
@@ -112,6 +146,47 @@ class LinuxUI:
 
     def close(self):
         send_delete_window(self.focus('garminctl'))
+
+    def control(self, pattern, actionable=True):
+        def read():
+            pending = [self.dialog('garminctl')]
+            while pending:
+                element = pending.pop(0)
+                state = element.getState()
+                if re.fullmatch(pattern, element.name or '') and state.contains(self.atspi.STATE_SHOWING):
+                    if not actionable:
+                        return element
+                    if state.contains(self.atspi.STATE_SENSITIVE):
+                        try:
+                            if element.queryAction().nActions:
+                                return element
+                        except NotImplementedError:
+                            pass
+                pending.extend(list(element))
+            return None
+        return wait_for(read)
+
+    def activate(self, pattern):
+        element = self.control(pattern)
+        assert element.queryAction().doAction(0), f'Native action {pattern!r} failed'
+
+    def toggle(self, pattern, checked=True):
+        element = self.control(pattern)
+        if element.getState().contains(self.atspi.STATE_CHECKED) != checked:
+            assert element.queryAction().doAction(0), f'Native checkbox {pattern!r} failed'
+        wait_for(lambda: element.getState().contains(self.atspi.STATE_CHECKED) == checked)
+
+    def wait_text(self, pattern):
+        return self.control(pattern, actionable=False).name
+
+    def wait_closed(self):
+        def closed():
+            try:
+                fields = Path(f'/proc/{self.pid}/stat').read_text().rsplit(')', 1)[1].split()
+                return fields[0] in ('Z', 'X')
+            except FileNotFoundError:
+                return True
+        wait_for(closed)
 
     def save(self, path):
         self.focus('Save file')

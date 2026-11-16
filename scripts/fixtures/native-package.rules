@@ -1,0 +1,10 @@
+// Disposable CI container only. Never install this rule on a user's system.
+polkit.addRule(function(action, subject) {
+    if (action.id !== "org.freedesktop.policykit.exec" || subject.user !== "garmin-smoke") {
+        return;
+    }
+    var program = action.lookup("program");
+    if (program === "/usr/bin/apt-get" || program === "/usr/bin/dnf") {
+        return polkit.Result.YES;
+    }
+});

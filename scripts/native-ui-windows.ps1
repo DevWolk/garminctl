@@ -105,6 +105,45 @@ function Click-MenuControl($element) {
 }
 
 switch ($request.action) {
+  'application-process' {
+    $deadline = (Get-Date).AddSeconds(15)
+    do {
+      $found = @{}
+      foreach ($window in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $all)) {
+        try {
+          $current = $window.Current
+          if ($current.Name -ne 'garminctl' -or $current.ProcessId -eq $request.previous) { continue }
+          $process = Get-Process -Id $current.ProcessId -ErrorAction Stop
+          if ($process.Path -ieq $request.path) { $found[$process.Id] = $true }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { }
+      }
+      if ($found.Count -gt 1) { throw 'Multiple restarted garminctl windows.' }
+      if ($found.Count -eq 1) { $response.pid = @($found.Keys)[0]; break }
+      Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    if (!$response.pid) { throw 'Restarted native window not found for the installed desktop path.' }
+  }
+  'application-closed' {
+    $deadline = (Get-Date).AddSeconds(15)
+    while (Get-Process -Id $AppProcessId -ErrorAction SilentlyContinue) {
+      if ((Get-Date) -ge $deadline) { throw 'Restarted native process did not close.' }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  'activate' {
+    Click-Control (Find-Control $request.pattern 'Button')
+  }
+  'toggle' {
+    $element = Find-Control $request.pattern 'CheckBox'
+    $toggle = $element.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+    $expected = [System.Windows.Automation.ToggleState]::Off
+    if ($request.checked) { $expected = [System.Windows.Automation.ToggleState]::On }
+    if ($toggle.Current.ToggleState -ne $expected) { $toggle.Toggle() }
+    if ($toggle.Current.ToggleState -ne $expected) { throw 'Native checkbox state did not match the requested selection.' }
+  }
+  'text' {
+    $response.text = (Find-Control $request.pattern).Current.Name
+  }
   'key' {
     Focus-Control (Find-Control '^garminctl$' 'Window')
     if ($request.key -ne 'F5') { throw 'Unsupported native key' }

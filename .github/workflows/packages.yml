@@ -169,6 +169,11 @@ jobs:
         with:
           name: garminctl-previous-native-packages
           path: dist/previous
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.previous_version != ''
+        with:
+          name: garminctl-native-package-catalog
+          path: dist/native-package-catalog
       - name: Install, exercise native app and MCP, uninstall
         shell: pwsh
         env:
@@ -218,6 +223,11 @@ jobs:
         with:
           name: garminctl-previous-native-packages
           path: dist/previous
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.previous_version != ''
+        with:
+          name: garminctl-native-package-catalog
+          path: dist/native-package-catalog
       - name: Install package in clean userspace and exercise native app and MCP
         env:
           PACKAGE_VERSION: ${{ inputs.version }}

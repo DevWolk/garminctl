@@ -9,6 +9,8 @@ $ErrorActionPreference = 'Stop'
 $paired = [bool]$PreviousSetup
 if ($paired -ne [bool]$PreviousVersion) { throw 'PreviousSetup and PreviousVersion must be supplied together.' }
 if ($paired -and ($env:GITHUB_ACTIONS -ne 'true' -or $PreviousVersion -eq $Version)) { throw 'Two distinct package versions require an isolated CI runner.' }
+$catalog = Join-Path $PSScriptRoot '../dist/native-package-catalog/setup'
+if ($paired -and !(Test-Path -LiteralPath $catalog)) { throw 'Paired acceptance requires the retained native catalog artifact.' }
 $installed = Join-Path $env:LOCALAPPDATA 'Programs\garminctl'
 if ($paired) {
   $installed = Join-Path $env:LOCALAPPDATA 'Programs\garminctl acceptance'
@@ -70,6 +72,20 @@ function Invoke-PackageCheck([string]$Expected, [string]$Phase, [bool]$NativeUI)
   if ($LASTEXITCODE -ne 0) { throw 'Installed native application/MCP check failed.' }
   if ([IO.File]::ReadAllText($sentinel) -ne 'preserve synthetic package state') { throw 'Native app changed the preservation sentinel.' }
 }
+function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string]$Phase, [bool]$Rollback) {
+  $work = Join-Path $state "application-$Phase"
+  if ($evidence) { $work = Join-Path $evidence "application-$Phase" }
+  $arguments = @((Join-Path $PSScriptRoot 'native_application.py'), '--repo', '.', '--state', $state,
+    '--desktop', (Join-Path $installed 'garmin-desktop.exe'), '--cli', (Join-Path $installed 'garminctl.exe'),
+    '--work', $work, '--current', $Current, '--target', $Target)
+  if ($Rollback) {
+    $arguments += '--rollback'
+  } else {
+    $arguments += @('--catalog', $catalog, '--assets', (Split-Path $setupFile), '--assets', (Split-Path $previousFile))
+  }
+  python @arguments
+  if ($LASTEXITCODE -ne 0) { throw 'Application native transition failed; do not replay the installer.' }
+}
 $sequencePassed = $false
 try {
   $parseErrors = $null
@@ -77,9 +93,9 @@ try {
   if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
   if ($paired) {
     Invoke-PackageCheck $PreviousVersion 'previous' $false
-    Invoke-Setup $setupFile
+    Invoke-ApplicationTransition $PreviousVersion $Version 'upgrade' $false
     Invoke-PackageCheck $Version 'upgrade' $true
-    Invoke-Setup $previousFile
+    Invoke-ApplicationTransition $Version $PreviousVersion 'rollback' $true
     Invoke-PackageCheck $PreviousVersion 'rollback' $false
   } else {
     Invoke-PackageCheck $Version 'current' $true
