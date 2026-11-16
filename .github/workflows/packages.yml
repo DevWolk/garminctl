@@ -6,6 +6,9 @@ on:
       version:
         required: true
         type: string
+      previous_version:
+        type: string
+        default: ''
       snapshot:
         type: boolean
         default: true
@@ -38,11 +41,17 @@ jobs:
       - name: Validate build options
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
           SIGNING_MODE: ${{ inputs.signing_mode }}
           SIGN_UPDATES: ${{ inputs.sign_updates }}
         run: |
           [[ "$PACKAGE_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           [[ "$SIGNING_MODE" == none || "$SIGNING_MODE" == certificate ]]
+          if [[ -n "$PREVIOUS_VERSION" ]]; then
+            [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
+            [[ "$PREVIOUS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+            [[ "${PREVIOUS_VERSION#v}" != "${PACKAGE_VERSION#v}" ]]
+          fi
           if [[ "$SIGN_UPDATES" == true && "$SIGNING_MODE" != certificate ]]; then
             echo 'Updater release requires existing Windows certificate mode' >&2
             exit 1
@@ -59,7 +68,14 @@ jobs:
           WINDOWS_SIGNING_MODE: ${{ inputs.signing_mode }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
-        run: make package VERSION="$PACKAGE_VERSION"
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
+        run: |
+          if [[ -n "$PREVIOUS_VERSION" ]]; then
+            make package VERSION="$PREVIOUS_VERSION"
+            mkdir -p dist/previous
+            mv dist/*_setup.exe dist/*.deb dist/*.rpm dist/previous/
+          fi
+          make package VERSION="$PACKAGE_VERSION"
       - name: Build portable archives without publishing
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
@@ -105,6 +121,15 @@ jobs:
           if [[ -d .cache/windows-signing ]]; then
             find .cache/windows-signing -type f -delete
           fi
+      - name: Retain previous native packages for manual upgrade checks
+        if: inputs.previous_version != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: garminctl-previous-native-packages
+          path: dist/previous/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   windows:
     name: Install and run on Windows
@@ -116,15 +141,27 @@ jobs:
         with:
           name: garminctl-packages
           path: dist/smoke
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.previous_version != ''
+        with:
+          name: garminctl-previous-native-packages
+          path: dist/previous
       - name: Install, exercise native app and MCP, uninstall
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
           SIGNING_MODE: ${{ inputs.signing_mode }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
         run: |
           $setup = (Get-ChildItem dist/smoke/*_setup.exe).FullName
           $env:NATIVE_RESULTS_DIR = Join-Path $pwd 'dist/native-results'
-          ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+          if ($env:PREVIOUS_VERSION) {
+            $previous = @(Get-ChildItem dist/previous/*_setup.exe)
+            if ($previous.Count -ne 1) { throw 'Expected exactly one previous Setup.' }
+            ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -PreviousSetup $previous[0].FullName -PreviousVersion $env:PREVIOUS_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+          } else {
+            ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+          }
       - name: Retain native acceptance traces
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -153,18 +190,30 @@ jobs:
         with:
           name: garminctl-packages
           path: dist/smoke
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: inputs.previous_version != ''
+        with:
+          name: garminctl-previous-native-packages
+          path: dist/previous
       - name: Install package in clean userspace and exercise native app and MCP
         env:
           PACKAGE_VERSION: ${{ inputs.version }}
           PACKAGE_FORMAT: ${{ matrix.format }}
           TEST_IMAGE: ${{ matrix.image }}
+          PREVIOUS_VERSION: ${{ inputs.previous_version }}
         run: |
           package=$(find dist/smoke -maxdepth 1 -name "*.$PACKAGE_FORMAT" -print -quit)
+          previous=()
+          if [[ -n "$PREVIOUS_VERSION" ]]; then
+            previous_package=$(find dist/previous -maxdepth 1 -name "*.$PACKAGE_FORMAT" -print -quit)
+            test -n "$previous_package"
+            previous=("/src/$previous_package" "$PREVIOUS_VERSION")
+          fi
           mkdir -p dist/native-results
           docker run --rm --init --mount "type=bind,src=$PWD,target=/src,readonly" \
             --mount "type=bind,src=$PWD/dist/native-results,target=/evidence" \
-            -e NATIVE_RESULTS_DIR=/evidence "$TEST_IMAGE" \
-            bash /src/scripts/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION"
+            -e NATIVE_RESULTS_DIR=/evidence -e GITHUB_ACTIONS "$TEST_IMAGE" \
+            bash /src/scripts/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION" "${previous[@]}"
       - name: Retain native acceptance traces
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

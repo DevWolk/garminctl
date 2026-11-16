@@ -15,7 +15,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 
-def check_package(desktop, cli, repo, version, work, native_ui=False):
+def check_package(desktop, cli, repo, version, work, native_ui=False, state=None):
     dump = work / "watch"
     for folder in ("Apps", "Settings", "Activity", "Music"):
         (dump / "GARMIN" / folder).mkdir(parents=True, exist_ok=True)
@@ -28,7 +28,7 @@ def check_package(desktop, cli, repo, version, work, native_ui=False):
         (dump / "GARMIN" / target).write_bytes((repo / "internal" / source).read_bytes())
     model = ET.parse(dump / "GARMIN/GarminDevice.xml").findtext("{*}Model/{*}Description")
     cli_version = subprocess.check_output([str(cli), "version"], text=True, timeout=10).strip()
-    assert version in cli_version, cli_version
+    assert cli_version == 'garminctl ' + version, cli_version
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
@@ -46,8 +46,9 @@ def check_package(desktop, cli, repo, version, work, native_ui=False):
         return result["result"]
 
     log_path = work / "desktop.log"
-    env = dict(os.environ, XDG_CONFIG_HOME=str(work / "config"), XDG_CACHE_HOME=str(work / "cache"),
-               APPDATA=str(work / "appdata"), LOCALAPPDATA=str(work / "localappdata"))
+    state = work if state is None else state
+    env = dict(os.environ, XDG_CONFIG_HOME=str(state / "config"), XDG_CACHE_HOME=str(state / "cache"),
+               APPDATA=str(state / "appdata"), LOCALAPPDATA=str(state / "localappdata"))
     with log_path.open("wb") as log:
         app = subprocess.Popen([str(desktop), "-root", str(dump), "-addr", f"127.0.0.1:{port}"], stdout=log, stderr=log, env=env, start_new_session=os.name != "nt")
     try:
@@ -280,9 +281,15 @@ if __name__ == "__main__":
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--version", required=True)
     parser.add_argument("--native-ui", action="store_true", help="Run dialog/edit/origin checks on an isolated CI desktop")
+    parser.add_argument("--state", type=Path, help="Reuse synthetic application state across package versions")
     args = parser.parse_args()
     directory = tempfile.TemporaryDirectory(prefix="garminctl-package-")
     try:
-        print(json.dumps(check_package(args.desktop, args.cli, args.repo, args.version, Path(directory.name), args.native_ui), ensure_ascii=False))
+        result = check_package(args.desktop, args.cli, args.repo, args.version, Path(directory.name), args.native_ui, args.state)
+        if evidence := os.environ.get('NATIVE_RESULTS_DIR'):
+            output = Path(evidence)
+            output.mkdir(parents=True, exist_ok=True)
+            (output / 'package-result.json').write_text(json.dumps(result, indent=2))
+        print(json.dumps(result, ensure_ascii=False))
     finally:
         cleanup_package_directory(directory)

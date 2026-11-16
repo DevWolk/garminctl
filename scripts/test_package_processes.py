@@ -18,6 +18,48 @@ package_tests = runpy.run_path(str(Path(__file__).with_name("test-package.py")))
 stop_app = package_tests["stop_app"]
 
 
+class PackageStateTests(unittest.TestCase):
+    def launch_environment(self, work, state=None):
+        work.mkdir()
+        repo = Path(__file__).resolve().parent.parent
+        with mock.patch.object(subprocess, 'check_output', return_value='garminctl v0.0.1\n'), \
+             mock.patch.object(subprocess, 'Popen', side_effect=RuntimeError('native-start-barrier')) as launch:
+            with self.assertRaisesRegex(RuntimeError, 'native-start-barrier'):
+                package_tests['check_package'](Path('/fixture/desktop'), Path('/fixture/cli'), repo,
+                                               'v0.0.1', work, state=state)
+        return launch.call_args.kwargs['env']
+
+    def test_version_checks_share_only_explicit_synthetic_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / 'shared'
+            before = dict(os.environ)
+            first = self.launch_environment(root / 'previous', state)
+            second = self.launch_environment(root / 'upgrade', state)
+            for key, folder in [('XDG_CONFIG_HOME', 'config'), ('XDG_CACHE_HOME', 'cache'),
+                                ('APPDATA', 'appdata'), ('LOCALAPPDATA', 'localappdata')]:
+                self.assertEqual(first[key], str(state / folder))
+                self.assertEqual(first[key], second[key])
+            self.assertEqual(dict(os.environ), before)
+
+    def test_single_package_checks_keep_their_existing_isolated_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.launch_environment(root / 'first')
+            second = self.launch_environment(root / 'second')
+            self.assertNotEqual(first['XDG_CONFIG_HOME'], second['XDG_CONFIG_HOME'])
+
+    def test_cli_version_prefix_is_not_accepted_as_the_exact_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(__file__).resolve().parent.parent
+            with mock.patch.object(subprocess, 'check_output', return_value='garminctl v0.0.10\n'), \
+                 mock.patch.object(subprocess, 'Popen') as launch:
+                with self.assertRaises(AssertionError):
+                    package_tests['check_package'](Path('/fixture/desktop'), Path('/fixture/cli'), repo,
+                                                   'v0.0.1', Path(directory))
+                launch.assert_not_called()
+
+
 class WindowsCacheCleanupTests(unittest.TestCase):
     def cleanup_with(self, directory, platform, ticks):
         cleanup = package_tests["cleanup_package_directory"]
