@@ -26,6 +26,23 @@ function snapshot() {
   };
 }
 
+function applicationSnapshot() {
+  const facts = Object.fromEntries([...document.querySelectorAll('#application-inventory dt')]
+    .map(term => [term.textContent, term.nextElementSibling?.textContent]));
+  return {
+    facts,
+    note: document.querySelector('#application-inventory-note').textContent,
+    includePrerelease: document.querySelector('#application-prerelease').checked,
+    downloadDisabled: document.querySelector('#application-download-start').disabled,
+  };
+}
+
+async function applicationReady() {
+  await until(() => !document.querySelector('#application-native').hidden &&
+    document.querySelector('#application-native').getAttribute('aria-busy') === 'false');
+  return applicationSnapshot();
+}
+
 function expectedEvent(target, name, accept) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -102,6 +119,16 @@ async function runtimeProbe() {
 async function execute(command) {
   switch (command.action) {
     case 'snapshot': return snapshot();
+    case 'application-open': {
+      document.querySelector('[data-tab="application"]').click();
+      return applicationReady();
+    }
+    case 'application-channel': {
+      const channel = document.querySelector('#application-prerelease');
+      if (channel.disabled) throw new Error('Application channel is unexpectedly locked');
+      if (channel.checked !== command.includePrerelease) channel.click();
+      return applicationReady();
+    }
     case 'edit': {
       document.querySelector('[data-tab="settings"]').click();
       const control = await until(() => document.querySelector('#settings-groups [data-key]'));

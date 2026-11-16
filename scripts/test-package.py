@@ -99,7 +99,7 @@ def check_package(desktop, cli, repo, version, work, native_ui=False, state=None
         result = {"version": version, "cli": cli_version, "nativeWindowReady": True, "mcpTools": len(tools["tools"]), "fixtureModel": model, "nativeClose": True, "singleInstance": True, "reusedBackendRetained": True}
         if native_ui:
             from native_acceptance import run_native_acceptance
-            result["nativeAcceptance"] = run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app)
+            result["nativeAcceptance"] = run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app, version)
         return result
     finally:
         try:

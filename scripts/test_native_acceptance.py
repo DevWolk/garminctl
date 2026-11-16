@@ -14,6 +14,29 @@ from native_fixture import Commands
 
 
 class NativeAcceptanceTests(unittest.TestCase):
+    def test_application_gate_requires_matching_roles_and_restores_stable_channel(self):
+        observation = {'facts': {'Desktop': 'v0.0.1', 'CLI': 'v0.0.1', 'Backend (reused)': 'v0.0.1',
+                                 'Installation': 'Windows Setup' if os.name == 'nt' else 'DEB',
+                                 'Platform': 'windows / amd64' if os.name == 'nt' else 'linux / amd64'},
+                       'includePrerelease': False, 'downloadDisabled': True}
+        commands = mock.Mock()
+        commands.call.side_effect = [observation, dict(observation, includePrerelease=True), observation]
+        result = {'version': 'v0.0.1'}
+        with mock.patch.dict(os.environ, PACKAGE_FORMAT='deb'):
+            native_acceptance.application_scenario(commands, result)
+        self.assertEqual(commands.call.call_args_list, [mock.call('application-open'),
+                         mock.call('application-channel', includePrerelease=True),
+                         mock.call('application-channel', includePrerelease=False)])
+        self.assertEqual(len(result['application']), 3)
+
+        mixed = dict(observation, facts=dict(observation['facts'], CLI='v0.0.0'))
+        commands.call.side_effect = None
+        commands.call.return_value = mixed
+        commands.call.reset_mock()
+        with self.assertRaises(AssertionError):
+            native_acceptance.application_scenario(commands, {'version': 'v0.0.1'})
+        commands.call.assert_called_once_with('application-open')
+
     def test_visible_confirmation_requires_an_explicit_no(self):
         for choice in ('escape', 'close'):
             with self.subTest(choice=choice), tempfile.TemporaryDirectory() as directory:
@@ -104,7 +127,7 @@ class NativeAcceptanceTests(unittest.TestCase):
             ui = stack.enter_context(mock.patch.object(native_acceptance, 'ui_scenarios'))
             stop = mock.Mock()
             with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, 'origin regression'):
-                native_acceptance.run_native_acceptance('desktop', 'cli', work, {}, work, lambda: 12344, stop)
+                native_acceptance.run_native_acceptance('desktop', 'cli', work, {}, work, lambda: 12344, stop, 'v0.0.1')
 
             runtime.assert_called_once()
             ui.assert_called_once()

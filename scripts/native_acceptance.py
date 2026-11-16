@@ -13,11 +13,11 @@ from native_fixture import Commands, fixture_proxy
 from native_ui import driver_for, wait_for
 
 
-def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app):
+def run_native_acceptance(desktop, cli, dump, env, work, free_port, stop_app, version):
     upstream = free_port()
     log_path = work / 'native-acceptance.log'
     server_log = work / 'native-fixture-server.log'
-    result = {'status': 'running', 'passed': [], 'failures': []}
+    result = {'status': 'running', 'version': version, 'passed': [], 'failures': []}
     traces = []
     with server_log.open('wb') as log:
         server = subprocess.Popen([
@@ -145,6 +145,7 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
     def check(name, action):
         check_scenario(result, name, action)
 
+
     target = work / 'native-export.xml'
     expected = (dump / 'GARMIN/GarminDevice.xml').read_bytes()
 
@@ -214,6 +215,8 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
     for choice in ('escape', 'close'):
         check('native-replacement-' + choice, lambda choice=choice: replacement(choice))
 
+    check('native-application-versions-and-channel', lambda: application_scenario(commands, result))
+
     def final_close():
         assert commands.call('edit')['pending']
         driver.close()
@@ -221,6 +224,24 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
         commands.send('confirm', accept=True)
         assert app.wait(timeout=10) == 0, 'Confirmed native close failed'
     check('native-confirmed-edit-close', final_close)
+
+
+def application_scenario(commands, result):
+    initial = commands.call('application-open')
+    result['application'] = [initial]
+    facts = initial['facts']
+    for role in ('Desktop', 'CLI', 'Backend (reused)'):
+        assert facts.get(role) == result['version'], {'role': role, 'observed': initial}
+    kind = 'Windows Setup' if os.name == 'nt' else {'deb': 'DEB', 'rpm': 'RPM'}.get(os.environ.get('PACKAGE_FORMAT'))
+    assert kind is not None and facts.get('Installation') == kind, initial
+    assert facts.get('Platform') == ('windows / amd64' if os.name == 'nt' else 'linux / amd64'), initial
+    assert initial['includePrerelease'] is False and initial['downloadDisabled'], initial
+    # Only saved-history channel reads; never click Check or start a download.
+    for include in (True, False):
+        changed = commands.call('application-channel', includePrerelease=include)
+        result['application'].append(changed)
+        assert changed['includePrerelease'] is include and changed['downloadDisabled'], changed
+        assert changed['facts'] == facts, changed
 
 
 def replace_export(commands, driver, target, expected, choice, finished):

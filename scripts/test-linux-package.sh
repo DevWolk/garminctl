@@ -2,6 +2,7 @@
 # Run as root in a fresh Ubuntu/Fedora container; execute the app as a normal user.
 set -euo pipefail
 format=${1:?usage: test-linux-package.sh deb|rpm PACKAGE VERSION}
+export PACKAGE_FORMAT=$format
 package=${2:?missing package path}
 version=${3:?missing package version}
 previous_package=${4:-}
