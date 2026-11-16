@@ -88,6 +88,36 @@ function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string
   python @arguments
   if ($LASTEXITCODE -ne 0) { throw 'Application native transition failed; do not replay the installer.' }
 }
+function Invoke-SetupInterruption([string]$ExpectedDesktopHash) {
+  if (!$paired -or $env:GITHUB_ACTIONS -ne 'true') { throw 'Installer interruption is restricted to the paired disposable CI run.' }
+  $cli = Join-Path $installed 'garminctl.exe'
+  $desktop = Join-Path $installed 'garmin-desktop.exe'
+  $cliHash = (Get-FileHash -LiteralPath $cli -Algorithm SHA256).Hash.ToLowerInvariant()
+  $work = Join-Path $state 'application-interrupted-install'
+  if ($evidence) { $work = Join-Path $evidence 'application-interrupted-install' }
+  # Keep the second File instruction blocked while allowing observation reads.
+  $guard = [IO.File]::Open($cli, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+  try {
+    $installer = Start-Process -FilePath $setupFile -ArgumentList "/D=$installed" -PassThru
+    $arguments = @((Join-Path $PSScriptRoot 'native_application.py'), '--repo', '.', '--state', $state,
+      '--desktop', $desktop, '--cli', $cli, '--work', $work, '--current', $PreviousVersion, '--target', $Version,
+      '--setup-process', $installer.Id, '--expected-desktop-hash', $ExpectedDesktopHash, '--expected-cli-hash', $cliHash)
+    python @arguments
+    if ($LASTEXITCODE -ne 0) { throw 'Setup barrier was not proved; leave the disposable installer without automatic repair.' }
+    $observation = Get-Content -LiteralPath (Join-Path $work 'setup-barrier.json') -Raw | ConvertFrom-Json
+    if (!$observation.barrierObserved -or $observation.installerInterrupted -or $observation.setupPID -ne $installer.Id -or $installer.HasExited) { throw 'Setup is not live at the observed replacement barrier.' }
+    # This explicit fault injection never runs in the production installer helper.
+    $installer.Kill()
+    if (!$installer.WaitForExit(15000)) { throw 'Interrupted Setup has not exited; do not start repair.' }
+    if ((Get-FileHash -LiteralPath $desktop -Algorithm SHA256).Hash.ToLowerInvariant() -ne $ExpectedDesktopHash -or (Get-FileHash -LiteralPath $cli -Algorithm SHA256).Hash.ToLowerInvariant() -ne $cliHash) { throw 'Expected mixed binary pair was not retained after interruption.' }
+    $observation.installerInterrupted = $true
+    $observation | Add-Member -NotePropertyName fromVersion -NotePropertyValue $PreviousVersion
+    $observation | Add-Member -NotePropertyName targetVersion -NotePropertyValue $Version
+    $observation | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'setup-interrupted.json') -Encoding utf8
+  } finally {
+    $guard.Dispose()
+  }
+}
 $sequencePassed = $false
 try {
   $parseErrors = $null
@@ -101,6 +131,7 @@ try {
     Invoke-PackageCheck $PreviousVersion 'rollback' $false
     Invoke-ApplicationTransition $PreviousVersion $Version 'restore-upgrade' $false
     Invoke-PackageCheck $Version 'restore-upgrade' $false
+    $newerDesktopHash = (Get-FileHash -LiteralPath (Join-Path $installed 'garmin-desktop.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
     $newerCLI = Join-Path $state 'newer-cli.exe'
     Copy-Item -LiteralPath (Join-Path $installed 'garminctl.exe') -Destination $newerCLI
     Invoke-ApplicationTransition $Version $PreviousVersion 'restore-rollback' $true -Restore
@@ -122,6 +153,11 @@ try {
     Invoke-Setup $repairSetup "/S /D=$installed"
     if ((Get-FileHash -LiteralPath $ledger -Algorithm SHA256).Hash -ne $ledgerHash) { throw 'Manual repair changed current delivery data.' }
     Invoke-PackageCheck $PreviousVersion 'manual-repair' $false
+    Invoke-SetupInterruption $newerDesktopHash
+    if ((Get-FileHash -LiteralPath $ledger -Algorithm SHA256).Hash -ne $ledgerHash) { throw 'Interrupted Setup changed current delivery data.' }
+    Invoke-Setup $repairSetup "/S /D=$installed"
+    if ((Get-FileHash -LiteralPath $ledger -Algorithm SHA256).Hash -ne $ledgerHash) { throw 'Interrupted-install repair changed current delivery data.' }
+    Invoke-PackageCheck $PreviousVersion 'interrupted-repair' $false
   } else {
     Invoke-PackageCheck $Version 'current' $true
   }

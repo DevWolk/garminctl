@@ -205,6 +205,22 @@ def retain_diagnostics(cache, previous, work):
     (work / 'installer-observations.json').write_text(json.dumps(observations, indent=2))
 
 
+def observe_setup_barrier(pid, desktop, cli, work, desktop_hash, cli_hash):
+    """Observe only; the outer CI script owns the lock and explicit interruption."""
+    assert pid > 0 and all(re.fullmatch(r'[0-9a-f]{64}', value) for value in (desktop_hash, cli_hash))
+    driver = driver_for(pid)
+    driver.activate(r'&?Next\s*>')
+    driver.activate(r'&?Install')
+    driver.wait_text(r'(?s).*Error opening file for writing:.*garminctl\.exe.*')
+    assert hashlib.sha256(desktop.read_bytes()).hexdigest() == desktop_hash, 'Setup has not completed the desktop replacement'
+    assert hashlib.sha256(cli.read_bytes()).hexdigest() == cli_hash, 'The locked CLI changed before interruption'
+    value = dict(setupPID=pid, barrierObserved=True, installerInterrupted=False,
+                 desktopSHA256=desktop_hash, cliSHA256=cli_hash)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / 'setup-barrier.json').write_text(json.dumps(value, indent=2))
+    return value
+
+
 def export_repair_package(desktop, cli, state, work, current, target):
     """The CI caller injects the file fault; this function only exports recovery."""
     assert not desktop.exists(), 'The disposable repair fixture must have an unavailable GUI'
@@ -320,12 +336,21 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--restore', action='store_true', help='Exercise unknown-data refusal followed by explicit restore review')
     parser.add_argument('--repair-export', action='store_true', help='Export a verified package while the disposable GUI fixture is unavailable')
+    parser.add_argument('--setup-process', type=int, help='Observe the owned Windows Setup at the locked-CLI file barrier')
+    parser.add_argument('--expected-desktop-hash')
+    parser.add_argument('--expected-cli-hash')
     parser.add_argument('--catalog', type=Path)
     parser.add_argument('--assets', type=Path, action='append', default=[])
     args = parser.parse_args()
     assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Application OS acceptance runs only on disposable CI systems'
     assert not args.restore or args.rollback, 'Restore acceptance requires an explicit rollback'
     state, work = args.state.resolve(), args.work.resolve()
+    if args.setup_process is not None:
+        assert os.name == 'nt' and not (args.rollback or args.restore or args.catalog or args.repair_export)
+        result = observe_setup_barrier(args.setup_process, args.desktop.resolve(), args.cli.resolve(), work,
+                                       args.expected_desktop_hash, args.expected_cli_hash)
+        print(json.dumps(result))
+        return
     if args.repair_export:
         assert not (args.rollback or args.restore or args.catalog), 'Recovery export starts no installation or restoration'
         result = export_repair_package(args.desktop.resolve(), args.cli.resolve(), state, work, args.current, args.target)

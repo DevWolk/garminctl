@@ -16,6 +16,44 @@ from native_ui import LinuxUI
 
 
 class NativeApplicationTests(unittest.TestCase):
+    def test_setup_barrier_requires_the_file_error_and_exact_mixed_pair_before_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            desktop, cli, work = root / 'desktop.exe', root / 'cli.exe', root / 'evidence'
+            desktop.write_bytes(b'old desktop')
+            cli.write_bytes(b'old CLI')
+            driver = mock.Mock()
+            def activate(pattern):
+                if pattern == r'&?Install':
+                    desktop.write_bytes(b'new desktop')
+            driver.activate.side_effect = activate
+            with mock.patch.object(acceptance, 'driver_for', return_value=driver) as factory:
+                value = acceptance.observe_setup_barrier(42, desktop, cli, work,
+                    acceptance.hashlib.sha256(b'new desktop').hexdigest(), acceptance.hashlib.sha256(b'old CLI').hexdigest())
+            factory.assert_called_once_with(42)
+            self.assertEqual(driver.method_calls, [mock.call.activate(r'&?Next\s*>'), mock.call.activate(r'&?Install'),
+                mock.call.wait_text(r'(?s).*Error opening file for writing:.*garminctl\.exe.*')])
+            self.assertEqual(value['setupPID'], 42)
+            self.assertTrue(value['barrierObserved'])
+            self.assertFalse(value['installerInterrupted'])
+            self.assertEqual(json.loads((work / 'setup-barrier.json').read_text()), value)
+
+    def test_setup_barrier_never_records_success_for_partial_or_unblocked_replacement(self):
+        for fault in ('partial desktop', 'changed CLI', 'missing file-error dialog'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                desktop, cli, work = root / 'desktop.exe', root / 'cli.exe', root / 'evidence'
+                desktop.write_bytes(b'partial' if fault == 'partial desktop' else b'new desktop')
+                cli.write_bytes(b'new CLI' if fault == 'changed CLI' else b'old CLI')
+                driver = mock.Mock()
+                if fault == 'missing file-error dialog':
+                    driver.wait_text.side_effect = TimeoutError('no NSIS file error')
+                with mock.patch.object(acceptance, 'driver_for', return_value=driver):
+                    with self.assertRaises((AssertionError, TimeoutError)):
+                        acceptance.observe_setup_barrier(42, desktop, cli, work,
+                            acceptance.hashlib.sha256(b'new desktop').hexdigest(), acceptance.hashlib.sha256(b'old CLI').hexdigest())
+                self.assertFalse((work / 'setup-barrier.json').exists())
+
     def test_catalog_fixture_copies_existing_bytes_without_overwriting_retained_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
