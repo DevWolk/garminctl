@@ -3,7 +3,11 @@
 set -euo pipefail
 
 die() { echo "sign-update-packages: $*" >&2; exit 1; }
-[[ $# == 2 && ( $1 == sign || $1 == verify ) ]] || die 'usage: sign-update-packages.sh sign|verify ASSET_DIR'
+[[ $# -ge 2 && $# -le 3 && ( $1 == sign || $1 == verify ) ]] || die 'usage: sign-update-packages.sh sign|verify ASSET_DIR [--native-fixtures]'
+[[ $# == 2 || ${3:-} == --native-fixtures ]] || die 'unsupported signing option'
+if [[ ${3:-} == --native-fixtures && ${GITHUB_ACTIONS:-} != true ]]; then
+  die 'native fixtures are restricted to CI'
+fi
 operation=$1
 assets=$(cd "$2" && pwd)
 project_root=$(cd "$(dirname "$0")/.." && pwd)
@@ -21,11 +25,15 @@ names=(
   "garminctl_${tag}_windows_amd64_setup.exe"
   "garminctl_${linux_version}_linux_amd64.deb"
   "garminctl_${linux_version}_linux_amd64.rpm"
-  "garminctl_${version}_linux_amd64.tar.gz"
-  "garminctl_${version}_linux_arm64.tar.gz"
-  "garminctl_${version}_windows_amd64.zip"
-  "garminctl_${version}_windows_arm64.zip"
 )
+if [[ ${3:-} != --native-fixtures ]]; then
+  names+=(
+    "garminctl_${version}_linux_amd64.tar.gz"
+    "garminctl_${version}_linux_arm64.tar.gz"
+    "garminctl_${version}_windows_amd64.zip"
+    "garminctl_${version}_windows_arm64.zip"
+  )
+fi
 
 is_payload_name() {
   local expected
@@ -91,4 +99,8 @@ if [[ $operation == sign ]]; then
 fi
 
 for name in "${names[@]}"; do verify_pair "$assets/$name" "$assets/$name.sig"; done
-echo 'All updater payload signatures verified against the compiled public key.'
+if [[ ${3:-} == --native-fixtures ]]; then
+  echo 'Native fixture payload signatures verified against the compiled public key.'
+else
+  echo 'All updater payload signatures verified against the compiled public key.'
+fi

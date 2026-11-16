@@ -66,9 +66,12 @@ class UpdateSigningTests(unittest.TestCase):
             self.environment.pop(name, None)
         self.environment.update(WINDOWS_SIGNING_MODE='certificate', WINDOWS_SIGNING_DIR=str(self.signing))
 
-    def run_signer(self, operation='sign'):
+    def run_signer(self, operation='sign', native_fixture=False):
+        args = ['bash', str(self.root / 'scripts' / 'sign-update-packages.sh'), operation, str(self.assets)]
+        if native_fixture:
+            args.append('--native-fixtures')
         return subprocess.run(
-            ['bash', str(self.root / 'scripts' / 'sign-update-packages.sh'), operation, str(self.assets)],
+            args,
             cwd=self.root, env=self.environment, capture_output=True, text=True, timeout=30)
 
     def sign_successfully(self):
@@ -85,6 +88,28 @@ class UpdateSigningTests(unittest.TestCase):
         result = self.run_signer('verify')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(list(self.assets.glob('.updater-sign-*')), [])
+
+    def test_previous_native_fixtures_use_same_pin_without_relaxing_release_completeness(self):
+        for name in PAYLOADS[3:]:
+            (self.assets / name).unlink()
+        self.environment['GITHUB_ACTIONS'] = 'true'
+        result = self.run_signer(native_fixture=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Native fixture payload signatures verified', result.stdout)
+        self.assertEqual({p.name for p in self.assets.glob('*.sig')}, {name + '.sig' for name in PAYLOADS[:3]})
+        self.assertNotEqual(self.run_signer('verify').returncode, 0, 'Release verification accepted only three native fixtures')
+        shutil.rmtree(self.signing)
+        self.environment['WINDOWS_SIGNING_MODE'] = 'none'
+        result = self.run_signer('verify', native_fixture=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(list(self.assets.glob('.updater-sign-*')), [])
+
+    def test_native_fixture_flag_requires_explicit_ci_context(self):
+        self.environment.pop('GITHUB_ACTIONS', None)
+        result = self.run_signer(native_fixture=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('native fixtures are restricted to CI', result.stderr)
+        self.assertEqual(list(self.assets.glob('*.sig')), [])
 
     def test_certificate_mode_is_required_without_generating_an_identity(self):
         for mode in ['none', 'self-signed']:
