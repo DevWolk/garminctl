@@ -72,7 +72,7 @@ function Invoke-PackageCheck([string]$Expected, [string]$Phase, [bool]$NativeUI)
   if ($LASTEXITCODE -ne 0) { throw 'Installed native application/MCP check failed.' }
   if ([IO.File]::ReadAllText($sentinel) -ne 'preserve synthetic package state') { throw 'Native app changed the preservation sentinel.' }
 }
-function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string]$Phase, [bool]$Rollback) {
+function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string]$Phase, [bool]$Rollback, [switch]$Seed, [switch]$Restore) {
   $work = Join-Path $state "application-$Phase"
   if ($evidence) { $work = Join-Path $evidence "application-$Phase" }
   $arguments = @((Join-Path $PSScriptRoot 'native_application.py'), '--repo', '.', '--state', $state,
@@ -80,9 +80,10 @@ function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string
     '--work', $work, '--current', $Current, '--target', $Target)
   if ($Rollback) {
     $arguments += '--rollback'
-  } else {
+  } elseif ($Seed) {
     $arguments += @('--catalog', $catalog, '--assets', (Split-Path $setupFile), '--assets', (Split-Path $previousFile))
   }
+  if ($Restore) { $arguments += '--restore' }
   python @arguments
   if ($LASTEXITCODE -ne 0) { throw 'Application native transition failed; do not replay the installer.' }
 }
@@ -93,10 +94,14 @@ try {
   if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
   if ($paired) {
     Invoke-PackageCheck $PreviousVersion 'previous' $false
-    Invoke-ApplicationTransition $PreviousVersion $Version 'upgrade' $false
+    Invoke-ApplicationTransition $PreviousVersion $Version 'upgrade' $false -Seed
     Invoke-PackageCheck $Version 'upgrade' $true
     Invoke-ApplicationTransition $Version $PreviousVersion 'rollback' $true
     Invoke-PackageCheck $PreviousVersion 'rollback' $false
+    Invoke-ApplicationTransition $PreviousVersion $Version 'restore-upgrade' $false
+    Invoke-PackageCheck $Version 'restore-upgrade' $false
+    Invoke-ApplicationTransition $Version $PreviousVersion 'restore-rollback' $true -Restore
+    Invoke-PackageCheck $PreviousVersion 'restore-rollback' $false
   } else {
     Invoke-PackageCheck $Version 'current' $true
   }

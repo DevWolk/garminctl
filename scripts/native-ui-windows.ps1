@@ -144,6 +144,10 @@ switch ($request.action) {
   'text' {
     $response.text = (Find-Control $request.pattern).Current.Name
   }
+  'reveal' {
+    Focus-Control (Find-Control '^garminctl$' 'Window')
+    [void](Click-MenuControl (Find-Control $request.pattern))
+  }
   'key' {
     Focus-Control (Find-Control '^garminctl$' 'Window')
     if ($request.key -ne 'F5') { throw 'Unsupported native key' }

@@ -1,6 +1,7 @@
 """Exercise confirmed Application installation on disposable native CI runners."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,10 @@ from native_ui import driver_for, find_application, wait_for
 
 
 runner = runpy.run_path(str(Path(__file__).with_name('test-package.py')))
+LEDGER_NAME = 'uploaded-4242.json'
+LEDGER_INITIAL = b'{"GARMIN/Activity/fixture.fit":"1|native-acceptance"}'
+LEDGER_EDITED = b'{"GARMIN/Activity/fixture.fit":"2|edited-after-upgrade"}'
+LEDGER_UNSUPPORTED = b'{"schemaVersion":99,"entries":{"fixture":"unsupported ledger format"}}'
 
 
 def read_json(path):
@@ -100,21 +105,69 @@ def check_mcp(base):
         request(base, '/mcp', headers=headers, method='DELETE')
 
 
-def confirm_transition(driver, target, rollback):
+def prepare_rollback_review(driver, target, keep):
+    driver.toggle(r'Keep current data \(requires compatibility check\)', keep)
+    driver.activate('Prepare rollback review…')
+    driver.wait_text(re.escape('Prepare rollback to ' + target + '?'))
+    driver.activate('Prepare review')
+
+
+def confirm_transition(driver, target, rollback, restore=False):
     driver.activate(r'(?:◉\s*)?Application')
     if rollback:
         if '-' in target:
             driver.toggle('Include prereleases')
-        driver.toggle(r'Keep current data \(requires compatibility check\)')
-        driver.activate('Prepare rollback review…')
-        driver.wait_text(re.escape('Prepare rollback to ' + target + '?'))
-        driver.activate('Prepare review')
+        prepare_rollback_review(driver, target, not restore)
         driver.wait_text('Review the data replacements below. Installation has not started.')
+        if restore:
+            text = driver.wait_text(r'Restore backup: [0-9a-f]{64}\. Newer data saved in backup: [0-9a-f]{64}\.')
+            target_id, safety_id = re.findall('[0-9a-f]{64}', text)
+            driver.reveal(r'[0-9]+ file changes')
+            driver.wait_text(r'Replace cache/uploaded-4242\.json \([0-9]+ bytes\)')
+            return 'Restore backup and install older version', {'target': target_id, 'safety': safety_id}
         driver.toggle(r'I agree to install the older version while keeping current data\..*')
-        return 'Keep current data and install older version'
+        return 'Keep current data and install older version', None
     driver.activate('Install saved release…')
     driver.wait_text(re.escape('Install ' + target + ' and restart?'))
-    return 'Install and restart'
+    return 'Install and restart', None
+
+
+def inspect_ledger_snapshot(cli, state, identifier):
+    value = json.loads(subprocess.check_output([str(cli), '-json', 'application', 'recovery', 'inspect', identifier],
+                                              env=native_environment(state), text=True, timeout=15))
+    assert value['verified'] and value['verification'] == 'local_manifest' and value['dataCompatibility'] == 'not_checked', value
+    assert value['snapshot']['snapshotId'] == identifier, value
+    files = [file for file in value['files'] if file['area'] == 'cache' and file['path'] == LEDGER_NAME]
+    assert len(files) == 1, 'Selected snapshot must contain exactly the fixture ledger'
+    return value['snapshot'], files[0]
+
+
+def verify_restore_review(cli, state, current, target, review):
+    old, ledger = inspect_ledger_snapshot(cli, state, review['target'])
+    safety, retained = inspect_ledger_snapshot(cli, state, review['safety'])
+    assert old['from'] == target and old['to'] == current, old
+    assert safety['from'] == current and safety['to'] == target, safety
+    known = {hashlib.sha256(value).hexdigest(): value for value in (LEDGER_INITIAL, LEDGER_EDITED)}
+    assert ledger['sha256'] in known and ledger['bytes'] == len(known[ledger['sha256']]), 'Restore target is not the known fixture backup'
+    assert retained['sha256'] == hashlib.sha256(LEDGER_UNSUPPORTED).hexdigest() and retained['bytes'] == len(LEDGER_UNSUPPORTED), \
+        'The fresh safety snapshot does not retain the unsupported fixture bytes'
+    assert (cache_directory(state) / LEDGER_NAME).read_bytes() == LEDGER_UNSUPPORTED, 'Data changed before restore confirmation'
+    return known[ledger['sha256']], dict(review, restoredSHA256=ledger['sha256'], safetySHA256=retained['sha256'])
+
+
+def reject_keep_current(driver, app, cli, state, base, cache, previous, current, target):
+    driver.activate(r'(?:◉\s*)?Application')
+    if '-' in target:
+        driver.toggle('Include prereleases')
+    prepare_rollback_review(driver, target, True)
+    driver.wait_text(r'Could not prepare installation: .*current data cannot be read.*cache/uploaded-4242\.json.*')
+    assert app.poll() is None, 'Unreadable data stopped the live desktop'
+    metadata, _ = request(base, '/api/server')
+    assert metadata['version'] == current, metadata
+    assert subprocess.check_output([str(cli), 'version'], text=True, timeout=10).strip() == 'garminctl ' + current
+    assert (cache / LEDGER_NAME).read_bytes() == LEDGER_UNSUPPORTED, 'Refused preparation changed live data'
+    assert {path.name for path in (cache / 'application-installing').glob('stage-*')} == previous, \
+        'Refused keep-current preparation created an installer operation'
 
 
 def installation_result(cache, previous, target):
@@ -152,7 +205,7 @@ def retain_diagnostics(cache, previous, work):
     (work / 'installer-observations.json').write_text(json.dumps(observations, indent=2))
 
 
-def run_transition(desktop, cli, repo, state, work, current, target, rollback=False):
+def run_transition(desktop, cli, repo, state, work, current, target, rollback=False, restore=False):
     assert subprocess.check_output([str(cli), 'version'], text=True, timeout=10).strip() == 'garminctl ' + current
     work.mkdir(parents=True, exist_ok=True)
     cache = cache_directory(state)
@@ -175,7 +228,15 @@ def run_transition(desktop, cli, repo, state, work, current, target, rollback=Fa
             return True
         wait_for(ready, timeout=45)
         driver = driver_for(app.pid)
-        confirmation = confirm_transition(driver, target, rollback)
+        if restore:
+            reject_keep_current(driver, app, cli, state, base, cache, previous, current, target)
+        confirmation, review = confirm_transition(driver, target, rollback, restore)
+        restored_bytes, data_review = None, None
+        if restore:
+            restored_bytes, data_review = verify_restore_review(cli, state, current, target, review)
+            assert {path.name for path in (cache / 'application-installing').glob('stage-*')} == previous, \
+                'Installer operation appeared before explicit restore consent'
+            driver.toggle(r'I agree to replace or remove the listed data\..*')
         # The next click may reach Commit even if its UIA/AT-SPI reply is lost.
         # Never kill children, retry a click or clean their state after this point.
         committed = True
@@ -187,6 +248,10 @@ def run_transition(desktop, cli, repo, state, work, current, target, rollback=Fa
         metadata, _ = request(base, '/api/server')
         assert metadata['application'] == 'garminctl' and metadata['version'] == target, metadata
         tools = check_mcp(base)
+        if restore:
+            assert (cache / LEDGER_NAME).read_bytes() == restored_bytes, 'Explicit restore did not recover the reviewed fixture bytes'
+            _, safety = inspect_ledger_snapshot(cli, state, review['safety'])
+            assert safety['sha256'] == data_review['safetySHA256'], 'Safety backup changed after installation'
         restarted = driver_for(find_application(desktop, app.pid))
         restarted.close()
         restarted.wait_closed()
@@ -196,7 +261,7 @@ def run_transition(desktop, cli, repo, state, work, current, target, rollback=Fa
         completed = True
         return {'from': current, 'to': target, 'rollback': rollback, 'operation': result['operation'],
                 'status': result['status'], 'desktop': startup['desktopVersion'], 'backend': metadata['version'],
-                'cli': target, 'mcpTools': tools, 'nativeClose': True}
+                'cli': target, 'mcpTools': tools, 'nativeClose': True, 'dataReview': data_review}
     finally:
         if not committed:
             runner['stop_app'](app)
@@ -219,29 +284,38 @@ def main():
     parser.add_argument('--current', required=True)
     parser.add_argument('--target', required=True)
     parser.add_argument('--rollback', action='store_true')
+    parser.add_argument('--restore', action='store_true', help='Exercise unknown-data refusal followed by explicit restore review')
     parser.add_argument('--catalog', type=Path)
     parser.add_argument('--assets', type=Path, action='append', default=[])
     args = parser.parse_args()
     assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Application OS acceptance runs only on disposable CI systems'
+    assert not args.restore or args.rollback, 'Restore acceptance requires an explicit rollback'
     state, work = args.state.resolve(), args.work.resolve()
     cache = cache_directory(state)
     if args.catalog:
         assert not args.rollback, 'Do not reseed or repair retained packages during rollback'
         seed_catalog(args.catalog.resolve(), [path.resolve() for path in args.assets], cache, [args.current, args.target])
-    ledger = cache / 'uploaded-4242.json'
-    if args.rollback:
+    ledger = cache / LEDGER_NAME
+    if args.restore:
+        assert ledger.read_bytes() in (LEDGER_INITIAL, LEDGER_EDITED), 'Use the existing synthetic ledger fixture'
+        ledger.write_bytes(LEDGER_UNSUPPORTED)
+        expected = None
+    elif args.rollback or ledger.exists():
         expected = ledger.read_bytes()
     else:
-        expected = b'{"GARMIN/Activity/fixture.fit":"1|native-acceptance"}'
+        expected = LEDGER_INITIAL
         ledger.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         ledger.write_bytes(expected)
         ledger.chmod(0o600)
     result = run_transition(args.desktop.resolve(), args.cli.resolve(), args.repo.resolve(), state, work,
-                            args.current, args.target, args.rollback)
-    assert ledger.read_bytes() == expected, 'Application installation changed current delivery-ledger bytes'
+                            args.current, args.target, args.rollback, args.restore)
+    if args.restore:
+        assert hashlib.sha256(ledger.read_bytes()).hexdigest() == result['dataReview']['restoredSHA256']
+    else:
+        assert ledger.read_bytes() == expected, 'Application installation changed current delivery-ledger bytes'
     if not args.rollback:
-        ledger.write_bytes(b'{"GARMIN/Activity/fixture.fit":"2|edited-after-upgrade"}')
-    result['deliveryLedgerPreserved'] = True
+        ledger.write_bytes(LEDGER_EDITED)
+    result['deliveryLedgerRestored' if args.restore else 'deliveryLedgerPreserved'] = True
     (work / 'application-transition.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result))
 

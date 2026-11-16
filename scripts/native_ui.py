@@ -98,6 +98,9 @@ class WindowsUI:
     def wait_text(self, pattern):
         return self.command('text', pattern='^(?:' + pattern + ')$')['text']
 
+    def reveal(self, pattern):
+        self.command('reveal', pattern='^(?:' + pattern + ')$')
+
     def wait_closed(self):
         self.command('application-closed')
 
@@ -147,22 +150,23 @@ class LinuxUI:
     def close(self):
         send_delete_window(self.focus('garminctl'))
 
-    def control(self, pattern, actionable=True):
+    def visible_elements(self):
+        pending = [self.dialog('garminctl')]
+        while pending:
+            element = pending.pop(0)
+            if element.getState().contains(self.atspi.STATE_SHOWING):
+                yield element
+            pending.extend(list(element))
+
+    def control(self, pattern):
         def read():
-            pending = [self.dialog('garminctl')]
-            while pending:
-                element = pending.pop(0)
-                state = element.getState()
-                if re.fullmatch(pattern, element.name or '') and state.contains(self.atspi.STATE_SHOWING):
-                    if not actionable:
-                        return element
-                    if state.contains(self.atspi.STATE_SENSITIVE):
-                        try:
-                            if element.queryAction().nActions:
-                                return element
-                        except NotImplementedError:
-                            pass
-                pending.extend(list(element))
+            for element in self.visible_elements():
+                if re.fullmatch(pattern, element.name or '') and element.getState().contains(self.atspi.STATE_SENSITIVE):
+                    try:
+                        if element.queryAction().nActions:
+                            return element
+                    except NotImplementedError:
+                        pass
             return None
         return wait_for(read)
 
@@ -177,7 +181,21 @@ class LinuxUI:
         wait_for(lambda: element.getState().contains(self.atspi.STATE_CHECKED) == checked)
 
     def wait_text(self, pattern):
-        return self.control(pattern, actionable=False).name
+        def read():
+            for element in self.visible_elements():
+                if re.fullmatch(pattern, element.name or ''):
+                    return element.name
+                try:
+                    value = element.queryText().getText(0, -1)
+                except (NotImplementedError, AttributeError):
+                    continue
+                if isinstance(value, str) and re.fullmatch(pattern, value):
+                    return value
+            return None
+        return wait_for(read)
+
+    def reveal(self, pattern):
+        self.activate(pattern)
 
     def wait_closed(self):
         def closed():

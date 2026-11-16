@@ -89,6 +89,10 @@ if [[ -n $previous_package ]]; then
   check_version "$version" upgrade --native-ui
   application_transition "$version" "$previous_version" rollback --rollback
   check_version "$previous_version" rollback
+  application_transition "$previous_version" "$version" restore-upgrade
+  check_version "$version" restore-upgrade
+  application_transition "$version" "$previous_version" restore-rollback --rollback --restore
+  check_version "$previous_version" restore-rollback
 else
   check_version "$version" current --native-ui
 fi

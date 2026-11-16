@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 import native_application as acceptance
+import native_ui
 from native_ui import LinuxUI
 
 
@@ -43,10 +44,10 @@ class NativeApplicationTests(unittest.TestCase):
     def test_compatible_rollback_requires_both_confirmation_steps(self):
         driver = mock.Mock()
         final = acceptance.confirm_transition(driver, 'v1.0.0-rc.1', True)
-        self.assertEqual(final, 'Keep current data and install older version')
+        self.assertEqual(final, ('Keep current data and install older version', None))
         self.assertEqual(driver.method_calls, [
             mock.call.activate(r'(?:◉\s*)?Application'), mock.call.toggle('Include prereleases'),
-            mock.call.toggle(r'Keep current data \(requires compatibility check\)'),
+            mock.call.toggle(r'Keep current data \(requires compatibility check\)', True),
             mock.call.activate('Prepare rollback review…'),
             mock.call.wait_text(r'Prepare\ rollback\ to\ v1\.0\.0\-rc\.1\?'),
             mock.call.activate('Prepare review'),
@@ -54,10 +55,68 @@ class NativeApplicationTests(unittest.TestCase):
             mock.call.toggle(r'I agree to install the older version while keeping current data\..*'),
         ])
         driver.activate.assert_any_call('Prepare review')
-        self.assertNotIn(mock.call.activate(final), driver.method_calls)
+        self.assertNotIn(mock.call.activate(final[0]), driver.method_calls)
+
+    def test_restore_review_reveals_exact_changes_without_giving_consent(self):
+        driver = mock.Mock()
+        target, safety = 'a' * 64, 'b' * 64
+        driver.wait_text.side_effect = [None, None, f'Restore backup: {target}. Newer data saved in backup: {safety}.', None]
+        button, review = acceptance.confirm_transition(driver, 'v1.0.0-rc.1', True, restore=True)
+        self.assertEqual(button, 'Restore backup and install older version')
+        self.assertEqual(review, {'target': target, 'safety': safety})
+        driver.toggle.assert_any_call(r'Keep current data \(requires compatibility check\)', False)
+        driver.reveal.assert_called_once_with(r'[0-9]+ file changes')
+        driver.wait_text.assert_any_call(r'Replace cache/uploaded-4242\.json \([0-9]+ bytes\)')
+        self.assertNotIn(mock.call.activate(button), driver.method_calls)
+        self.assertNotIn(mock.call.toggle(r'I agree to replace or remove the listed data\..*'), driver.method_calls)
+
+    def test_restore_review_verifies_both_snapshots_with_the_existing_cli(self):
+        for bad_safety in (False, True):
+            with self.subTest(bad_safety=bad_safety), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory)
+                cache = acceptance.cache_directory(state)
+                cache.mkdir(parents=True)
+                (cache / acceptance.LEDGER_NAME).write_bytes(acceptance.LEDGER_UNSUPPORTED)
+                target, safety = 'a' * 64, 'b' * 64
+                def snapshot(identifier, current, update, data):
+                    return json.dumps({'verified': True, 'verification': 'local_manifest', 'dataCompatibility': 'not_checked',
+                        'snapshot': {'snapshotId': identifier, 'from': current, 'to': update},
+                        'files': [{'area': 'cache', 'path': acceptance.LEDGER_NAME, 'bytes': len(data),
+                                   'sha256': acceptance.hashlib.sha256(data).hexdigest()}]})
+                responses = [snapshot(target, 'v1.0.0-rc.1', 'v1.0.0', acceptance.LEDGER_EDITED),
+                             snapshot(safety, 'v1.0.0', 'v1.0.0-rc.1', b'wrong safety' if bad_safety else acceptance.LEDGER_UNSUPPORTED)]
+                with mock.patch.object(acceptance.subprocess, 'check_output', side_effect=responses) as command:
+                    if bad_safety:
+                        with self.assertRaisesRegex(AssertionError, 'safety snapshot'):
+                            acceptance.verify_restore_review(Path('/fixture/cli'), state, 'v1.0.0', 'v1.0.0-rc.1', {'target': target, 'safety': safety})
+                    else:
+                        restored, view = acceptance.verify_restore_review(Path('/fixture/cli'), state, 'v1.0.0', 'v1.0.0-rc.1', {'target': target, 'safety': safety})
+                        self.assertEqual(restored, acceptance.LEDGER_EDITED)
+                        self.assertEqual(view['safetySHA256'], acceptance.hashlib.sha256(acceptance.LEDGER_UNSUPPORTED).hexdigest())
+                    self.assertEqual([call.args[0] for call in command.call_args_list], [
+                        ['/fixture/cli', '-json', 'application', 'recovery', 'inspect', target],
+                        ['/fixture/cli', '-json', 'application', 'recovery', 'inspect', safety]])
+                    self.assertEqual(command.call_args.kwargs['env']['XDG_CACHE_HOME'], str(state / 'cache'))
+                    self.assertEqual((cache / acceptance.LEDGER_NAME).read_bytes(), acceptance.LEDGER_UNSUPPORTED)
+
+    def test_refused_keep_data_preserves_backend_bytes_and_no_installer_operation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            cache = acceptance.cache_directory(state)
+            cache.mkdir(parents=True)
+            (cache / acceptance.LEDGER_NAME).write_bytes(acceptance.LEDGER_UNSUPPORTED)
+            app, driver = mock.Mock(), mock.Mock()
+            app.poll.return_value = None
+            with mock.patch.object(acceptance, 'request', return_value=({'version': 'v1.0.0'}, {})), \
+                 mock.patch.object(acceptance.subprocess, 'check_output', return_value='garminctl v1.0.0\n'):
+                acceptance.reject_keep_current(driver, app, Path('/fixture/cli'), state, 'http://127.0.0.1:12345',
+                                               cache, set(), 'v1.0.0', 'v1.0.0-rc.1')
+            self.assertNotIn(mock.call.activate('Restore backup and install older version'), driver.method_calls)
+            self.assertEqual((cache / acceptance.LEDGER_NAME).read_bytes(), acceptance.LEDGER_UNSUPPORTED)
+            self.assertFalse((cache / 'application-installing').exists())
 
     @contextlib.contextmanager
-    def transition(self, root, outcome='installed', lost_reply=False, wrong_dialog=False):
+    def transition(self, root, outcome='installed', lost_reply=False, wrong_dialog=False, restore=False):
         state, work = root / 'state', root / 'evidence'
         app = mock.Mock(pid=123)
         app.poll.return_value = None
@@ -65,19 +124,27 @@ class NativeApplicationTests(unittest.TestCase):
         driver, restarted = mock.Mock(), mock.Mock()
         base = 'http://127.0.0.1:12345'
         cache = acceptance.cache_directory(state)
+        current, target = ('v1.0.0', 'v1.0.0-rc.1') if restore else ('v1.0.0-rc.1', 'v1.0.0')
+        target_id, safety_id = 'a' * 64, 'b' * 64
+        if restore:
+            cache.mkdir(parents=True)
+            (cache / acceptance.LEDGER_NAME).write_bytes(acceptance.LEDGER_UNSUPPORTED)
+            driver.wait_text.side_effect = lambda pattern: f'Restore backup: {target_id}. Newer data saved in backup: {safety_id}.' if pattern.startswith('Restore backup:') else None
         def start(*_args, **options):
             options['stdout'].write(b'desktop window ready\n')
             options['stdout'].flush()
             return app
         def click(pattern):
-            if pattern != 'Install and restart':
+            if pattern != ('Restore backup and install older version' if restore else 'Install and restart'):
                 return
             if lost_reply:
                 raise RuntimeError('lost UI reply')
             operation = cache / 'application-installing' / 'stage-current'
             operation.mkdir(parents=True)
-            result = {'operation': 'test-operation', 'tag': 'v1.0.0', 'status': outcome}
-            startup = {'operation': 'test-operation', 'desktopVersion': 'v1.0.0', 'backendOwned': True,
+            if restore:
+                (cache / acceptance.LEDGER_NAME).write_bytes(acceptance.LEDGER_EDITED)
+            result = {'operation': 'test-operation', 'tag': target, 'status': outcome}
+            startup = {'operation': 'test-operation', 'desktopVersion': target, 'backendOwned': True,
                        'backendURL': base, 'token': 'do-not-export-ticket'}
             (operation / 'install-result.json').write_text(json.dumps(result))
             (operation / 'startup-ready.json').write_text(json.dumps(startup))
@@ -85,21 +152,38 @@ class NativeApplicationTests(unittest.TestCase):
         if wrong_dialog:
             driver.wait_text.side_effect = AssertionError('wrong selected version')
         repo = Path(__file__).resolve().parent.parent
+        responses = ['garminctl ' + current + '\n', 'garminctl ' + target + '\n']
+        metadata = [({'application': 'garminctl', 'version': current}, {}),
+                    ({'application': 'garminctl', 'version': target}, {})]
+        if restore:
+            def snapshot(identifier, old, new, data):
+                return json.dumps({'verified': True, 'verification': 'local_manifest', 'dataCompatibility': 'not_checked',
+                    'snapshot': {'snapshotId': identifier, 'from': old, 'to': new},
+                    'files': [{'area': 'cache', 'path': acceptance.LEDGER_NAME, 'bytes': len(data),
+                               'sha256': acceptance.hashlib.sha256(data).hexdigest()}]})
+            safety = snapshot(safety_id, current, target, acceptance.LEDGER_UNSUPPORTED)
+            responses = ['garminctl ' + current + '\n', 'garminctl ' + current + '\n',
+                         snapshot(target_id, target, current, acceptance.LEDGER_EDITED), safety,
+                         'garminctl ' + target + '\n', safety]
+            metadata.insert(1, metadata[0])
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(acceptance.subprocess, 'check_output', side_effect=[
-                'garminctl v1.0.0-rc.1\n', 'garminctl v1.0.0\n']))
+            commands = stack.enter_context(mock.patch.object(acceptance.subprocess, 'check_output', side_effect=responses))
+            if restore:
+                def consent(pattern, checked=True):
+                    if pattern == r'I agree to replace or remove the listed data\..*':
+                        inspections = [call.args[0][-1] for call in commands.call_args_list if 'inspect' in call.args[0]]
+                        self.assertEqual(inspections, [target_id, safety_id], 'Restore consent preceded backup verification')
+                driver.toggle.side_effect = consent
             stack.enter_context(mock.patch.object(acceptance.subprocess, 'Popen', side_effect=start))
             stack.enter_context(mock.patch.object(acceptance, 'driver_for', side_effect=[driver, restarted]))
             find = stack.enter_context(mock.patch.object(acceptance, 'find_application', return_value=456))
-            stack.enter_context(mock.patch.object(acceptance, 'request', side_effect=[
-                ({'application': 'garminctl', 'version': 'v1.0.0-rc.1'}, {}),
-                ({'application': 'garminctl', 'version': 'v1.0.0'}, {})]))
+            stack.enter_context(mock.patch.object(acceptance, 'request', side_effect=metadata))
             stack.enter_context(mock.patch.object(acceptance, 'check_mcp', return_value=33))
             stack.enter_context(mock.patch.dict(acceptance.runner, free_port=lambda: 12345))
             stack.enter_context(mock.patch.dict(acceptance.runner, stop_app=mock.Mock()))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             yield (lambda: acceptance.run_transition(Path('/fixture/desktop'), Path('/fixture/cli'), repo,
-                   state, work, 'v1.0.0-rc.1', 'v1.0.0')), driver, restarted, find, acceptance.runner['stop_app'], work
+                   state, work, current, target, restore, restore)), driver, restarted, find, acceptance.runner['stop_app'], work
 
     def test_success_checks_restart_and_closes_it_before_joining_test_children(self):
         with tempfile.TemporaryDirectory() as directory, self.transition(Path(directory)) as fixture:
@@ -126,6 +210,18 @@ class NativeApplicationTests(unittest.TestCase):
                 restarted.close.assert_not_called()
                 self.assertEqual(driver.activate.call_args_list.count(mock.call('Install and restart')), 1)
                 self.assertTrue((work / 'installer-observations.json').is_file())
+
+    def test_restore_transition_verifies_data_before_consent_and_checks_safety_after_restart(self):
+        with tempfile.TemporaryDirectory() as directory, self.transition(Path(directory), restore=True) as fixture:
+            run, driver, restarted, find, stop, work = fixture
+            result = run()
+            self.assertEqual(result['to'], 'v1.0.0-rc.1')
+            self.assertEqual(result['dataReview']['safetySHA256'], acceptance.hashlib.sha256(acceptance.LEDGER_UNSUPPORTED).hexdigest())
+            self.assertEqual(driver.activate.call_args_list.count(mock.call('Restore backup and install older version')), 1)
+            self.assertNotIn(mock.call('Keep current data and install older version'), driver.activate.call_args_list)
+            driver.toggle.assert_any_call(r'I agree to replace or remove the listed data\..*')
+            restarted.close.assert_called_once()
+            stop.assert_called_once()
 
     def test_wrong_confirmation_target_stops_before_the_install_click(self):
         with tempfile.TemporaryDirectory() as directory, self.transition(Path(directory), wrong_dialog=True) as fixture:
@@ -181,6 +277,22 @@ assert.equal(rule({id:'other', lookup:()=>'/usr/bin/apt-get'}, {user:'garmin-smo
         driver.toggle('Include prereleases', True)
         driver.toggle('Include prereleases', True)
         button.queryAction.return_value.doAction.assert_called_once_with(0)
+
+    def test_accessibility_reads_visible_paragraph_text_without_an_accessible_name(self):
+        paragraph = mock.MagicMock()
+        paragraph.name = ''
+        paragraph.getState.return_value.contains.side_effect = lambda value: value == 'showing'
+        paragraph.queryText.return_value.getText.return_value = 'Review the data replacements below. Installation has not started.'
+        driver = object.__new__(LinuxUI)
+        driver.atspi = SimpleNamespace(STATE_SHOWING='showing', STATE_SENSITIVE='sensitive')
+        driver.dialog = mock.Mock(return_value=paragraph)
+        def read_once(read):
+            result = read()
+            self.assertIsNotNone(result, 'Visible AT-SPI Text was ignored because its accessible name is empty')
+            return result
+        with mock.patch.object(native_ui, 'wait_for', side_effect=read_once):
+            self.assertEqual(driver.wait_text(r'Review the data replacements below\. Installation has not started\.'),
+                             paragraph.queryText.return_value.getText.return_value)
 
 
 if __name__ == '__main__':
