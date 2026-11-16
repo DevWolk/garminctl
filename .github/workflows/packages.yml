@@ -108,6 +108,15 @@ jobs:
       - name: Check final updater signatures
         if: inputs.sign_updates
         run: docker compose -f docker/docker-compose.yml exec -T go bash scripts/sign-update-packages.sh verify dist/assets
+      - name: Prepare retained native package fixtures
+        if: inputs.previous_version != ''
+        env:
+          NATIVE_PREVIOUS_VERSION: ${{ inputs.previous_version }}
+          NATIVE_SELECTED_VERSION: ${{ inputs.version }}
+        run: |
+          docker compose -f docker/docker-compose.yml exec -T -e GITHUB_ACTIONS=true \
+            -e NATIVE_PREVIOUS_VERSION -e NATIVE_SELECTED_VERSION \
+            go go test -tags nativeacceptance ./internal/ship/updatetransport -run '^TestPrepareNativeAcceptancePackages$' -count=1 -v
       - name: Calculate final checksums after signatures
         run: |
           cd dist/assets
@@ -132,6 +141,15 @@ jobs:
         with:
           name: garminctl-previous-native-packages
           path: dist/previous/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Retain offline Application catalog metadata
+        if: inputs.previous_version != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: garminctl-native-package-catalog
+          path: dist/native-package-catalog/*/*/entry.json
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
