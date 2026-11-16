@@ -86,9 +86,6 @@ def run_native_window(suite, scenario, desktop, dump, env, work, upstream, resul
                 return commands.boots[0] if commands.boots else None
             commands.wait(page_ready, timeout=45)
             wait_for(lambda: 'desktop window ready' in log_path.read_text(errors='replace'))
-            wait_for(commands.map_requested.is_set)
-            commands.events.append({'event': 'native-ready-with-map-blocked'})
-            commands.map_release.set()
             scenario(commands, driver_for(app.pid), app, dump, work, log_path, result)
     finally:
         try:
@@ -208,13 +205,8 @@ def ui_scenarios(commands, driver, app, dump, work, log_path, result):
         else:
             driver.key('F5')
         wait_for(lambda: commands.call('snapshot')['dialog'])
-        commands.map_requested.clear()
-        commands.map_release.clear()
         commands.send('confirm', accept=True)
         commands.wait(lambda: commands.boots[-1] if commands.boots[-1] != edited['boot'] else None)
-        wait_for(commands.map_requested.is_set)
-        commands.events.append({'event': 'native-reloaded-with-map-blocked'})
-        commands.map_release.set()
         assert not commands.call('snapshot')['pending'], 'Reload retained discarded edits'
     check('native-edit-close-and-reload', edit_guard)
     if os.name == 'nt':

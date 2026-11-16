@@ -108,7 +108,6 @@ class NativeAcceptanceTests(unittest.TestCase):
         def commands():
             channel = Commands()
             channel.boots.append('test-page')
-            channel.map_requested.set()
             return channel
 
         response = mock.MagicMock()

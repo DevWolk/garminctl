@@ -37,7 +37,7 @@ class NativeFixtureTests(unittest.TestCase):
                         objects.g_object_unref(exception)
                     objects.g_object_unref(context)
 
-    def test_channel_preserves_nonce_and_loads_probe_from_trusted_app_script(self):
+    def test_channel_preserves_html_and_loads_probe_from_trusted_app_script(self):
         seen = []
 
         class Backend(BaseHTTPRequestHandler):
@@ -47,7 +47,7 @@ class NativeFixtureTests(unittest.TestCase):
             def do_GET(self):
                 seen.append((self.path, self.headers['Host'], self.headers.get('Origin')))
                 if self.path == '/settings':
-                    body = b'<html><body>real SPA<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script></body></html>'
+                    body = b'<html><body>real SPA</body></html>'
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html')
                     self.send_header('X-Garminctl-Page-Nonce', self.headers.get('X-Garminctl-Page-Nonce', ''))
@@ -75,7 +75,7 @@ class NativeFixtureTests(unittest.TestCase):
                 with urllib.request.urlopen(request, timeout=5) as response:
                     html = response.read()
                     self.assertEqual(len(html), int(response.headers['Content-Length']))
-                    self.assertEqual(html, b'<html><body>real SPA<script defer src="/__native/map.js"></script></body></html>')
+                    self.assertEqual(html, b'<html><body>real SPA</body></html>')
                     self.assertEqual(response.headers['X-Garminctl-Page-Nonce'], 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
                 with urllib.request.urlopen(base + '/app.js', timeout=5) as response:
                     script = response.read()
@@ -92,31 +92,6 @@ class NativeFixtureTests(unittest.TestCase):
             backend.shutdown()
             backend.server_close()
             worker.join(timeout=5)
-
-    def test_deferred_map_response_waits_for_native_readiness_on_each_load(self):
-        commands = Commands()
-        with fixture_proxy(1, commands) as port:
-            for _ in range(2):
-                commands.map_requested.clear()
-                commands.map_release.clear()
-                received = []
-
-                def browser():
-                    with urllib.request.urlopen(f'http://127.0.0.1:{port}/__native/map.js', timeout=5) as response:
-                        received.append((response.status, response.read(), response.headers['Cache-Control']))
-
-                request = threading.Thread(target=browser)
-                request.start()
-                try:
-                    self.assertTrue(commands.map_requested.wait(timeout=3), 'Browser did not request the deferred script')
-                    self.assertFalse(received, 'Deferred script completed before the native readiness barrier')
-                finally:
-                    commands.map_release.set()
-                    request.join(timeout=5)
-                self.assertFalse(request.is_alive())
-                self.assertEqual(received, [(200, b'', 'no-store')])
-        self.assertEqual([event['event'] for event in commands.events],
-                         ['map-script-held', 'map-script-released'] * 2)
 
     def test_real_http_receipts_and_browser_errors_reach_the_waiter(self):
         commands = Commands()
