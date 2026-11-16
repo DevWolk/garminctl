@@ -28,11 +28,13 @@ test -s /usr/lib/udev/rules.d/69-garminctl.rules
 useradd --create-home --uid 1500 garmin-smoke
 state=$(mktemp -d)
 sequence_passed=false
+repair_directory=
 cleanup() {
   if [[ -n $previous_package && $sequence_passed != true ]]; then
     echo 'Paired acceptance failed; retaining disposable state without replay or cleanup.' >&2
   else
     rm -rf "$state"
+    if [[ -n $repair_directory ]]; then rm -rf "$repair_directory"; fi
   fi
 }
 trap cleanup EXIT
@@ -75,10 +77,12 @@ application_transition() {
   local current=$1 target=$2 phase=$3
   shift 3
   local work=${evidence:-$state}/application-$phase
+  local display=(dbus-run-session -- xvfb-run -a)
+  if [[ ${1:-} == --repair-export ]]; then display=(); fi
   mkdir -p "$work"
   chown 1500:1500 "$work"
   runuser -u garmin-smoke -- env GTK_MODULES=atk-bridge NO_AT_BRIDGE=0 LANG=C.UTF-8 \
-    dbus-run-session -- xvfb-run -a python3 /src/scripts/native_application.py \
+    "${display[@]}" python3 /src/scripts/native_application.py \
     --repo /src --desktop /usr/bin/garmin-desktop --cli /usr/bin/garminctl --state "$state" \
     --work "$work" --current "$current" --target "$target" "$@"
 }
@@ -91,8 +95,25 @@ if [[ -n $previous_package ]]; then
   check_version "$previous_version" rollback
   application_transition "$previous_version" "$version" restore-upgrade
   check_version "$version" restore-upgrade
+  cp /usr/bin/garminctl "$state/newer-cli"
   application_transition "$version" "$previous_version" restore-rollback --rollback --restore
   check_version "$previous_version" restore-rollback
+  # CI fault fixture only: model an incomplete pair, without killing an installer.
+  cp "$state/cache/garminctl/uploaded-4242.json" "$state/repair-ledger"
+  mv /usr/bin/garmin-desktop "$state/unavailable-desktop"
+  install -m 0755 "$state/newer-cli" /usr/bin/garminctl
+  application_transition "$version" "$previous_version" manual-repair --repair-export
+  repair_export=${evidence:-$state}/application-manual-repair/recovery-export.json
+  exported=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["path"])' "$repair_export")
+  repair_directory=$(mktemp -d)
+  cp "$exported" "$repair_directory/repair.$format"
+  cmp -s "$previous_package" "$repair_directory/repair.$format"
+  case $format in
+    deb) apt-get --yes --no-remove --reinstall install "$repair_directory/repair.deb" ;;
+    rpm) dnf --assumeyes reinstall "$repair_directory/repair.rpm" ;;
+  esac
+  cmp -s "$state/repair-ledger" "$state/cache/garminctl/uploaded-4242.json"
+  check_version "$previous_version" manual-repair
 else
   check_version "$version" current --native-ui
 fi

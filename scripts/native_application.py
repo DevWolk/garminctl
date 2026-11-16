@@ -205,6 +205,40 @@ def retain_diagnostics(cache, previous, work):
     (work / 'installer-observations.json').write_text(json.dumps(observations, indent=2))
 
 
+def export_repair_package(desktop, cli, state, work, current, target):
+    """The CI caller injects the file fault; this function only exports recovery."""
+    assert not desktop.exists(), 'The disposable repair fixture must have an unavailable GUI'
+    env = native_environment(state)
+    assert subprocess.check_output([str(cli), 'version'], text=True, timeout=10).strip() == 'garminctl ' + current
+    try:
+        subprocess.run([str(desktop)], env=env, capture_output=True, timeout=5, check=True)
+    except FileNotFoundError:
+        pass
+    else:
+        raise AssertionError('The missing-GUI fixture unexpectedly started')
+    cache = cache_directory(state)
+    ledger = (cache / LEDGER_NAME).read_bytes()
+    records = json.loads(subprocess.check_output([str(cli), '-json', 'application', 'recovery', 'list'],
+                                                 env=env, text=True, timeout=30))
+    assert records['verified'] is False, 'Recovery listing must remain unverified metadata'
+    selected = [row for row in records['packages'] if row['tag'] == target]
+    assert len(selected) == 1, 'Select exactly one retained package for the manual repair'
+    identifier = selected[0]['cacheId']
+    value = json.loads(subprocess.check_output([str(cli), '-json', 'application', 'recovery', 'export', identifier],
+                                               env=env, text=True, timeout=120))
+    assert value['verified'] and value['manualInstallationRequired'] and value['dataCompatibility'] == 'not_checked', value
+    assert value['package']['cacheId'] == identifier and value['package']['tag'] == target, value
+    package, signature = Path(value['path']), Path(value['signaturePath'])
+    assert package.resolve().is_relative_to(cache / 'application-recovery') and not package.is_symlink(), value
+    assert signature.parent == package.parent and not signature.is_symlink(), value
+    assert package.stat().st_size == value['package']['bytes'] and signature.stat().st_size == 384, value
+    assert (cache / LEDGER_NAME).read_bytes() == ledger, 'Read-only recovery export changed current data'
+    value.update(guiUnavailable=True, installedCLIVersion=current, selectedRepairVersion=target, deliveryLedgerPreserved=True)
+    work.mkdir(parents=True, exist_ok=True)
+    (work / 'recovery-export.json').write_text(json.dumps(value, indent=2))
+    return value
+
+
 def run_transition(desktop, cli, repo, state, work, current, target, rollback=False, restore=False):
     assert subprocess.check_output([str(cli), 'version'], text=True, timeout=10).strip() == 'garminctl ' + current
     work.mkdir(parents=True, exist_ok=True)
@@ -285,12 +319,18 @@ def main():
     parser.add_argument('--target', required=True)
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--restore', action='store_true', help='Exercise unknown-data refusal followed by explicit restore review')
+    parser.add_argument('--repair-export', action='store_true', help='Export a verified package while the disposable GUI fixture is unavailable')
     parser.add_argument('--catalog', type=Path)
     parser.add_argument('--assets', type=Path, action='append', default=[])
     args = parser.parse_args()
     assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Application OS acceptance runs only on disposable CI systems'
     assert not args.restore or args.rollback, 'Restore acceptance requires an explicit rollback'
     state, work = args.state.resolve(), args.work.resolve()
+    if args.repair_export:
+        assert not (args.rollback or args.restore or args.catalog), 'Recovery export starts no installation or restoration'
+        result = export_repair_package(args.desktop.resolve(), args.cli.resolve(), state, work, args.current, args.target)
+        print(json.dumps(result))
+        return
     cache = cache_directory(state)
     if args.catalog:
         assert not args.rollback, 'Do not reseed or repair retained packages during rollback'

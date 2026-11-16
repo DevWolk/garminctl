@@ -72,7 +72,7 @@ function Invoke-PackageCheck([string]$Expected, [string]$Phase, [bool]$NativeUI)
   if ($LASTEXITCODE -ne 0) { throw 'Installed native application/MCP check failed.' }
   if ([IO.File]::ReadAllText($sentinel) -ne 'preserve synthetic package state') { throw 'Native app changed the preservation sentinel.' }
 }
-function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string]$Phase, [bool]$Rollback, [switch]$Seed, [switch]$Restore) {
+function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string]$Phase, [bool]$Rollback, [switch]$Seed, [switch]$Restore, [switch]$RepairExport) {
   $work = Join-Path $state "application-$Phase"
   if ($evidence) { $work = Join-Path $evidence "application-$Phase" }
   $arguments = @((Join-Path $PSScriptRoot 'native_application.py'), '--repo', '.', '--state', $state,
@@ -84,6 +84,7 @@ function Invoke-ApplicationTransition([string]$Current, [string]$Target, [string
     $arguments += @('--catalog', $catalog, '--assets', (Split-Path $setupFile), '--assets', (Split-Path $previousFile))
   }
   if ($Restore) { $arguments += '--restore' }
+  if ($RepairExport) { $arguments += '--repair-export' }
   python @arguments
   if ($LASTEXITCODE -ne 0) { throw 'Application native transition failed; do not replay the installer.' }
 }
@@ -100,8 +101,27 @@ try {
     Invoke-PackageCheck $PreviousVersion 'rollback' $false
     Invoke-ApplicationTransition $PreviousVersion $Version 'restore-upgrade' $false
     Invoke-PackageCheck $Version 'restore-upgrade' $false
+    $newerCLI = Join-Path $state 'newer-cli.exe'
+    Copy-Item -LiteralPath (Join-Path $installed 'garminctl.exe') -Destination $newerCLI
     Invoke-ApplicationTransition $Version $PreviousVersion 'restore-rollback' $true -Restore
     Invoke-PackageCheck $PreviousVersion 'restore-rollback' $false
+    # Disposable fault fixture only; production never replaces managed files this way.
+    $ledger = Join-Path $state 'localappdata/garminctl/uploaded-4242.json'
+    $ledgerHash = (Get-FileHash -LiteralPath $ledger -Algorithm SHA256).Hash
+    Move-Item -LiteralPath (Join-Path $installed 'garmin-desktop.exe') -Destination (Join-Path $state 'unavailable-desktop.exe')
+    Copy-Item -LiteralPath $newerCLI -Destination (Join-Path $installed 'garminctl.exe') -Force
+    Invoke-ApplicationTransition $Version $PreviousVersion 'manual-repair' $false -RepairExport
+    $repairWork = Join-Path $state 'application-manual-repair'
+    if ($evidence) { $repairWork = Join-Path $evidence 'application-manual-repair' }
+    $repairExport = Get-Content -LiteralPath (Join-Path $repairWork 'recovery-export.json') -Raw | ConvertFrom-Json
+    $repairDirectory = Join-Path $state 'manual-repair-installer'
+    New-Item -ItemType Directory -Path $repairDirectory | Out-Null
+    $repairSetup = Join-Path $repairDirectory 'repair-setup.exe'
+    Copy-Item -LiteralPath $repairExport.path -Destination $repairSetup
+    if ((Get-FileHash -LiteralPath $repairSetup -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $previousFile -Algorithm SHA256).Hash) { throw 'Exported repair package differs from the signed reference.' }
+    Invoke-Setup $repairSetup "/S /D=$installed"
+    if ((Get-FileHash -LiteralPath $ledger -Algorithm SHA256).Hash -ne $ledgerHash) { throw 'Manual repair changed current delivery data.' }
+    Invoke-PackageCheck $PreviousVersion 'manual-repair' $false
   } else {
     Invoke-PackageCheck $Version 'current' $true
   }

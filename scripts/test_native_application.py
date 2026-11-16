@@ -41,6 +41,56 @@ class NativeApplicationTests(unittest.TestCase):
                 acceptance.seed_catalog(catalog, [assets], cache, ['v1.0.0-rc.1', 'v1.0.0'])
             self.assertEqual((saved / 'package-0.deb').read_bytes(), b'changed retained bytes')
 
+    def test_missing_gui_uses_the_installed_cli_for_verified_manual_repair_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / 'state'
+            cache = acceptance.cache_directory(state)
+            cache.mkdir(parents=True)
+            ledger = cache / acceptance.LEDGER_NAME
+            ledger.write_bytes(acceptance.LEDGER_EDITED)
+            exported = cache / 'application-recovery' / 'owned-export'
+            exported.mkdir(parents=True)
+            package, signature = exported / 'repair.deb', exported / 'repair.deb.sig'
+            package.write_bytes(b'repair fixture')
+            signature.write_bytes(bytes(384))
+            identifier = 'a' * 64
+            listing = {'verified': False, 'packages': [{'cacheId': identifier, 'tag': 'v1.0.0-rc.1'}]}
+            export = {'verified': True, 'manualInstallationRequired': True, 'dataCompatibility': 'not_checked',
+                      'package': {'cacheId': identifier, 'tag': 'v1.0.0-rc.1', 'bytes': len(b'repair fixture')},
+                      'path': str(package), 'signaturePath': str(signature)}
+            responses = ['garminctl v1.0.0\n', json.dumps(listing), json.dumps(export)]
+            with mock.patch.object(acceptance.subprocess, 'check_output', side_effect=responses) as command:
+                result = acceptance.export_repair_package(Path(directory) / 'missing-desktop', Path('/fixture/cli'), state,
+                                                           Path(directory) / 'evidence', 'v1.0.0', 'v1.0.0-rc.1')
+            self.assertTrue(result['guiUnavailable'])
+            self.assertEqual(result['installedCLIVersion'], 'v1.0.0')
+            self.assertEqual(result['selectedRepairVersion'], 'v1.0.0-rc.1')
+            self.assertTrue(result['manualInstallationRequired'])
+            self.assertEqual([call.args[0] for call in command.call_args_list], [
+                ['/fixture/cli', 'version'], ['/fixture/cli', '-json', 'application', 'recovery', 'list'],
+                ['/fixture/cli', '-json', 'application', 'recovery', 'export', identifier]])
+            self.assertEqual(command.call_args.kwargs['env']['XDG_CONFIG_HOME'], str(state / 'config'))
+            self.assertEqual(command.call_args.kwargs['env']['XDG_CACHE_HOME'], str(state / 'cache'))
+            self.assertEqual(ledger.read_bytes(), acceptance.LEDGER_EDITED)
+            self.assertTrue((Path(directory) / 'evidence/recovery-export.json').is_file())
+
+    def test_failed_manual_export_publishes_no_repair_authority_or_changes_to_live_data(self):
+        for failure in (False, subprocess.CalledProcessError(1, 'fixture export')):
+            with self.subTest(failure=str(failure)), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory)
+                cache = acceptance.cache_directory(state)
+                cache.mkdir(parents=True)
+                (cache / acceptance.LEDGER_NAME).write_bytes(acceptance.LEDGER_EDITED)
+                identifier = 'b' * 64
+                responses = ['garminctl v1.0.0\n', json.dumps({'verified': False, 'packages': [
+                    {'cacheId': identifier, 'tag': 'v1.0.0-rc.1'}]}), failure if failure else json.dumps({'verified': False})]
+                with mock.patch.object(acceptance.subprocess, 'check_output', side_effect=responses):
+                    with self.assertRaises((AssertionError, subprocess.CalledProcessError)):
+                        acceptance.export_repair_package(state / 'missing-desktop', Path('/fixture/cli'), state,
+                                                         state / 'evidence', 'v1.0.0', 'v1.0.0-rc.1')
+                self.assertFalse((state / 'evidence/recovery-export.json').exists())
+                self.assertEqual((cache / acceptance.LEDGER_NAME).read_bytes(), acceptance.LEDGER_EDITED)
+
     def test_compatible_rollback_requires_both_confirmation_steps(self):
         driver = mock.Mock()
         final = acceptance.confirm_transition(driver, 'v1.0.0-rc.1', True)
