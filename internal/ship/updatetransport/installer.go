@@ -284,11 +284,9 @@ func (p *PendingInstall) Close() error {
 
 		_ = p.output.Close()
 		if !attempted {
+			// CommandContext owns process termination; a second Kill can race it
+			// and return access denied for an already-terminated Windows process.
 			p.cancel()
-
-			if err := p.command.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-				p.closeErr = err
-			}
 		}
 
 		p.startReaper()
