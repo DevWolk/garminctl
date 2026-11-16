@@ -154,7 +154,8 @@ func appendDesktopBridge(body []byte, nonce string) ([]byte, error) {
 		if node.Type == html.ElementNode && node.DataAtom == atom.Body {
 			node.AppendChild(&html.Node{
 				Type: html.ElementNode, DataAtom: atom.Script, Data: "script",
-				Attr: []html.Attribute{{Key: "type", Val: "module"}, {Key: "src", Val: "/desktop.js"}, {Key: "nonce", Val: nonce}},
+				// The native bridge must not wait for a deferred third-party map script.
+				Attr: []html.Attribute{{Key: "type", Val: "module"}, {Key: "async"}, {Key: "src", Val: "/desktop.js"}, {Key: "nonce", Val: nonce}},
 			})
 
 			break

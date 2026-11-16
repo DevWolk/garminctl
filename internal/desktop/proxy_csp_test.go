@@ -17,6 +17,43 @@ import (
 // This header is an internal rendering contract, never a caller-selected nonce.
 const pageNonceHeader = "X-Garminctl-Page-Nonce"
 
+func TestNativeBridgeDoesNotWaitForDeferredScripts(t *testing.T) {
+	t.Parallel()
+
+	const nonce = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+	page, err := appendDesktopBridge([]byte(`<html><body><script defer src="/slow-map.js"></script></body></html>`), nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := html.Parse(strings.NewReader(string(page)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for node := range root.Descendants() {
+		if node.Type != html.ElementNode || node.Data != "script" {
+			continue
+		}
+
+		attrs := map[string]string{}
+		for _, attr := range node.Attr {
+			attrs[attr.Key] = attr.Val
+		}
+
+		if attrs["src"] == "/desktop.js" {
+			if _, async := attrs["async"]; !async || attrs["type"] != "module" || attrs["nonce"] != nonce {
+				t.Fatalf("native bridge must run independently of deferred CDN scripts and retain its module nonce: %v", attrs)
+			}
+
+			return
+		}
+	}
+
+	t.Fatal("native bridge missing")
+}
+
 func TestProxyNativeScriptPolicy(t *testing.T) {
 	t.Parallel()
 

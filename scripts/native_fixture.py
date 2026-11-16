@@ -35,6 +35,8 @@ class Commands:
         self.events = []
         self.errors = []
         self.changed = threading.Condition()
+        self.map_requested = threading.Event()
+        self.map_release = threading.Event()
 
     def send(self, action, **values):
         identifier = uuid.uuid4().hex
@@ -73,11 +75,20 @@ def fixture_proxy(upstream, commands):
             self.send_response(status)
             self.send_header('Content-Type', kind)
             self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             self.wfile.write(body)
 
         def do_GET(self):
-            if self.path == '/__native/probe.js':
+            if self.path == '/__native/map.js':
+                commands.events.append({'event': 'map-script-held'})
+                commands.map_requested.set()
+                if not commands.map_release.wait(timeout=60):
+                    self.reply(504, {'error': 'Native bridge waited for the deferred map script'})
+                    return
+                commands.events.append({'event': 'map-script-released'})
+                self.reply(200, b'', 'text/javascript')
+            elif self.path == '/__native/probe.js':
                 commands.events.append({'event': 'probe-script-request'})
                 self.reply(200, Path(__file__).with_name('native-acceptance.js').read_bytes(), 'text/javascript')
             elif self.path == '/__native/next':
@@ -170,6 +181,9 @@ def fixture_proxy(upstream, commands):
                         self.wfile.flush()
                     return
                 data = response.read()
+                if kind.startswith('text/html'):
+                    data = data.replace(b'src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"',
+                                        b'src="/__native/map.js"')
                 if self.path == '/app.js' and kind.startswith(('text/javascript', 'application/javascript')):
                     data += PROBE_LOADER
                 self.send_response(response.status)
@@ -190,6 +204,7 @@ def fixture_proxy(upstream, commands):
     try:
         yield server.server_port
     finally:
+        commands.map_release.set()
         server.shutdown()
         server.server_close()
         worker.join(timeout=5)
