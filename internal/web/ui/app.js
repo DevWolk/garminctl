@@ -989,13 +989,15 @@ $('#prg-file').addEventListener('change', async () => {
 // ---------- health & activities ----------
 state.health = { days: 14, daily: null, acts: null, selDay: null, selAct: null, loadedDays: 0 };
 function svgChart(w, h, inner) { return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${inner}</svg>`; }
+// Fields the source could not provide read zero; they are not measurements.
+const lacks = (row, key) => (row.unavailable || []).includes(key);
 function barChart(rows, key, opts) {
   const W = 400, H = 120, pad = 18, n = rows.length, bw = (W - pad) / n;
   const max = Math.max(opts.max || 0, ...rows.map((r) => r[key] || 0)) || 1;
   let g = '';
   rows.forEach((r, i) => {
     const v = r[key] || 0, bh = v / max * (H - pad - 4);
-    g += `<rect class="bar${state.health.selDay === r.date ? ' sel' : ''}" data-date="${r.date}" x="${(pad + i * bw + 1).toFixed(1)}" y="${(H - pad - bh).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${bh.toFixed(1)}"><title>${r.date}: ${v}${opts.unit || ''}</title></rect>`;
+    if (!lacks(r, key)) g += `<rect class="bar${state.health.selDay === r.date ? ' sel' : ''}" data-date="${r.date}" x="${(pad + i * bw + 1).toFixed(1)}" y="${(H - pad - bh).toFixed(1)}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${bh.toFixed(1)}"><title>${r.date}: ${v}${opts.unit || ''}</title></rect>`;
     if (i % Math.ceil(n / 7) === 0) g += `<text class="lbl" x="${(pad + i * bw + bw / 2).toFixed(1)}" y="${H - 5}" text-anchor="middle">${r.date.slice(5)}</text>`;
   });
   if (opts.goal) { const y = H - pad - opts.goal / max * (H - pad - 4); g += `<line class="goal" x1="${pad}" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }
@@ -1046,12 +1048,13 @@ function renderDaily() {
   if (!rows.length) { $('#health-charts').innerHTML = '<p class="muted">No health data available for these days.</p>'; return; }
   const goal = rows[rows.length - 1].stepGoal;
   const last = rows[rows.length - 1];
+  const latest = (keys, text) => keys.some((k) => lacks(last, k)) ? 'no data' : text;
   $('#health-charts').innerHTML = `
-    <div class="chart"><h3>Steps · today ${last.steps.toLocaleString()} of ${goal.toLocaleString()}</h3>${barChart(rows, 'steps', { goal, max: goal })}</div>
-    <div class="chart"><h3>Resting heart rate · ${last.restingHr} bpm</h3>${lineChart(rows, ['restingHr'], { unit: '' })}</div>
-    <div class="chart"><h3>Sleep · ${fmtDur(last.sleepSec)} last night</h3>${barChart(rows.map((r) => ({ date: r.date, h: Math.round(r.sleepSec / 360) / 10 })), 'h', { unit: 'h', max: 9 })}</div>
-    <div class="chart"><h3>Stress (avg) · ${last.avgStress}</h3>${barChart(rows, 'avgStress', { max: 100 })}</div>
-    <div class="chart"><h3>Body battery · ${last.bodyBatteryLow}–${last.bodyBatteryHigh}</h3>${lineChart(rows, ['bodyBatteryHigh', 'bodyBatteryLow'], { zero: true })}</div>
+    <div class="chart"><h3>Steps · ${latest(['steps'], `today ${last.steps.toLocaleString()} of ${goal.toLocaleString()}`)}</h3>${barChart(rows, 'steps', { goal, max: goal })}</div>
+    <div class="chart"><h3>Resting heart rate · ${latest(['restingHr'], `${last.restingHr} bpm`)}</h3>${lineChart(rows, ['restingHr'], { unit: '' })}</div>
+    <div class="chart"><h3>Sleep · ${latest(['sleepSec'], `${fmtDur(last.sleepSec)} last night`)}</h3>${barChart(rows.map((r) => ({ date: r.date, h: Math.round(r.sleepSec / 360) / 10, unavailable: lacks(r, 'sleepSec') ? ['h'] : [] })), 'h', { unit: 'h', max: 9 })}</div>
+    <div class="chart"><h3>Stress (avg) · ${latest(['avgStress'], last.avgStress)}</h3>${barChart(rows, 'avgStress', { max: 100 })}</div>
+    <div class="chart"><h3>Body battery · ${latest(['bodyBatteryLow', 'bodyBatteryHigh'], `${last.bodyBatteryLow}–${last.bodyBatteryHigh}`)}</h3>${lineChart(rows, ['bodyBatteryHigh', 'bodyBatteryLow'], { zero: true })}</div>
     ${rows.some((r) => r.calories) ? `<div class="chart"><h3>Calories · ${last.calories} kcal</h3>${barChart(rows, 'calories', {})}</div>` : ''}`;
   document.querySelectorAll('#health-charts .bar').forEach((b) => { b.onclick = () => showDay(b.dataset.date); });
 }
@@ -1610,6 +1613,7 @@ $('#btn-sync').onclick = async () => {
   try {
     await api('POST', '/api/cloud/sync', { upload: $('#sync-upload').checked, download: $('#sync-download').checked });
     $('#sync-log').innerHTML = '';
+    delete $('#sync-log').dataset.lines;
     pollSync();
   } catch (e) { toast(e.message, 'bad'); }
 };
@@ -1618,8 +1622,15 @@ async function pollSync() {
   let j;
   try { j = await api('GET', '/api/cloud/sync'); } catch (e) { return; }
   const log = $('#sync-log');
-  if (j.log && j.log.length !== log.children.length) {
-    log.innerHTML = j.log.map((l) => `<li class="${/: uploaded|->/.test(l) ? 'ok' : /failed|error|: .*\(.*\)$/.test(l) && !/duplicate/.test(l) ? 'bad' : ''}">${esc(l)}</li>`).join('');
+  const lines = j.log || [];
+  if (String(lines.length) !== log.dataset.lines) {
+    // Files Garmin already has are routine: one count keeps the other lines readable.
+    const duplicates = lines.filter((l) => /: duplicate/.test(l)).length;
+    const rows = lines.filter((l) => !/: duplicate/.test(l))
+      .map((l) => `<li class="${/: uploaded|->/.test(l) ? 'ok' : /failed|error|: .*\(.*\)$/.test(l) ? 'bad' : ''}">${esc(l)}</li>`);
+    if (duplicates) rows.push(`<li>${duplicates} file${duplicates === 1 ? '' : 's'} already in Garmin Connect</li>`);
+    log.innerHTML = rows.join('');
+    log.dataset.lines = String(lines.length);
     log.scrollTop = log.scrollHeight;
   }
   $('#btn-sync').disabled = !!j.running;

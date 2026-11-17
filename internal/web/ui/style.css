@@ -362,7 +362,8 @@ table.files td.chk { width: 28px; }
 .form { display: flex; flex-direction: column; gap: 12px; }
 .form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--fg-2); font-weight: 600; }
 .form input { width: 100%; }
-.log li { display: block; font-size: 12.5px; color: var(--fg-2); padding: 5px 0; font-family: var(--mono); overflow-wrap: anywhere; }
+#sync-log { max-height: 20rem; overflow-y: auto; overscroll-behavior: contain; }
+.log li { display: block; flex: none; font-size: 12.5px; color: var(--fg-2); padding: 5px 0; font-family: var(--mono); overflow-wrap: anywhere; }
 .log li.ok { color: var(--good); }
 .log li.bad { color: var(--bad); }
 
