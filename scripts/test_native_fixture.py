@@ -5,8 +5,10 @@ import ctypes
 import http.client
 import json
 from pathlib import Path
+import socket
 import threading
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 
@@ -128,6 +130,21 @@ class NativeFixtureTests(unittest.TestCase):
                 commands.call('edit')
             thread.join(timeout=5)
             self.assertFalse(thread.is_alive())
+
+    def test_proxy_backlog_holds_a_page_load_burst(self):
+        backlogs = []
+        listen = socket.socket.listen
+
+        def record(listener, backlog):
+            backlogs.append(backlog)
+            return listen(listener, backlog)
+
+        with mock.patch.object(socket.socket, 'listen', record), fixture_proxy(1, Commands()):
+            pass
+        # A page opens one connection per resource at once. The Python default of
+        # five refuses the excess on Windows, where Go dials loopback without retry.
+        self.assertEqual(len(backlogs), 1)
+        self.assertGreaterEqual(backlogs[0], 64)
 
     def test_missing_receipt_is_a_failure(self):
         commands = Commands()

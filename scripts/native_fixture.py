@@ -32,6 +32,12 @@ PROBE_LOADER = b'''
 '''
 
 
+class FixtureServer(ThreadingHTTPServer):
+    # A page opens one connection per resource at once. Go dials loopback without
+    # SYN retransmission on Windows, so the excess over the backlog is refused.
+    request_queue_size = 128
+
+
 class Commands:
     def __init__(self):
         self.pending = queue.Queue()
@@ -191,7 +197,7 @@ def fixture_proxy(upstream, commands):
             finally:
                 connection.close()
 
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server = FixtureServer(('127.0.0.1', 0), Handler)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     try:
