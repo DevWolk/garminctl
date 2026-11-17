@@ -16,7 +16,8 @@ func TestHideConsoleKeepsPipes(t *testing.T) {
 		t.Skip("Windows PowerShell is unavailable")
 	}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	// Add-Type starts the C# compiler, which takes far longer on a loaded runner.
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
 	const script = `
