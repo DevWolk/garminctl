@@ -25,7 +25,11 @@ type fakeWindowHost struct {
 
 	replace      bool
 	replaceAsked []string
+
+	reveals int
 }
+
+func (h *fakeWindowHost) Reveal() { h.reveals++ }
 
 func (h *fakeWindowHost) Emit(action string) { h.actions = append(h.actions, action) }
 func (h *fakeWindowHost) Quit() {
@@ -329,5 +333,25 @@ func TestWindowDownloadDialogKeepsExportBoundaryAndCancellation(t *testing.T) {
 	host.dialogErr = errors.New("synthetic dialog failure")
 	if err := app.Download("/api/decode?path=GARMIN/test.fit", "export.json"); !errors.Is(err, host.dialogErr) {
 		t.Fatalf("dialog error=%v", err)
+	}
+}
+
+// A program that starts the desktop with a hidden-window request makes Windows
+// ignore the window's first show, so the loaded page asks for it again.
+func TestWindowIsRevealedEachTimeThePageBecomesReady(t *testing.T) {
+	t.Parallel()
+
+	host := new(fakeWindowHost)
+	app := &App{host: host}
+
+	if host.reveals != 0 {
+		t.Fatal("the window was revealed before its page loaded")
+	}
+
+	app.Ready()
+	app.Ready()
+
+	if host.reveals != 2 {
+		t.Fatalf("reveals after two page loads = %d, want 2", host.reveals)
 	}
 }
