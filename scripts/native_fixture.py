@@ -16,6 +16,11 @@ import uuid
 PROBE_LOADER = b'''
 ;(() => {
   const reportNativeError = message => fetch('/__native/error', {method:'POST',body:JSON.stringify({message})});
+  const trace = event => fetch('/__native/trace', {method:'POST',body:JSON.stringify({event,
+    url:location.href, readyState:document.readyState, runtime:!!window._wails,
+    clipboard:!!window.runtime?.ClipboardSetText})});
+  trace('loader-start');
+  addEventListener('load', () => trace('window-load'), {once:true});
   addEventListener('error', event => {
     if ((event.filename || event.target?.src || '').includes('/__native/probe.js')) reportNativeError(event.message || 'Native probe failed to load');
   }, true);
@@ -89,7 +94,7 @@ def fixture_proxy(upstream, commands):
                 self.forward()
 
         def do_POST(self):
-            if self.path in ('/__native/ready', '/__native/result', '/__native/error'):
+            if self.path in ('/__native/ready', '/__native/result', '/__native/error', '/__native/trace'):
                 commands.events.append({'event': 'body-framing', 'path': self.path,
                                         'transfer': self.headers.get('Transfer-Encoding'),
                                         'length': self.headers.get('Content-Length')})
@@ -100,7 +105,9 @@ def fixture_proxy(upstream, commands):
                     self.reply(400, {'error': str(error)})
                     return
                 with commands.changed:
-                    if self.path == '/__native/error':
+                    if self.path == '/__native/trace':
+                        commands.events.append({'event': 'page-trace', **result})
+                    elif self.path == '/__native/error':
                         commands.errors.append(result)
                         commands.events.append({'event': 'page-error', **result})
                     elif self.path == '/__native/ready':

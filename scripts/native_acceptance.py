@@ -73,12 +73,17 @@ def run_native_window(suite, scenario, desktop, dump, env, work, upstream, resul
     commands = Commands()
     log_path = work / ('native-runtime.log' if suite == 'runtime' else 'native-acceptance.log')
     app = None
+    state = work / ('native-' + suite)
+    window_env = dict(env, XDG_CONFIG_HOME=str(state / 'config'), XDG_CACHE_HOME=str(state / 'cache'),
+                      APPDATA=str(state / 'appdata'), LOCALAPPDATA=str(state / 'localappdata'))
     try:
         with fixture_proxy(upstream, commands) as port:
             with log_path.open('wb') as log:
                 app = subprocess.Popen([
                     str(desktop), '-root', str(dump), '-addr', f'127.0.0.1:{port}',
-                ], stdout=log, stderr=log, env=env, start_new_session=os.name != 'nt')
+                ], stdout=log, stderr=log, env=window_env, start_new_session=os.name != 'nt')
+            commands.events.append({'event': 'window-start', 'pid': app.pid, 'proxy': port,
+                                    'upstream': upstream, 'state': str(state)})
             def page_ready():
                 if commands.errors:
                     raise AssertionError(commands.errors[-1])

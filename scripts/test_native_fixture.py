@@ -105,6 +105,8 @@ class NativeFixtureTests(unittest.TestCase):
                     return response.status, json.loads(body) if body else None
 
             self.assertEqual(request('/__native/next'), (204, None))
+            request('/__native/trace', {'event': 'loader-start', 'readyState': 'interactive'})
+            self.assertEqual(commands.events[-1], {'event': 'loader-start', 'readyState': 'interactive'})
             request('/__native/ready', {'boot': 'first-page'})
             self.assertEqual(commands.wait(lambda: commands.boots[0]), 'first-page')
             identifier = commands.send('snapshot')
