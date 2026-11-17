@@ -79,7 +79,7 @@ func (s *Stager) verifyRetained(ctx context.Context, target MatchRequest, releas
 		input := filepath.Join(operation, verifyInput)
 		if err := os.Mkdir(input, 0o700); err != nil {
 			return err
-		} // #nosec G703 -- child of our newly created private operation.
+		}
 
 		if err := hostfile.Protect(input, true); err != nil {
 			return err

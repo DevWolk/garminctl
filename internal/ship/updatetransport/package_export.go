@@ -67,7 +67,7 @@ func (c *PackageCache) Export(ctx context.Context, id, directory string, progres
 
 	if err := os.Rename(pending, final); err != nil {
 		return nil, err
-	} // #nosec G703 -- generated siblings under the trusted private recovery directory.
+	}
 
 	return &ExportedPackage{Entry: manifest.CachedPackage, Directory: final, Path: filepath.Join(final, manifest.Release.Package.Name), SignaturePath: filepath.Join(final, manifest.Release.Signature.Name)}, nil
 }
@@ -92,7 +92,7 @@ func (c *PackageCache) exportDirectory(directory string) (string, error) {
 func preparePackageExport(directory string) (string, string, error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", "", err
-	} // #nosec G703 -- directory supplied only by local composition.
+	}
 
 	if err := hostfile.Protect(directory, true); err != nil {
 		return "", "", err
