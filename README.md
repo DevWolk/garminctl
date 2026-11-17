@@ -1,5 +1,10 @@
 # garminctl
 
+[![Release](https://img.shields.io/github/v/release/DevWolk/garminctl)](https://github.com/DevWolk/garminctl/releases/latest)
+[![Tests](https://github.com/DevWolk/garminctl/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/DevWolk/garminctl/actions/workflows/test.yml)
+[![License](https://img.shields.io/github/license/DevWolk/garminctl)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/DevWolk/garminctl)](go.mod)
+
 Manage a Garmin watch over USB through a CLI, native desktop app, local web UI,
 or MCP server. Browse files, edit settings, manage apps and workouts, and sync
 recordings with Garmin Connect.
