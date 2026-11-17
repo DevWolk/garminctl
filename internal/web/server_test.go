@@ -513,6 +513,16 @@ func TestServer_UIRoutes(t *testing.T) {
 		{"/files/GARMIN/Activity/run.fit?view=decode", http.StatusOK, true},
 		{"/store?q=solar", http.StatusOK, true},
 		{"/app.js", http.StatusOK, false},
+		{"/vendor/fonts.css", http.StatusOK, false},
+		{"/vendor/fonts/Manrope.ttf", http.StatusOK, false},
+		{"/vendor/fonts/JetBrainsMono.ttf", http.StatusOK, false},
+		{"/vendor/leaflet/leaflet.css", http.StatusOK, false},
+		{"/vendor/leaflet/leaflet.js", http.StatusOK, false},
+		{"/vendor/leaflet/images/layers.png", http.StatusOK, false},
+		{"/vendor/leaflet/images/layers-2x.png", http.StatusOK, false},
+		{"/vendor/leaflet/images/marker-icon.png", http.StatusOK, false},
+		{"/vendor/leaflet/images/marker-icon-2x.png", http.StatusOK, false},
+		{"/vendor/leaflet/images/marker-shadow.png", http.StatusOK, false},
 		{"/nope/EASY+", http.StatusNotFound, false},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

@@ -134,6 +134,10 @@ class NativeAcceptanceTests(unittest.TestCase):
             self.assertIsNot(runtime.call_args.args[0], ui.call_args.args[0], 'Suites shared a command channel')
             self.assertIsNot(runtime.call_args.args[2], ui.call_args.args[2], 'Suites shared a native window')
             self.assertEqual(len(processes), 3, 'Expected one reused backend and two isolated windows')
+            environments = [call.kwargs['env'] for call in native_acceptance.subprocess.Popen.call_args_list]
+            for key in ('APPDATA', 'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME'):
+                self.assertNotEqual(environments[1][key], environments[2][key],
+                                    'Independent native suites reused the same browser profile')
             self.assertCountEqual([call.args[0] for call in stop.call_args_list], processes)
             receipt = json.loads((work / 'evidence/native-acceptance.json').read_text())
             self.assertEqual(receipt['status'], 'failed')
