@@ -28,6 +28,10 @@ jobs:
       - name: Require tagged commit to be merged into main
         if: github.event_name == 'push'
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      # Manual builds are signed with the release certificate as well.
+      - name: Require manual builds to run from main
+        if: github.event_name == 'workflow_dispatch'
+        run: test "$GITHUB_REF" = refs/heads/main
 
   packages:
     name: Verify release packages
@@ -67,4 +71,6 @@ jobs:
           cd dist/assets
           sha256sum --check checksums.txt
           bash "$GITHUB_WORKSPACE/scripts/sign-update-packages.sh" verify "$GITHUB_WORKSPACE/dist/assets"
-          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG" ./*
+          prerelease=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG" "${prerelease[@]}" ./*

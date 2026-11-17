@@ -5,6 +5,8 @@ APPLICATION_UPDATE_PUBLIC_KEY := $(strip $(file <build/update-public-key.b64))
 export APPLICATION_UPDATE_PUBLIC_KEY
 LDFLAGS := -X main.version=$(VERSION) -X main.updatePublicKey=$(APPLICATION_UPDATE_PUBLIC_KEY)
 DESKTOP_TAGS := desktop,production,gtk3
+GATE_TAGS := $(DESKTOP_TAGS),integration
+WINDOWS_TAGS := desktop,production
 export WINDOWS_SIGNING_MODE ?= none
 export WINDOWS_SIGNING_DIR
 export WINDOWS_SIGNING_PFX_BASE64

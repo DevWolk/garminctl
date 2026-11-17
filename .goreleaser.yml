@@ -21,7 +21,8 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
+      # Same string as the Make-built package binaries, which keep the tag's v.
+      - -X main.version={{ .Env.PACKAGE_VERSION }}
       - -X main.updatePublicKey={{ .Env.APPLICATION_UPDATE_PUBLIC_KEY }}
     hooks:
       post:
@@ -36,7 +37,6 @@ archives:
     files:
       - README.md
       - LICENSE
-      - docs/*
 
 checksum:
   name_template: checksums.txt
