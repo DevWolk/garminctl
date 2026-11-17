@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -88,7 +87,7 @@ func (s *Stager) run(ctx context.Context, target MatchRequest, release ResolvedR
 	}
 	defer func() {
 		if result == nil {
-			err = errors.Join(err, os.RemoveAll(directory))
+			err = errors.Join(err, removeOperation(directory))
 		}
 	}()
 
@@ -189,7 +188,7 @@ func (p *StagedPackage) Release() ResolvedRelease { return p.release }
 
 // Close removes only this completed operation, after its child has been joined.
 func (p *StagedPackage) Close() error {
-	p.once.Do(func() { p.closeErr = os.RemoveAll(p.directory) })
+	p.once.Do(func() { p.closeErr = removeOperation(p.directory) })
 	return p.closeErr
 }
 

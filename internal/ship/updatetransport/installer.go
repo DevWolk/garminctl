@@ -93,7 +93,7 @@ func (i *Installer) prepare(ctx context.Context, target MatchRequest, payload *S
 
 	defer func() {
 		if result == nil {
-			err = errors.Join(err, os.RemoveAll(directory))
+			err = errors.Join(err, removeOperation(directory))
 		}
 	}()
 
@@ -304,7 +304,7 @@ func (p *PendingInstall) Close() error {
 		if !attempted {
 			<-p.done // A killed uncommitted helper has an expected nonzero process exit.
 			p.diagnostics = p.readDiagnostics()
-			p.closeErr = errors.Join(p.closeErr, os.RemoveAll(p.directory))
+			p.closeErr = errors.Join(p.closeErr, removeOperation(p.directory))
 		}
 	})
 
