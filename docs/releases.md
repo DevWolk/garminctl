@@ -15,7 +15,13 @@ make package VERSION=v1.2.3
 ```
 
 [`package-windows.sh`](../scripts/package-windows.sh) creates an amd64 Setup
-with the CLI, desktop app and WebView2 bootstrapper.
+with the CLI, desktop app and WebView2 bootstrapper. It downloads the
+bootstrapper from Microsoft and packages it only when its Authenticode
+signature chains to the Microsoft root in `build/windows` and names Microsoft
+Corporation; the check fetches Microsoft's revocation list, so the first
+build after a download needs internet access. When the signing certificate
+has expired, it is checked at the time the file's countersignature states;
+the build tool cannot verify that time.
 [`package-linux.sh`](../scripts/package-linux.sh) creates amd64 DEB/RPM
 packages with the desktop app, native libusb CLI and udev rule.
 The outputs go to `dist/`; builds without `VERSION` use `git describe`, which
@@ -61,7 +67,8 @@ WINDOWS_SIGNING_MODE := certificate
 Use `WINDOWS_SIGNING_DIR` to select another container-visible directory. The
 signer sets directory permissions to 700 and private-file permissions to 600.
 It retains local signing material for reuse. Optional `WINDOWS_TIMESTAMP_URL`
-adds an RFC 3161 timestamp request.
+adds an RFC 3161 timestamp request; signed CI builds set it, and signing fails
+when the timestamp service does not answer.
 
 For CI, set the Actions variable `WINDOWS_SIGNING_MODE` to `certificate` and
 configure these Actions secrets:
@@ -99,7 +106,8 @@ git push origin "$release_version"
 The workflow requires a version matching `v?major.minor.patch` with an optional
 prerelease suffix. The tag trigger requires the `v` prefix. It then:
 
-1. Requires the tagged commit to be an ancestor of `origin/main`.
+1. Requires the tagged commit to be the tip of `origin/main`. A tag on an
+   older commit is refused, and so is a rerun after `main` has moved.
 2. Builds the toolchain, runs `make check`, builds installers and runs
    GoReleaser with `--skip=publish`.
 3. Assembles `dist/assets/`, calculates `checksums.txt` after signing, and
@@ -110,6 +118,6 @@ prerelease suffix. The tag trigger requires the `v` prefix. It then:
 5. After those jobs pass, verifies the checksums and publishes those assets
    with `gh release create`. Only this job has `contents: write`.
 
-A manual Release run uses the package pipeline in snapshot mode and skips
-publication. Fixture checks cover installed-app behavior; physical USB
+A manual Release run is accepted from `main` only; it uses the package
+pipeline in snapshot mode and skips publication. Fixture checks cover installed-app behavior; physical USB
 compatibility requires a separate hardware check.
