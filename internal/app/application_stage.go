@@ -22,6 +22,9 @@ const ApplicationVerifyCommand = updatetransport.VerifyCommand
 // ApplicationInstallCommand is the native-confirmed cached executor entry.
 const ApplicationInstallCommand = updatetransport.InstallCommand
 
+// ApplicationPackageCommand is the installed CLI's privileged DEB/RPM step.
+const ApplicationPackageCommand = updatetransport.PackageCommand
+
 // NewApplicationPackageCache retains packages separately from stage operations.
 // Both factories require the same compiled key and create no watch runtime.
 func NewApplicationPackageCache(cliPath, version, compiledKey string) (*updatetransport.PackageCache, error) {
@@ -95,13 +98,27 @@ func applicationStageKey(encoded string) ([]byte, error) {
 }
 
 func validateApplicationStageLocation(cache, directory string) error {
+	refusal := errors.New("application worker must run from a private cached CLI operation")
+
+	// The executable's directory is reported resolved, while the cache may be
+	// named through a linked home or cache directory; compare the real paths.
+	cache, err := filepath.EvalSymlinks(cache)
+	if err != nil {
+		return refusal
+	}
+
+	directory, err = filepath.EvalSymlinks(directory)
+	if err != nil {
+		return refusal
+	}
+
 	relative, err := filepath.Rel(cache, directory)
 	if err != nil {
 		return err
 	}
 
 	if filepath.Dir(relative) != "." || !strings.HasPrefix(relative, "stage-") || relative == "stage-" {
-		return errors.New("application worker must run from a private cached CLI operation")
+		return refusal
 	}
 
 	return nil

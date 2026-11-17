@@ -19,6 +19,12 @@ type Installer interface {
 // UpdateHost exits only after the service has released its window operation.
 type UpdateHost interface{ ExitForUpdate() }
 
+// InstallationRecords reads what the installer helper recorded after the
+// application last closed for an update.
+type InstallationRecords interface {
+	LastInstallation(context.Context) (*application.InstallationOutcome, error)
+}
+
 // InstallationState describes one attempt; acceptance never proves OS installation.
 type InstallationState struct {
 	Kind          string                            `json:"kind,omitempty"`
@@ -32,6 +38,8 @@ type InstallationState struct {
 	StopRequested bool                              `json:"stopRequested"`
 	Result        *application.InstallHandoffResult `json:"result,omitempty"`
 	Error         string                            `json:"error,omitempty"`
+	// LastResult is set while idle when the previous installation did not complete.
+	LastResult string `json:"lastResult,omitempty"`
 }
 
 type installationOperation struct {
@@ -136,16 +144,37 @@ func (s *Service) finishAndExit(ctx context.Context, release func(), host Update
 
 // InstallationStatus resumes observation after page reload without starting work.
 func (s *Service) InstallationStatus() (*InstallationState, error) {
-	return invokeRead(s, func(context.Context, Reader) (*InstallationState, error) {
+	return invokeRead(s, func(ctx context.Context, reader Reader) (*InstallationState, error) {
 		s.operationMu.Lock()
 		defer s.operationMu.Unlock()
 
 		if s.installation == nil {
-			return &InstallationState{Phase: "idle"}, nil
+			return &InstallationState{Phase: "idle", LastResult: lastIncompleteInstallation(ctx, reader)}, nil
 		}
 
 		return cloneInstallationState(s.installation.state), nil
 	})
+}
+
+// lastIncompleteInstallation is the only place a failure after handoff reaches
+// the user: the application had already closed when the helper recorded it.
+func lastIncompleteInstallation(ctx context.Context, reader Reader) string {
+	records, ok := reader.(InstallationRecords)
+	if !ok {
+		return ""
+	}
+
+	outcome, err := records.LastInstallation(ctx)
+	if err != nil {
+		slog.Warn("the last installation result cannot be read", "error", err)
+		return ""
+	}
+
+	if outcome == nil || !outcome.Incomplete() {
+		return ""
+	}
+
+	return outcome.Summary()
 }
 
 // CancelInstallation cancels only preparation and retains admission until cleanup joins.
@@ -209,11 +238,16 @@ func (s *Service) finishInstallation(ctx context.Context, op *installationOperat
 	}
 
 	op.state.Phase = "failed"
-	if errors.Is(ctx.Err(), context.Canceled) {
+
+	switch {
+	case errors.Is(ctx.Err(), context.Canceled):
 		op.state.Phase = "canceled"
-	} else if failure := errors.Join(err, ctx.Err()); failure != nil {
-		op.state.Error = failure.Error()
-	} else {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		// Every layer below reports the same expired deadline; say it once.
+		op.state.Error = "The operation ran out of time before the installer was started; nothing was installed."
+	case err != nil:
+		op.state.Error = err.Error()
+	default:
 		op.state.Error = "Installation returned no accepted handoff."
 	}
 

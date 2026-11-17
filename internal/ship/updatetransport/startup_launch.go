@@ -9,8 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/DevWolk/garminctl/internal/hostexec"
 )
 
 func startInstalledDesktop(ctx context.Context, options InstallOptions, tag, directory string, probe func(context.Context, string, string) error) error {
@@ -30,17 +28,7 @@ func startInstalledDesktop(ctx context.Context, options InstallOptions, tag, dir
 		return err
 	}
 
-	command := exec.Command(options.Desktop, options.Args...) //nolint:gosec,noctx // Observed native path/arguments; the restarted app must survive the bounded monitor and is never killed for a readiness failure.
-	command.Dir = filepath.Dir(options.Desktop)
-
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, StartupEnvironment+"=") {
-			command.Env = append(command.Env, entry)
-		}
-	}
-
-	command.Env = append(command.Env, StartupEnvironment+"="+string(encoded))
-	hostexec.HideConsole(command)
+	command := desktopCommand(options, string(encoded))
 
 	if err := ctx.Err(); err != nil {
 		return err
@@ -60,6 +48,35 @@ func startInstalledDesktop(ctx context.Context, options InstallOptions, tag, dir
 	}
 
 	return checkStartupServices(ctx, report, tag, probe)
+}
+
+// desktopCommand starts the window as the user would. It carries no console
+// hiding: a hidden-window start request applies to the first window a
+// graphical program shows and would leave the restarted application invisible.
+func desktopCommand(options InstallOptions, ticket string) *exec.Cmd {
+	command := exec.Command(options.Desktop, options.Args...) //nolint:gosec,noctx // Observed native path/arguments; the restarted app must survive the bounded monitor and is never killed for a readiness failure.
+	command.Dir = restartDirectory(options)
+
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, StartupEnvironment+"=") {
+			command.Env = append(command.Env, entry)
+		}
+	}
+
+	command.Env = append(command.Env, StartupEnvironment+"="+ticket)
+
+	return command
+}
+
+// restartDirectory keeps relative restart arguments pointing where they did
+// before the update. Without a usable directory the installation directory
+// replaces the helper's own, which is the operation directory.
+func restartDirectory(options InstallOptions) string {
+	if info, err := os.Stat(options.Dir); options.Dir != "" && err == nil && info.IsDir() {
+		return options.Dir
+	}
+
+	return filepath.Dir(options.Desktop)
 }
 
 func newStartupTicket(root *os.Root, directory string) (startupTicket, error) {

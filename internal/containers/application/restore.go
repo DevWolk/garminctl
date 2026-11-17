@@ -33,7 +33,8 @@ type DataRestoreView struct {
 	Changes          []RestoreChange `json:"changes"`
 }
 
-// DataRestoreResult preserves an attempted operation even when it fails.
+// DataRestoreResult preserves the effect of a restore even when it fails.
+// Attempted stays false while no live file was replaced or removed.
 type DataRestoreResult struct {
 	TargetSnapshotID string `json:"targetSnapshotId"`
 	SafetySnapshotID string `json:"safetySnapshotId"`
@@ -168,16 +169,18 @@ func (a *RestoreDataAction) Run(ctx context.Context, plan *DataRestorePlan, cons
 }
 
 func (a *RestoreDataAction) restore(ctx context.Context, plan *DataRestorePlan) (*DataRestoreResult, error) {
-	result := &DataRestoreResult{TargetSnapshotID: plan.backup.ID, SafetySnapshotID: plan.safety.ID, Attempted: true}
+	result := &DataRestoreResult{TargetSnapshotID: plan.backup.ID, SafetySnapshotID: plan.safety.ID}
 
 	effect, err := a.store.Restore(ctx, plan.backup, plan.safety)
 	if effect != nil {
 		result.Replaced, result.Removed = effect.Replaced, effect.Removed
+		result.Attempted = effect.Attempted || effect.Replaced != 0 || effect.Removed != 0
 
 		result.Completed = effect.Completed && err == nil
 		if effect.TargetSnapshotID != result.TargetSnapshotID || effect.SafetySnapshotID != result.SafetySnapshotID || effect.Replaced < 0 || effect.Removed < 0 || effect.Replaced+effect.Removed > len(plan.view.Changes) {
 			err = errors.Join(err, errors.New("restore returned an invalid effect receipt"))
-			result.Completed = false
+			// A receipt that cannot be trusted does not prove the data is untouched.
+			result.Attempted, result.Completed = true, false
 		}
 	}
 

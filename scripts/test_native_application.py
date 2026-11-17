@@ -328,7 +328,7 @@ let rule;
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
   polkit: {Result: {YES: 'yes'}, addRule: value => {rule = value;}}
 });
-for (const program of ['/usr/bin/apt-get', '/usr/bin/dnf']) {
+for (const program of ['/usr/bin/garminctl', '/usr/bin/apt-get', '/usr/bin/dnf']) {
   assert.equal(rule({id:'org.freedesktop.policykit.exec', lookup:()=>program}, {user:'garmin-smoke'}), 'yes');
   assert.equal(rule({id:'org.freedesktop.policykit.exec', lookup:()=>program}, {user:'other'}), undefined);
 }

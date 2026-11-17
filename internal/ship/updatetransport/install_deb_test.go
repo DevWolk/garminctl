@@ -13,13 +13,14 @@ import (
 const (
 	debTestStable = "1.2.3"
 	debTestNewer  = "1.2.4"
+	debTestOlder  = "0.5.1"
 )
 
 func TestPrepareNativeInstallerPrereleaseToStable(t *testing.T) {
 	t.Parallel()
 	directory := t.TempDir()
 	request := installRequest{
-		Target:  MatchRequest{Installation: InstallDEB},
+		Target:  MatchRequest{ReleaseTag: "v" + debTestStable, Installation: InstallDEB},
 		Release: ResolvedRelease{Package: AssetRef{Name: "garminctl_1.2.3_linux_amd64.deb"}},
 	}
 
@@ -98,7 +99,7 @@ func TestPrepareNativeInstallerUsesNativeComparison(t *testing.T) {
 				}
 			}
 
-			got, err := prepareNativeInstaller(t.Context(), installRequest{Target: MatchRequest{Installation: InstallDEB}}, t.TempDir(), query)
+			got, err := prepareNativeInstaller(t.Context(), installRequest{Target: MatchRequest{ReleaseTag: "v" + tc.target, Installation: InstallDEB}}, t.TempDir(), query)
 			if (err != nil) != tc.fail || slices.Contains(got.args, "--allow-downgrades") != tc.allow {
 				t.Fatalf("invocation=%+v err=%v", got, err)
 			}
@@ -138,7 +139,7 @@ func TestPrepareNativeInstallerRefusesUnreadableVersions(t *testing.T) {
 				return debTestStable, nil
 			}
 
-			got, err := prepareNativeInstaller(t.Context(), installRequest{Target: MatchRequest{Installation: InstallDEB}}, t.TempDir(), query)
+			got, err := prepareNativeInstaller(t.Context(), installRequest{Target: MatchRequest{ReleaseTag: "v" + debTestStable, Installation: InstallDEB}}, t.TempDir(), query)
 			if err == nil || got.program != "" {
 				t.Fatalf("unusable metadata produced invocation=%+v err=%v", got, err)
 			}
@@ -153,10 +154,14 @@ func TestPrepareNativeInstallerPreservesExplicitRollbackAndOtherPlatforms(t *tes
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 
-			request := installRequest{Target: MatchRequest{Installation: kind}, Install: InstallOptions{AllowDowngrade: kind == InstallDEB}}
-			query := func(context.Context, string, ...string) (string, error) {
-				t.Fatal("unexpected native version query")
-				return "", nil
+			request := installRequest{Target: MatchRequest{ReleaseTag: "v" + debTestStable, Installation: kind}, Install: InstallOptions{AllowDowngrade: kind == InstallDEB}}
+
+			var tools []string
+
+			query := func(_ context.Context, program string, _ ...string) (string, error) {
+				tools = append(tools, program)
+
+				return debTestStable, nil
 			}
 			directory := t.TempDir()
 
@@ -168,6 +173,55 @@ func TestPrepareNativeInstallerPreservesExplicitRollbackAndOtherPlatforms(t *tes
 			got, err := prepareNativeInstaller(t.Context(), request, directory, query)
 			if err != nil || got.program != want.program || !slices.Equal(got.args, want.args) {
 				t.Fatalf("changed existing invocation=%+v err=%v", got, err)
+			}
+
+			// Only the package's own version is read; an explicit rollback and the other platforms compare nothing.
+			wantTools := map[InstallKind][]string{InstallDEB: {debMetadataTool}, InstallRPM: {rpmMetadataTool}}[kind]
+			if !slices.Equal(tools, wantTools) {
+				t.Fatalf("native queries=%v, want %v", tools, wantTools)
+			}
+		})
+	}
+}
+
+func TestPrepareNativeInstallerRefusesPackageOfAnotherRelease(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, tag, packaged string
+		kind                InstallKind
+		rollback, valid     bool
+	}{
+		{"DEB of the selected release", "v" + debTestNewer, debTestNewer, InstallDEB, false, true},
+		{"DEB prerelease spelling", "v1.2.4-rc.1", "1.2.4.rc.1", InstallDEB, false, true},
+		{"older signed DEB under a newer name", installTestTag, debTestOlder, InstallDEB, false, false},
+		{"older signed DEB in a confirmed rollback", installTestTag, debTestOlder, InstallDEB, true, false},
+		{"DEB with an epoch", "v" + debTestNewer, "1:" + debTestNewer, InstallDEB, false, false},
+		{"RPM of the selected release", "v" + debTestNewer, debTestNewer, InstallRPM, false, true},
+		{"older signed RPM under a newer name", installTestTag, debTestOlder, InstallRPM, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			query := func(_ context.Context, program string, _ ...string) (string, error) {
+				switch program {
+				case debMetadataTool, rpmMetadataTool:
+					return tc.packaged + "\n", nil
+				case debQueryTool:
+					return "0.6.0\n", nil
+				default:
+					return "", nativeQueryExitError(1)
+				}
+			}
+			request := installRequest{Target: MatchRequest{ReleaseTag: tc.tag, Installation: tc.kind}, Install: InstallOptions{AllowDowngrade: tc.rollback}}
+
+			got, err := prepareNativeInstaller(t.Context(), request, t.TempDir(), query)
+			if (err == nil) != tc.valid || (!tc.valid && got.program != "") {
+				t.Fatalf("package version %s for %s: invocation=%+v err=%v", tc.packaged, tc.tag, got, err)
+			}
+
+			if !tc.valid && !strings.Contains(err.Error(), tc.packaged) {
+				t.Fatalf("refusal does not name the packaged version: %v", err)
 			}
 		})
 	}
@@ -186,12 +240,18 @@ func TestPrepareNativeInstallerCancellationDoesNotBecomeComparisonFalse(t *testi
 		return debTestStable, nil
 	}
 
-	got, err := prepareNativeInstaller(ctx, installRequest{Target: MatchRequest{Installation: InstallDEB}}, t.TempDir(), query)
+	request := installRequest{Target: MatchRequest{ReleaseTag: "v" + debTestStable, Installation: InstallDEB}}
+
+	got, err := prepareNativeInstaller(ctx, request, t.TempDir(), query)
+	if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+		t.Fatalf("comparison was not reached: %v", err)
+	}
+
 	if err == nil || got.program != "" {
 		t.Fatalf("canceled comparison produced invocation=%+v err=%v", got, err)
 	}
 
-	_, err = prepareNativeInstaller(ctx, installRequest{Target: MatchRequest{Installation: InstallDEB}}, t.TempDir(), func(context.Context, string, ...string) (string, error) {
+	_, err = prepareNativeInstaller(ctx, request, t.TempDir(), func(context.Context, string, ...string) (string, error) {
 		t.Fatal("canceled acquisition queried metadata")
 		return "", nil
 	})

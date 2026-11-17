@@ -4,7 +4,7 @@
 
 Download a Windows or Linux CLI archive (amd64 or arm64) from
 [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest), unpack it,
-and put `garminctl.exe` or `garminctl` on `PATH`. `checksums.txt` contains SHA-256
+and put `garminctl.exe` or `garminctl` from the unpacked folder on `PATH`. `checksums.txt` contains SHA-256
 sums. These portable builds support Windows/WSL and directory dumps; see
 [USB access](desktop.md#usb-access) for native Linux requirements.
 
@@ -19,7 +19,7 @@ Native Linux USB builds require CGO, `pkg-config`, and libusb development header
 
 ### Update a standalone CLI
 
-Portable archives contain only the CLI. Keep this copy in its own directory,
+Portable archives contain only the CLI, in one folder named after the archive. Keep this copy in its own directory,
 separate from Windows Setup and `/usr/bin`. Choose the archive for its OS and
 architecture, verify the downloaded package, then unpack it into a temporary
 directory. Stop servers and stdio MCP clients launched from the copy being
@@ -33,7 +33,7 @@ dedicated user location:
 ```sh
 garminctl_cli_dir="$HOME/.local/share/garminctl-cli/bin"
 mkdir -p "$garminctl_cli_dir"
-install -m 0755 ./unpacked/garminctl "$garminctl_cli_dir/garminctl.new"
+install -m 0755 ./unpacked/garminctl_*/garminctl "$garminctl_cli_dir/garminctl.new"
 "$garminctl_cli_dir/garminctl.new" version
 ```
 
@@ -111,18 +111,35 @@ their server's connection; see [MCP](mcp.md). Exit codes are `0` for success,
 These commands need neither a watch nor a running desktop/backend:
 
 ```text
+application status              Show the result of the last update installed from the app.
 application recovery list       List retained package metadata for this OS/architecture.
 application recovery export ID  Verify and copy the selected package for manual recovery.
+application recovery remove-package ID   Delete one saved package.
 application recovery snapshots  List local application backup metadata.
 application recovery inspect ID Verify a backup's retained files without restoring them.
+application recovery remove-snapshot ID  Delete one data backup.
 ```
+
+`status` reads the installer's own record: installed, failed with its reason, or
+still running when monitoring ended, plus the directory of its logs. With
+`-json` it returns `lastInstallation`, or `null` when nothing was recorded.
 
 Use an ID from `list`. The list is metadata, not proof of authenticity. Export
 works offline with this CLI's compiled public key and retains a separate copy
 of the original package and sibling signature under the OS cache directory's
 `garminctl/application-recovery/`. It prints both paths. Missing keys, unknown
 IDs, damaged packages and invalid signatures fail without replacing installed
-files. Source installs without an embedded update key cannot export packages.
+files. Source installs without an embedded update key can list and remove
+packages but cannot export them.
+
+A saved package or backup that this build cannot read is skipped: one written
+by a build with another update key or a later format, or a damaged directory.
+`list` and `snapshots` show the remaining entries and print a warning with the
+ID, the reason and the `remove-package ID` or `remove-snapshot ID` command that
+deletes it. Both removal commands delete exactly the named entry, readable or
+not, and change no installed file or current data. Downloading the same release
+again replaces a damaged package. See
+[what is kept and for how long](desktop.md#what-garminctl-keeps-for-updates).
 
 Export starts no installer, stops no server and restores no data. Before manual
 installation, stop the application and its server. Use the OS installer or
@@ -132,7 +149,9 @@ rollback and explicit restoration of incompatible data require their separate
 recovery flow. Keep the exported files until manual recovery is finished;
 automatic removal is not implemented.
 
-With `-json`, `list` returns `verified: false` and a `packages` array. Successful
+With `-json`, `list` returns `verified: false`, a `packages` array and an
+`unusable` array of skipped `id`/`reason` pairs; `snapshots` returns the same
+`unusable` array. A removal returns `removed` with the ID. Successful
 `export` returns `verified: true`, the selected package metadata, `directory`,
 `path`, `signaturePath`, `manualInstallationRequired: true` and
 `dataCompatibility: "not_checked"`. A verification failure returns no success
@@ -149,7 +168,8 @@ For snapshot inspection, `verified: true` means that retained files match their
 local manifest; it is not release-signature verification or a compatibility
 decision. JSON identifies this as `verification: "local_manifest"` and retains
 `dataCompatibility: "not_checked"`. Neither command restores data or authorizes
-an installer. Use a snapshot ID from `snapshots`; paths cannot be supplied.
+an installer. Use a snapshot ID from `snapshots`; paths cannot be supplied. An
+ID that is not kept is reported as not retained.
 
 ## Files and device information
 
@@ -218,7 +238,9 @@ arrive through Connect's queue or `.PRG` sideloading in the [UI](web-ui.md).
 the existing `software` and `apps` fields remain; failures add an `errors` object
 with `software` and/or `apps` messages. Per-app errors also remain on their app
 rows. A failed check returns exit status 1 in text and JSON modes; an interrupted
-check returns 130. Successful JSON output omits `errors`.
+check returns 130. Successful JSON output omits `errors`. `updates -h` and
+malformed arguments print usage before anything is sent to the update service
+or the store.
 
 App settings schemas are cached locally. If the cache cannot be written, garminctl
 logs a warning and continues using the fetched schema; a later run may fetch it

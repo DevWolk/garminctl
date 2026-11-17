@@ -62,6 +62,42 @@ func TestApplicationRestoreRequiresRealOwnedBackendJoinAndKeepsSafetyCopy(t *tes
 	}
 }
 
+func TestApplicationRestoreReportsUntouchedDataWhenLiveStateChangedAfterReview(t *testing.T) { //nolint:paralleltest // Production runtime and account paths are isolated with process environment.
+	f, root, old, safety := applicationRestoreFixture(t)
+
+	action, err := f.backend.control.restoreDataAction(f.backend.address, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packages := applicationPackageStore{key: f.pipeline.key}
+	current := openRestorePackage(t, packages, f.local.target, f.update.CacheID)
+	target := openRestorePackage(t, packages, f.local.target, f.current.CacheID)
+
+	if err := f.backend.control.stopFor(f.backend.address, true)(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := action.Prepare(t.Context(), current, target, old.ID, safety.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	name := filepath.Base(gc.DefaultStorePath())
+	if err := root.WriteFile(name, []byte(`{"opaque":"changed after review"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := action.Run(t.Context(), plan, application.RestoreConsent{Confirmed: true, EditsResolved: true, ReviewID: plan.View().ReviewID})
+	if err == nil || result == nil || result.Attempted || result.Completed || result.Replaced != 0 || result.Removed != 0 {
+		t.Fatalf("refused restore=%+v %v", result, err)
+	}
+
+	if data, err := root.ReadFile(name); err != nil || string(data) != `{"opaque":"changed after review"}` {
+		t.Fatalf("refused restore changed live data=%q %v", data, err)
+	}
+}
+
 func applicationRestoreFixture(t *testing.T) (*preflightNativeFixture, *os.Root, *application.DataSnapshot, *application.DataSnapshot) {
 	t.Helper()
 	config := t.TempDir()

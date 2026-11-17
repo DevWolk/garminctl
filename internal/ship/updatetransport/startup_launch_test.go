@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
@@ -74,5 +75,44 @@ func TestRestartValidatesRealHeadlessChildAndMCP(t *testing.T) {
 				t.Fatalf("restart validation=%v", err)
 			}
 		})
+	}
+}
+
+// Relative restart arguments such as -root DIR keep their meaning only in the
+// directory the application was started from.
+func TestRestartedDesktopKeepsTheOriginalWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	installation, original := t.TempDir(), t.TempDir()
+	options := InstallOptions{Desktop: filepath.Join(installation, "garmin-desktop"), Args: []string{"-root", "dump"}, Dir: original}
+
+	command := desktopCommand(options, "ticket")
+	if command.Dir != original || command.Path != options.Desktop || len(command.Args) != 3 || command.Args[2] != "dump" {
+		t.Fatalf("restart command dir=%q path=%q args=%v", command.Dir, command.Path, command.Args)
+	}
+
+	for _, unusable := range []string{"", filepath.Join(original, "removed"), options.Desktop} {
+		options.Dir = unusable
+		if got := desktopCommand(options, "ticket").Dir; got != installation {
+			t.Fatalf("working directory for %q=%q, want the installation directory", unusable, got)
+		}
+	}
+}
+
+func TestRestartedDesktopReceivesOnlyItsOwnStartupTicket(t *testing.T) {
+	t.Setenv(StartupEnvironment, "ticket of an earlier restart")
+
+	command := desktopCommand(InstallOptions{Desktop: filepath.Join(t.TempDir(), "garmin-desktop")}, "ticket")
+
+	var tickets []string
+
+	for _, entry := range command.Env {
+		if value, ok := strings.CutPrefix(entry, StartupEnvironment+"="); ok {
+			tickets = append(tickets, value)
+		}
+	}
+
+	if len(tickets) != 1 || tickets[0] != "ticket" {
+		t.Fatalf("startup tickets=%v", tickets)
 	}
 }

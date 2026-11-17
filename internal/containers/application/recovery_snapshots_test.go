@@ -112,3 +112,61 @@ func TestRecoverySnapshotsRejectsTraversalCancellationAndCorruption(t *testing.T
 		t.Fatalf("corrupt=%+v error=%v", value, err)
 	}
 }
+
+func TestRecoverySnapshotsListKeepsUsableSnapshotsBesideInvalidMetadata(t *testing.T) {
+	t.Parallel()
+
+	usable, invalid := snapshotPolicyRecord(), snapshotPolicyRecord()
+	invalid.ID = strings.Repeat("f", 64)
+	invalid.Files[0].Area = "browser"
+
+	source := &snapshotCleanupFixture{unusable: []UnusableEntry{{ID: strings.Repeat("9", 64), Reason: "no manifest"}}}
+	source.rows = []RecoverySnapshot{invalid, usable}
+	action := NewRecoverySnapshotsAction(source)
+
+	values, err := action.List(t.Context())
+	if err != nil || len(values) != 1 || values[0].ID != usable.ID {
+		t.Fatalf("list=%+v error=%v", values, err)
+	}
+
+	values, unusable, err := action.Catalog(t.Context())
+	if err != nil || len(values) != 1 || len(unusable) != 2 || unusable[0] != source.unusable[0] || unusable[1].ID != invalid.ID || unusable[1].Reason == "" {
+		t.Fatalf("list=%+v unusable=%+v error=%v", values, unusable, err)
+	}
+}
+
+func TestRecoverySnapshotsRemoveDeletesOnlyAnExplicitIdentity(t *testing.T) {
+	t.Parallel()
+
+	source := new(snapshotCleanupFixture)
+	action := NewRecoverySnapshotsAction(source)
+	id := strings.Repeat("9", 64)
+
+	if err := action.Remove(t.Context(), "../outside"); err == nil || len(source.removed) != 0 {
+		t.Fatalf("path reached the store: %v error=%v", source.removed, err)
+	}
+
+	if err := action.Remove(t.Context(), id); err != nil || len(source.removed) != 1 || source.removed[0] != id {
+		t.Fatalf("removed=%v error=%v", source.removed, err)
+	}
+
+	if err := NewRecoverySnapshotsAction(new(snapshotPolicyFixture)).Remove(t.Context(), id); err == nil {
+		t.Fatal("a store without removal reported success")
+	}
+}
+
+type snapshotCleanupFixture struct {
+	snapshotPolicyFixture
+	unusable []UnusableEntry
+	removed  []string
+}
+
+func (s *snapshotCleanupFixture) Unusable(context.Context) ([]UnusableEntry, error) {
+	return s.unusable, nil
+}
+
+func (s *snapshotCleanupFixture) Remove(_ context.Context, id string) error {
+	s.removed = append(s.removed, id)
+
+	return nil
+}

@@ -22,6 +22,16 @@ type RollbackPreparer interface {
 	PrepareRollback(context.Context, application.RollbackRequest) (RollbackPreparation, error)
 }
 
+// CloseHolder postpones native window closure while confirmed work must finish.
+// A postponed close may run from release, so release follows the Scope lease.
+type CloseHolder interface {
+	HoldClose() (release func(), err error)
+}
+
+// rollbackTimeout bounds preparation with its review, and separately the
+// confirmed work.
+const rollbackTimeout = 25 * time.Minute
+
 // SavedRollback is unverified local metadata; preparation verifies both copies.
 type SavedRollback struct {
 	Tag        string    `json:"tag"`
@@ -68,7 +78,7 @@ func (s *Service) StartRollback(request application.RollbackRequest) (*Installat
 	}
 
 	source, ok := reader.(RollbackPreparer)
-	if !ok {
+	if _, holds := s.scope.(CloseHolder); !ok || !holds {
 		release()
 		return nil, errors.New("application rollback is unavailable")
 	}
@@ -81,7 +91,7 @@ func (s *Service) StartRollback(request application.RollbackRequest) (*Installat
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, rollbackTimeout)
 	s.nextInstall++
 	op := &installationOperation{state: InstallationState{ID: s.nextInstall, Tag: request.Package.Tag, Kind: "rollback", Phase: "verifying", Active: true, CanCancel: true}, cancel: cancel, confirmation: make(chan application.RollbackConsent, 1)}
 
@@ -134,10 +144,47 @@ func (s *Service) ConfirmRollback(id uint64, consent application.RollbackConsent
 }
 
 func (s *Service) runRollback(ctx context.Context, release func(), source RollbackPreparer, host UpdateHost, op *installationOperation, request application.RollbackRequest) {
+	var unhold func()
+
+	// A postponed window close may quit and join this operation, so the hold
+	// ends only after the Scope lease has been released.
+	defer func() {
+		if unhold != nil {
+			unhold()
+		}
+	}()
 	defer release()
 	defer op.cancel()
 
-	result, err := s.prepareAndRunRollback(ctx, source, op, request)
+	// Preparation and review end with the window, the Cancel button or their
+	// deadline. The preparation context itself stays detached so that confirmed
+	// work can outlive all three.
+	work, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+
+	detach := context.AfterFunc(ctx, cancel)
+	defer detach()
+
+	prepared, consent, err := s.reviewRollback(ctx, work, source, op, request)
+	if err == nil {
+		unhold, err = s.detachConfirmed(ctx, detach)
+	}
+
+	var result *application.RollbackResult
+
+	if err == nil {
+		var stop context.CancelFunc
+
+		// Stop, restore and commit get their full deadline from the confirmation.
+		ctx, stop = context.WithTimeout(work, rollbackTimeout)
+		defer stop()
+
+		result, err = prepared.Run(ctx, consent)
+	}
+
+	if prepared != nil {
+		err = errors.Join(err, prepared.Close())
+	}
 
 	var handoff *application.InstallHandoffResult
 	if result != nil {
@@ -154,27 +201,51 @@ func (s *Service) runRollback(ctx context.Context, release func(), source Rollba
 	s.finishAndExit(ctx, release, host, op, handoff, err)
 }
 
-func (s *Service) prepareAndRunRollback(ctx context.Context, source RollbackPreparer, op *installationOperation, request application.RollbackRequest) (result *application.RollbackResult, err error) {
-	prepared, err := source.PrepareRollback(ctx, request)
-	if prepared != nil {
-		defer func() { err = errors.Join(err, prepared.Close()) }()
+// detachConfirmed keeps the window open and separates confirmed work from the
+// review lifetime. It fails when either ended first; nothing has changed then.
+func (s *Service) detachConfirmed(ctx context.Context, detach func() bool) (func(), error) {
+	holder, ok := s.scope.(CloseHolder)
+	if !ok {
+		return nil, errors.New("application rollback is unavailable")
 	}
 
+	unhold, err := holder.HoldClose()
 	if err != nil {
 		return nil, err
 	}
 
+	detached := detach()
+
+	if err := ctx.Err(); err != nil {
+		return unhold, err
+	}
+
+	if !detached {
+		return unhold, context.Canceled
+	}
+
+	return unhold, nil
+}
+
+func (s *Service) reviewRollback(ctx, work context.Context, source RollbackPreparer, op *installationOperation, request application.RollbackRequest) (RollbackPreparation, application.RollbackConsent, error) {
+	var none application.RollbackConsent
+
+	prepared, err := source.PrepareRollback(work, request)
+	if err != nil {
+		return prepared, none, err
+	}
+
 	if prepared == nil {
-		return nil, errors.New("rollback returned no owned preparation")
+		return nil, none, errors.New("rollback returned no owned preparation")
 	}
 
 	review := prepared.View().Data
 	if review.ReviewID == "" {
-		return nil, errors.New("rollback returned no exact data review")
+		return prepared, none, errors.New("rollback returned no exact data review")
 	}
 
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return prepared, none, err
 	}
 
 	s.operationMu.Lock()
@@ -186,12 +257,8 @@ func (s *Service) prepareAndRunRollback(ctx context.Context, source RollbackPrep
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return prepared, none, ctx.Err()
 	case consent := <-op.confirmation:
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		return prepared.Run(ctx, consent)
+		return prepared, consent, nil
 	}
 }

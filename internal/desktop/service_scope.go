@@ -41,6 +41,13 @@ func (s serviceScope) ExitForUpdate() {
 	s.app.host.Quit()
 }
 
+// HoldClose postpones window closure for confirmed work that must not be
+// interrupted. A postponed close runs from release and joins every Scope lease,
+// so the caller releases its own lease first.
+func (s serviceScope) HoldClose() (func(), error) {
+	return s.app.holdClose()
+}
+
 func nativeServices(service *App, registrars []ServiceRegistrar) []application.Service {
 	services := []application.Service{application.NewService(service)}
 	for _, register := range registrars {

@@ -7,11 +7,12 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	connectcli "github.com/DevWolk/garminctl/internal/containers/connect/ui/cli"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
 func (c *cli) cloudCommand(client *gc.Client) *connectcli.Command {
-	return &connectcli.Command{Out: c.out, ErrOut: c.errOut, JSON: c.asJSON, Client: client}
+	return &connectcli.Command{Out: c.out, ErrOut: c.errOut, JSON: c.asJSON, Client: client, ForgetSessionCopies: app.ForgetApplicationSessionCopies}
 }
 
 func (c *cli) cloudAccount(ctx context.Context, args []string) error {
@@ -21,7 +22,7 @@ func (c *cli) cloudAccount(ctx context.Context, args []string) error {
 // cloud runs the Connect commands that borrow the dispatcher's leased Session.
 func (c *cli) cloud(ctx context.Context, sess *watchsession.Session, args []string) error {
 	if len(args) == 0 {
-		return usageErrorf("usage: cloud status|sync|messages|settings")
+		return clix.UsageErrorf("usage: cloud status|sync|messages|settings")
 	}
 
 	client := gc.New(gc.DefaultStorePath())

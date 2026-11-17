@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
@@ -179,3 +180,59 @@ func TestUpdatesPerAppFailureAndOutputFailureRemainErrors(t *testing.T) {
 type updateFailedWriter struct{}
 
 func (updateFailedWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+func TestUpdatesHelpAndIncompleteArgumentsContactNoService(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		args []string
+		exit int
+	}{
+		{name: "help", args: []string{"-h"}},
+		{name: "install without a part number", args: []string{"install"}, exit: 2},
+		{name: "install with extra arguments", args: []string{"install", "006-test", "extra"}, exit: 2},
+		{name: "unknown subcommand", args: []string{"check"}, exit: 2},
+		{name: "unknown flag", args: []string{"-all"}, exit: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dev, err := device.NewDirFS(testdump.Root(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			t.Cleanup(func() { _ = dev.Close() })
+
+			var requests, registryReads atomic.Int32
+
+			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+			defer server.Close()
+
+			var output, diagnostics bytes.Buffer
+
+			cli := &Command{
+				Config: updates.Config{URL: server.URL, Client: http.DefaultClient},
+				Installed: func(context.Context) ([]apps.App, error) {
+					registryReads.Add(1)
+					return nil, nil
+				},
+				Out: clix.NewPrinter(&output), ErrOut: clix.NewPrinter(&diagnostics),
+			}
+
+			err = cli.Updates(t.Context(), watchsession.New(dev), tt.args)
+			if err == nil || clix.ExitCode(err) != tt.exit {
+				t.Fatalf("error=%v exit=%d, want exit %d", err, clix.ExitCode(err), tt.exit)
+			}
+
+			if requests.Load() != 0 || registryReads.Load() != 0 {
+				t.Fatalf("update service requests=%d, app registry reads=%d", requests.Load(), registryReads.Load())
+			}
+
+			if output.Len() != 0 || !strings.Contains(diagnostics.String()+err.Error(), "updates [install PART]") {
+				t.Fatalf("output=%q diagnostics=%q error=%v", &output, &diagnostics, err)
+			}
+		})
+	}
+}

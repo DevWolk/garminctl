@@ -47,7 +47,7 @@ func (s applicationDataCompatibility) Verify(ctx context.Context, target, safety
 	}
 
 	config := filepath.Dir(account)
-	directory := filepath.Join(config, "application-backups")
+	directory := filepath.Join(config, applicationBackups)
 	reader := hostfile.NewSnapshotReader(directory)
 	store := applicationDataRestorations{reader: reader}
 
@@ -71,7 +71,7 @@ func inspectApplicationData(file hostfile.SnapshotFileInfo, reader io.Reader) er
 	// Watch recovery files are opaque retained bytes, never decoded or rewritten
 	// by startup. Their exact hashes are checked by InspectCurrent.
 	if err != nil {
-		return fmt.Errorf("current data cannot be read under the retained format contract: %s/%s", file.Area, file.Path)
+		return fmt.Errorf("current data cannot be read under the retained format contract: %s/%s: %w", file.Area, file.Path, err)
 	}
 
 	return nil

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/DevWolk/garminctl/internal/hostfile"
 )
@@ -24,6 +23,25 @@ type CachedPackage struct {
 type PackageCache struct {
 	directory string
 	stager    *Stager
+}
+
+// UnusablePackage names a catalog entry this build cannot read. The entry stays
+// on disk until Remove deletes it or a verified copy of the same package replaces it.
+type UnusablePackage struct{ ID, Reason string }
+
+// NewPackageCatalog reads and removes retained metadata without a verifier, for
+// builds that carry no compiled key. Put, Open and Export stay unavailable.
+func NewPackageCatalog(directory string) (*PackageCache, error) {
+	if directory == "" {
+		return nil, errors.New("package catalog requires a dedicated directory")
+	}
+
+	path, err := filepath.Abs(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PackageCache{directory: path}, nil
 }
 
 // NewPackageCache binds local storage to the current compiled CLI verifier.
@@ -81,7 +99,7 @@ func (c *PackageCache) Put(ctx context.Context, target MatchRequest, staged *Sta
 
 	if err := os.MkdirAll(c.directory, 0o700); err != nil {
 		return nil, err
-	} // #nosec G703 -- dedicated local composition path, not a request or manifest path.
+	}
 
 	if err := hostfile.Protect(c.directory, true); err != nil {
 		return nil, err
@@ -113,13 +131,43 @@ func (c *PackageCache) Put(ctx context.Context, target MatchRequest, staged *Sta
 		return nil, err
 	}
 
-	if err := os.Rename(pending, filepath.Join(c.directory, manifest.ID)); err != nil {
+	if err := publishPackageEntry(c.directory, pending, manifest.ID); err != nil {
 		return nil, err
-	} // #nosec G703 -- generated pending child and validated hex identity in one private directory.
+	}
 
 	entry := manifest.CachedPackage
 
 	return &entry, nil
+}
+
+// publishPackageEntry replaces an entry of the same identity. The pending copy
+// has just been verified, so whatever it replaces is either a damaged copy of
+// the same bytes or the same bytes saved under earlier release metadata.
+func publishPackageEntry(directory, pending, id string) (err error) {
+	final := filepath.Join(directory, id)
+
+	if _, err := os.Lstat(final); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(pending, final)
+	} else if err != nil {
+		return err
+	}
+
+	retired, err := os.MkdirTemp(directory, ".pending-")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, os.RemoveAll(retired)) }()
+
+	previous := filepath.Join(retired, id)
+	if err := os.Rename(final, previous); err != nil {
+		return err
+	}
+
+	if err := os.Rename(pending, final); err != nil {
+		return errors.Join(err, os.Rename(previous, final))
+	}
+
+	return nil
 }
 
 func (c *PackageCache) verifyPending(ctx context.Context, directory string, manifest packageManifest) error {
@@ -139,13 +187,50 @@ func (c *PackageCache) verifyPending(ctx context.Context, directory string, mani
 }
 
 // List returns bounded metadata without granting verified-package authority.
+// Entries this build cannot read are left out; Catalog names them.
 func (c *PackageCache) List(ctx context.Context) ([]CachedPackage, error) {
-	if err := c.check(ctx); err != nil {
-		return nil, err
+	result, _, err := c.Catalog(ctx)
+
+	return result, err
+}
+
+// Catalog returns the same metadata as List and the entries it had to skip, so
+// one unreadable directory never hides the packages beside it.
+func (c *PackageCache) Catalog(ctx context.Context) ([]CachedPackage, []UnusablePackage, error) {
+	if err := c.checkCatalog(ctx); err != nil {
+		return nil, nil, err
 	}
 
+	names, err := c.entryNames()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result, skipped := make([]CachedPackage, 0), make([]UnusablePackage, 0)
+
+	for _, name := range names {
+		manifest, err := c.readManifest(ctx, name)
+		if canceled := ctx.Err(); canceled != nil {
+			return nil, nil, canceled
+		}
+
+		if err != nil {
+			skipped = append(skipped, UnusablePackage{ID: name, Reason: err.Error()})
+
+			continue
+		}
+
+		result = append(result, manifest.CachedPackage)
+	}
+
+	return result, skipped, nil
+}
+
+// entryNames lists catalog identities in order; working directories and
+// foreign names are not entries.
+func (c *PackageCache) entryNames() ([]string, error) {
 	if err := hostfile.Protect(c.directory, true); errors.Is(err, os.ErrNotExist) {
-		return []CachedPackage{}, nil
+		return nil, nil
 	} else if err != nil {
 		return nil, err
 	}
@@ -172,28 +257,17 @@ func (c *PackageCache) List(ctx context.Context) ([]CachedPackage, error) {
 		return nil, errors.New("package catalog exceeds the directory-entry limit")
 	}
 
-	result := make([]CachedPackage, 0)
+	names := make([]string, 0, len(entries))
 
 	for _, entry := range entries {
-		if !validPackageID(entry.Name()) {
-			continue
+		if validPackageID(entry.Name()) {
+			names = append(names, entry.Name())
 		}
-
-		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			return nil, errors.New("invalid package catalog entry type")
-		}
-
-		manifest, err := c.readManifest(ctx, entry.Name())
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, manifest.CachedPackage)
 	}
 
-	slices.SortFunc(result, func(a, b CachedPackage) int { return strings.Compare(a.ID, b.ID) })
+	slices.Sort(names)
 
-	return result, nil
+	return names, nil
 }
 
 // Open re-verifies offline and returns an independently owned temporary copy.
@@ -220,11 +294,23 @@ func (c *PackageCache) Open(ctx context.Context, id string, progress func(StageP
 }
 
 func (c *PackageCache) check(ctx context.Context) error {
+	if err := c.checkCatalog(ctx); err != nil {
+		return err
+	}
+
+	if c.stager == nil {
+		return errors.New("package cache has no compiled CLI verifier")
+	}
+
+	return nil
+}
+
+func (c *PackageCache) checkCatalog(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	if c == nil || c.directory == "" || c.stager == nil {
+	if c == nil || c.directory == "" {
 		return errors.New("package cache is not configured")
 	}
 

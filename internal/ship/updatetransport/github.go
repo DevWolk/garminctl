@@ -19,11 +19,16 @@ import (
 
 const (
 	releasesEndpoint = "https://api.github.com/repos/DevWolk/garminctl/releases"
-	pageSize         = 100
-	maxPages         = 10
-	maxPageBytes     = 2 << 20
-	requestTimeout   = 10 * time.Second
-	checkTimeout     = 30 * time.Second
+	// A release record carries its whole asset list, about 33 KB for sixteen
+	// assets. Short pages keep every response far below maxPageBytes however
+	// many releases are published; the history bound stays 1000 records.
+	releasePageSize = 20
+	maxReleasePages = 50
+	pageSize        = 100
+	maxPages        = 10
+	maxPageBytes    = 2 << 20
+	requestTimeout  = 10 * time.Second
+	checkTimeout    = 30 * time.Second
 )
 
 // Release retains GitHub display metadata, including draft and prerelease flags.
@@ -80,7 +85,7 @@ func (g *GitHub) Releases(ctx context.Context) ([]Release, error) {
 
 	releases := make([]Release, 0)
 
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; page <= maxReleasePages; page++ {
 		items, next, err := g.page(ctx, page)
 		if err != nil {
 			return nil, fmt.Errorf("GitHub release page %d: %w", page, err)
@@ -101,7 +106,7 @@ func (g *GitHub) Releases(ctx context.Context) ([]Release, error) {
 }
 
 func (g *GitHub) page(ctx context.Context, page int) ([]Release, bool, error) {
-	endpoint := releasesEndpoint + "?per_page=" + strconv.Itoa(pageSize) + "&page=" + strconv.Itoa(page)
+	endpoint := releasesEndpoint + "?per_page=" + strconv.Itoa(releasePageSize) + "&page=" + strconv.Itoa(page)
 
 	data, headers, err := g.getMetadata(ctx, endpoint)
 	if err != nil {
@@ -168,8 +173,8 @@ func readReleases(data []byte) ([]Release, error) {
 		return nil, fmt.Errorf("decode GitHub releases: %w", err)
 	}
 
-	if items == nil || len(items) > pageSize {
-		return nil, errors.New("GitHub release page must be an array of at most 100 records")
+	if items == nil || len(items) > releasePageSize {
+		return nil, errors.New("GitHub release page is not an array or exceeds the requested page size")
 	}
 
 	return items, nil

@@ -22,7 +22,7 @@ const (
 	releaseEndpoint = "https://api.github.com/repos/DevWolk/garminctl/releases"
 	firstRelease    = `[{"tag_name":"v2.0.0-beta.1","name":"Preview","body":"<b>literal notes</b>","prerelease":true,"published_at":"2026-11-07T12:00:00Z"},{"tag_name":"v9.0.0","draft":true,"name":null,"body":null,"published_at":null}]`
 	secondRelease   = `[{"tag_name":"v1.2.0","name":"Stable","body":"Notes"}]`
-	nextPage        = `<https://api.github.com/repos/DevWolk/garminctl/releases?page=2&per_page=100>; rel="next"`
+	nextPage        = `<https://api.github.com/repos/DevWolk/garminctl/releases?page=2&per_page=20>; rel="next"`
 	nullJSON        = "null"
 	callerEdit      = "caller edit"
 	selectedName    = "Selected"
@@ -37,7 +37,7 @@ func metadataClient(t *testing.T, handler http.HandlerFunc) *http.Client {
 
 	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodGet || r.URL.Scheme+"://"+r.URL.Host+r.URL.Path != releaseEndpoint ||
-			r.URL.Query().Get("per_page") != "100" ||
+			r.URL.Query().Get("per_page") != "20" ||
 			r.URL.Query().Get("page") == "" || len(r.URL.Query()) != 2 {
 			t.Errorf("unexpected metadata request: %s %s", r.Method, r.URL)
 		}

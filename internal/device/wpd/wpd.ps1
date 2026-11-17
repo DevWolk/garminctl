@@ -705,13 +705,13 @@ while ($true) {
             'open'    { $wpd.Open($req.device) }
             'close'   { $wpd.Close() }
             'list'    { $resp.entries = @($wpd.List($req.path) | ForEach-Object { @{ name = $_.Name; dir = $_.Dir; size = $_.Size; modified = $_.Modified } }) }
-            'stat'    { $e = $wpd.Find($req.path); if ($e -eq $null) { $resp.ok = $false; $resp.error = 'not found' } else { $resp.entry = @{ name = $e.Name; dir = $e.Dir; size = $e.Size; modified = $e.Modified } } }
+            'stat'    { $e = $wpd.Find($req.path); if ($e -eq $null) { $resp.ok = $false; $resp.error = 'not found'; $resp.notFound = $true } else { $resp.entry = @{ name = $e.Name; dir = $e.Dir; size = $e.Size; modified = $e.Modified } } }
             'read'    { $resp.b64 = [Convert]::ToBase64String($wpd.Read($req.path)) }
             'write'   { $wpd.Write($req.path, [Convert]::FromBase64String($req.b64)) }
             'delete'  { $wpd.Delete($req.path) }
             'mkdir'   { $wpd.Mkdir($req.path) | Out-Null }
             'listid'  { $resp.entries = @($wpd.Children($req.objectId) | ForEach-Object { @{ name = $_.Name; dir = $_.Dir; size = $_.Size; modified = $_.Modified } }) }
-            'objectid' { $e = $wpd.Find($req.path); if ($e -eq $null) { $resp.ok = $false; $resp.error = 'not found' } else { $resp.objectId = $e.Id; $resp.storage = $wpd.StorageId } }
+            'objectid' { $e = $wpd.Find($req.path); if ($e -eq $null) { $resp.ok = $false; $resp.error = 'not found'; $resp.notFound = $true } else { $resp.objectId = $e.Id; $resp.storage = $wpd.StorageId } }
             'mtpread' { [uint32]$code = 0; [uint32[]]$rp = @(); $data = $wpd.MtpRead([uint32]$req.opcode, [uint32[]]@($req.params), [ref]$code, [ref]$rp); $resp.b64 = [Convert]::ToBase64String($data); $resp.code = $code; $resp.params = @($rp) }
             'mtpwrite' { [uint32]$code = 0; [uint32[]]$rp = @(); $wpd.MtpWrite([uint32]$req.opcode, [uint32[]]@($req.params), [Convert]::FromBase64String($req.b64), [ref]$code, [ref]$rp); $resp.code = $code; $resp.params = @($rp) }
             'mtpnodata' { [uint32]$code = 0; [uint32[]]$rp = @(); $wpd.MtpNoData([uint32]$req.opcode, [uint32[]]@($req.params), [ref]$code, [ref]$rp); $resp.code = $code; $resp.params = @($rp) }
@@ -722,7 +722,12 @@ while ($true) {
     } catch {
         $msg = $_.Exception.Message
         if ($_.Exception.InnerException) { $msg = $msg + ': ' + $_.Exception.InnerException.Message }
-        Reply @{ id = $req.id; ok = $false; error = $msg }
+        # The client reads absence from this flag, never from the message text.
+        $missing = $false
+        for ($ex = $_.Exception; $ex -ne $null; $ex = $ex.InnerException) {
+            if ($ex -is [System.IO.FileNotFoundException]) { $missing = $true }
+        }
+        Reply @{ id = $req.id; ok = $false; error = $msg; notFound = $missing }
     }
 }
 

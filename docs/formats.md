@@ -24,7 +24,8 @@ rather than assuming that every device has the same files.
 
 The [WPD bridge](../internal/device/wpd/client.go) exchanges JSON lines with a
 PowerShell/C# helper on Windows, including Windows PowerShell through WSL.
-Binary payloads are base64. Automatic selection requires manufacturer `Garmin`
+Binary payloads are base64. A failed reply marks a missing path with `notFound`;
+the client never derives absence from the error text. Automatic selection requires manufacturer `Garmin`
 or USB vendor `091e` in the device ID; an explicit ID must match exactly.
 
 The [native Linux transport](../internal/device/mtp/usb_linux.go) uses libusb

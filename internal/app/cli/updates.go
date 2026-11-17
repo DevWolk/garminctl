@@ -14,6 +14,7 @@ func (c *cli) updatesCLI(sess *watchsession.Session) *updatescli.Command {
 		Installed:   app.UpdatesRegistry(sess),
 		Invalidated: c.runtime.AppSchemaCacheFor(sess).Reset,
 		Out:         c.out,
+		ErrOut:      c.errOut,
 		JSON:        c.asJSON,
 	}
 }

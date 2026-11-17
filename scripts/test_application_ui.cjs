@@ -271,6 +271,15 @@ test('reload observes installation without starting it; stopped failure requires
   await ui.get('install-cancel').fire('click');assert.equal(closes,1);assert.equal(starts,0);
 });
 
+test('an update that failed after the application closed is shown on the next start',async()=>{
+  const ui=fixture();let current={...idleInstallation(),lastResult:'The last update to v1.3.0 did not complete: exit status 126. Logs: /cache/stage-1'};
+  await ui.page.attach(bridge({downloadStatus:async()=>readyPackage(),installationStatus:async()=>current}));
+  await ui.page.activate();
+  assert.equal(ui.get('install-status').textContent,current.lastResult);assert.notEqual(ui.get('install-dialog').open,true);
+  current=idleInstallation();await ui.page.activate();
+  assert.equal(ui.get('install-status').textContent,'');
+});
+
 test('desktop confirmation resolves unsaved edits and blocks reload while installation owns the window',async()=>{
   const source=readFileSync(path.join(__dirname,'../internal/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
   let bridge,event;const prompts=[],calls=[],pending=new Map([['setting',1]]);let installing=false,answer=false,reloads=0;
@@ -372,6 +381,32 @@ test('corrupt rollback metadata does not disable an otherwise valid ordinary upd
   await ui.page.activate();
   assert.equal(ui.get('install-start').disabled,false);assert.equal(ui.get('install-rollback-start').disabled,true);
   assert.match(ui.get('install-rollback-note').textContent,/corrupt backup metadata/);
+});
+
+test('a rollback that stopped tells untouched data apart from a partial or finished restore',async()=>{
+  const clock=downloadClock(),ui=fixture(undefined,clock);
+  let current={id:4,kind:'rollback',tag:'v0.9.0',phase:'failed',active:false,canCancel:false,stopRequested:true,review:rollbackReview(),error:'live state differs'};
+  await ui.page.attach(bridge({installationStatus:async()=>current}));
+  await ui.page.activate();
+  assert.match(ui.get('install-detail').textContent,/Local data was not changed/);assert.doesNotMatch(ui.get('install-detail').textContent,/recover manually/i);
+  current={...current,restore:{attempted:false,completed:false,replaced:0,removed:0}};await ui.page.activate();
+  assert.match(ui.get('install-detail').textContent,/Local data was not changed/);assert.match(ui.get('install-detail').textContent,/live state differs/);
+  current={...current,restore:{attempted:true,completed:false,replaced:2,removed:1}};await ui.page.activate();
+  assert.match(ui.get('install-detail').textContent,/partial: 2 replaced, 1 removed/);assert.match(ui.get('install-detail').textContent,/recover manually/i);
+  assert.doesNotMatch(ui.get('install-detail').textContent,/not changed/);
+  current={...current,restore:{attempted:true,completed:true,replaced:3,removed:1},error:'installer did not answer'};await ui.page.activate();
+  assert.match(ui.get('install-detail').textContent,/older data was restored \(3 replaced, 1 removed\)/i);assert.match(ui.get('install-detail').textContent,/recover manually/i);
+  assert.doesNotMatch(ui.get('install-detail').textContent,/partial|not changed/);
+});
+
+test('the rollback hint follows the keep-current-data choice',async()=>{
+  const ui=fixture();
+  await ui.page.attach(bridge({installationStatus:async()=>idleInstallation(),savedRollbacks:async()=>[rollbackOption()]}));
+  await ui.page.activate();
+  assert.match(ui.get('install-rollback-hint').textContent,/restores the selected older data backup/);
+  ui.get('install-rollback-keep').checked=true;await ui.get('install-rollback-keep').fire('change');
+  assert.match(ui.get('install-rollback-hint').textContent,/Current data stays in place/);
+  assert.doesNotMatch(ui.get('install-rollback-hint').textContent,/restores the selected older data backup/);
 });
 
 test('compatible rollback explicitly requests preserving data and never shows restore consent',async()=>{

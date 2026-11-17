@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -44,6 +45,19 @@ func TestApplicationInstallOptionsRestrictDowngradeToDEBRollback(t *testing.T) {
 			}
 		})
 	}
+}
+
+const installHostCheckEnvironment = "GARMINCTL_TEST_INSTALL_HOST_CHECK"
+
+// installTestHostCheck lets the helper child accept the fixture host, which has
+// no system-owned CLI or authorization tool, unless a test asks for the
+// platform's own check.
+func installTestHostCheck() func(updatetransport.InstallKind, string, string) error {
+	if os.Getenv(installHostCheckEnvironment) == "platform" {
+		return nil
+	}
+
+	return func(updatetransport.InstallKind, string, string) error { return nil }
 }
 
 func applicationInstallerFixture(t *testing.T) (*preflightNativeFixture, *application.PreparedUpdate) {
@@ -223,6 +237,47 @@ func TestApplicationInstallerCancellationAndWorkerDiagnostics(t *testing.T) { //
 	operations, err := filepath.Glob(filepath.Join(applicationInstallCache(), "stage-*"))
 	if err != nil || len(operations) != 0 {
 		t.Fatalf("aborted helper not joined/cleaned: %v %v", operations, err)
+	}
+
+	if err := prepared.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := errors.Join(input.Current.Close(), input.Update.Close()); err != nil {
+		t.Fatal(err)
+	}
+
+	f.assertClean(t)
+}
+
+// A host that cannot run the privileged installation is refused by the real
+// helper before Ready, so nothing is committed and the application keeps running.
+func TestApplicationInstallerRefusesHostWithoutInstallToolsBeforeCommit(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the fixture host lacks Linux installation tools")
+	}
+
+	t.Setenv(installHostCheckEnvironment, "platform")
+
+	f, prepared := applicationInstallerFixture(t)
+	input := openApplicationInstallerCopies(t, f, prepared)
+
+	pending, err := (applicationInstallerPort{key: f.pipeline.key}).Prepare(t.Context(), input)
+	if pending != nil || err == nil {
+		t.Fatalf("host without a system-owned CLI accepted: %v %v", pending, err)
+	}
+
+	if text := err.Error(); !strings.Contains(text, "/usr/bin/pkexec") && !strings.Contains(text, "not a system-owned file") {
+		t.Fatalf("refusal does not tell the user what is missing: %v", err)
+	}
+
+	if strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "exit status") {
+		t.Fatalf("refusal is not a plain sentence: %v", err)
+	}
+
+	operations, err := filepath.Glob(filepath.Join(applicationInstallCache(), "stage-*"))
+	if err != nil || len(operations) != 0 {
+		t.Fatalf("refused helper left its operation: %v %v", operations, err)
 	}
 
 	if err := prepared.Close(); err != nil {

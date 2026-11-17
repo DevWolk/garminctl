@@ -16,9 +16,14 @@ import (
 func prepareStage(ctx context.Context, cache, source string) (directory, executable string, err error) {
 	if err := os.MkdirAll(cache, 0o700); err != nil {
 		return "", "", err
-	} // #nosec G703 -- trusted composition supplies this host cache, never a request.
+	}
 
 	if err := hostfile.Protect(cache, true); err != nil {
+		return "", "", err
+	}
+
+	// The cached CLI is executed from here and its package goes to the installer.
+	if err := checkPrivateAncestry(cache); err != nil {
 		return "", "", err
 	}
 

@@ -160,3 +160,48 @@ func TestDirFS_StaysInsideRoot(t *testing.T) {
 		t.Fatalf("outside file changed: %q, %v", b, err)
 	}
 }
+
+func TestDirFS_ReportsAbsenceOnlyForMissingPaths(t *testing.T) {
+	t.Parallel()
+
+	d, _ := newDump(t)
+	ctx := context.Background()
+
+	for _, missing := range []string{
+		"GARMIN/Settings/Missing.fit",
+		"GARMIN/Missing/Settings.fit",
+		"GARMIN/Settings/Settings.fit/child",
+	} {
+		if _, err := d.Read(ctx, missing); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Read(%q) = %v, want ErrNotFound", missing, err)
+		}
+
+		if _, err := d.Stat(ctx, missing); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Stat(%q) = %v, want ErrNotFound", missing, err)
+		}
+	}
+}
+
+func TestDirFS_FailedLookupIsNotAbsence(t *testing.T) {
+	t.Parallel()
+
+	d, _ := newDump(t)
+	ctx := context.Background()
+
+	// A closed root fails every lookup although the file is still there.
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.Read(ctx, "GARMIN/Settings/Settings.fit"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("Read over a failed lookup = %v, want an error other than ErrNotFound", err)
+	}
+
+	if _, err := d.Stat(ctx, "GARMIN/Settings/Settings.fit"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("Stat over a failed lookup = %v, want an error other than ErrNotFound", err)
+	}
+
+	if _, err := d.List(ctx, "GARMIN/Settings"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Errorf("List over a failed lookup = %v, want an error other than ErrNotFound", err)
+	}
+}

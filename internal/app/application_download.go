@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
@@ -68,6 +69,12 @@ func (d applicationPackageDownload) Download(ctx context.Context, selected appli
 		return nil, err
 	}
 
+	// The package is saved; a leftover that cannot be removed now is retried
+	// by the next download and must not fail this one.
+	if err := cache.Prune(ctx, application.RetainedPackages); err != nil {
+		slog.Warn("application package retention left files behind", "error", err)
+	}
+
 	return downloadReceipt(saved), nil
 }
 
@@ -89,8 +96,16 @@ func existingApplicationPackage(ctx context.Context, cache *updatetransport.Pack
 		publishDownloadProgress(progress, "verifying", selected.Package.Size, selected.Package.Size)
 
 		verified, err := cache.Open(ctx, entry.ID, nil)
+		if canceled := ctx.Err(); canceled != nil {
+			return nil, errors.Join(err, canceled)
+		}
+
 		if err != nil {
-			return nil, err
+			// A saved copy that no longer verifies is downloaded again; the
+			// verified download replaces the entry under the same identity.
+			slog.Warn("saved application package failed verification; downloading it again", "id", entry.ID, "error", err)
+
+			return nil, nil
 		}
 
 		err = verified.Close()

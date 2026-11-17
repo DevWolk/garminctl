@@ -23,6 +23,9 @@ type InstallWorkerConfig struct {
 	PublicKey               []byte
 	// ProbeMCP is trusted composition's bounded initialize/ping callback, never IPC input.
 	ProbeMCP func(context.Context, string, string) error
+	// HostCheck replaces the platform's own readiness check for the installation
+	// kind, installed CLI and operation directory; nil selects the platform's.
+	HostCheck func(InstallKind, string, string) error
 }
 
 type installerOwner interface {
@@ -33,6 +36,8 @@ type installerOwner interface {
 type installHost struct {
 	parentPID int
 	openOwner func(int) (installerOwner, error)
+	// preflight reports, before Ready, a host condition that would fail the installer after the application has exited.
+	preflight func(installRequest, string) error
 	run       func(context.Context, installRequest, string) error
 	restart   func(context.Context, InstallOptions, string) error
 }
@@ -47,7 +52,14 @@ func RunInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.
 		return errors.New("installer requires a bounded startup MCP probe")
 	}
 
-	return runInstallWorker(ctx, config, input, output, installHost{parentPID: os.Getppid(), openOwner: openInstallerOwner, run: runNativeInstaller, restart: func(ctx context.Context, options InstallOptions, tag string) error {
+	preflight := preflightNativeInstall
+	if config.HostCheck != nil {
+		preflight = func(r installRequest, directory string) error {
+			return config.HostCheck(r.Target.Installation, r.Install.CLI, directory)
+		}
+	}
+
+	return runInstallWorker(ctx, config, input, output, installHost{parentPID: os.Getppid(), openOwner: openInstallerOwner, preflight: preflight, run: runNativeInstaller, restart: func(ctx context.Context, options InstallOptions, tag string) error {
 		return restartInstalledDesktop(ctx, options, tag, config.Directory, config.ProbeMCP)
 	}})
 }
@@ -71,9 +83,9 @@ func runInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.
 
 	reader := bufio.NewReaderSize(input, maxStageRequest+1)
 
-	var request installRequest
-	if err := readInstallFrame(reader, &request); err != nil {
-		return errors.Join(err, ctx.Err())
+	request, err := readInstallFrameWithin[installRequest](ctx, reader)
+	if err != nil {
+		return err
 	}
 
 	if err := validateInstallRequest(request, config, identity, host.parentPID); err != nil {
@@ -94,13 +106,22 @@ func runInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.
 		return err
 	}
 
+	event := installEvent{Protocol: installProtocol, Operation: request.Operation, BuildVersion: config.BuildVersion, KeyID: identity, Kind: installReady}
+
+	if host.preflight != nil {
+		if refusal := host.preflight(request, config.Directory); refusal != nil {
+			// Nothing has started: the owner keeps running and shows the reason.
+			event.Kind, event.Message = installRefused, boundedInstallMessage(refusal.Error())
+
+			return writeInstallFrame(output, event)
+		}
+	}
+
 	owner, err := host.openOwner(request.OwnerPID)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, owner.Close()) }()
-
-	event := installEvent{Protocol: installProtocol, Operation: request.Operation, BuildVersion: config.BuildVersion, KeyID: identity, Kind: "ready"}
 
 	if err := writeInstallFrame(output, event); err != nil {
 		return err
@@ -112,7 +133,7 @@ func runInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.
 	}
 	defer func() { err = errors.Join(err, writeInstallResult(root, config.Directory, request, err)) }()
 
-	event.Kind = "accepted"
+	event.Kind = installAccepted
 	// Commit may already have been delivered when the parent loses its reply pipe.
 	// The parent must report an unknown outcome, while this one executor continues.
 	_ = writeInstallFrame(output, event)
@@ -162,10 +183,14 @@ func validateInstallOptions(target MatchRequest, options InstallOptions) error {
 		}
 	}
 
-	return validateRestartArguments(options.Args)
+	return validateRestart(options.Dir, options.Args)
 }
 
-func validateRestartArguments(args []string) error {
+func validateRestart(directory string, args []string) error {
+	if directory != "" && (!filepath.IsAbs(directory) || strings.ContainsRune(directory, 0)) {
+		return errors.New("native restart requires an absolute working directory")
+	}
+
 	if len(args) > 8 {
 		return errors.New("too many native restart arguments")
 	}
@@ -186,9 +211,9 @@ func readInstallDecision(ctx context.Context, reader *bufio.Reader, input io.Clo
 	stop := context.AfterFunc(bound, func() { _ = input.Close() })
 	defer stop()
 
-	var decision installDecision
-	if err := readInstallFrame(reader, &decision); err != nil {
-		return false, errors.Join(err, ctx.Err(), bound.Err())
+	decision, err := readInstallFrameWithin[installDecision](bound, reader)
+	if err != nil {
+		return false, err
 	}
 
 	if decision.Protocol != installProtocol || decision.Operation != operation {
@@ -198,13 +223,58 @@ func readInstallDecision(ctx context.Context, reader *bufio.Reader, input io.Clo
 	return decision.Commit, errors.Join(ctx.Err(), bound.Err())
 }
 
+// readInstallFrameWithin ends at the deadline even on a pipe that Close cannot
+// interrupt; an abandoned read ends with the process. A read that failed
+// because the deadline closed the pipe carries the deadline as its cause.
+func readInstallFrameWithin[T any](ctx context.Context, reader *bufio.Reader) (T, error) {
+	type frame struct {
+		value T
+		err   error
+	}
+
+	done := make(chan frame, 1)
+
+	go func() {
+		var read frame
+
+		read.err = readInstallFrame(reader, &read.value)
+		done <- read
+	}()
+
+	select {
+	case read := <-done:
+		if read.err != nil {
+			read.err = errors.Join(read.err, ctx.Err())
+		}
+
+		return read.value, read.err
+	case <-ctx.Done():
+		var none T
+
+		return none, ctx.Err()
+	}
+}
+
+func boundedInstallMessage(message string) string {
+	if len(message) > 1024 {
+		message = message[:1024]
+	}
+
+	return message
+}
+
 func authenticateInstallPayload(ctx context.Context, root *os.Root, r installRequest, der []byte) error {
+	return authenticatePackage(ctx, root, r.Release.Package, r.Release.Signature.Name, r.Digest, der)
+}
+
+// authenticatePackage binds the named package to the owner's digest and to the compiled key.
+func authenticatePackage(ctx context.Context, root *os.Root, payload AssetRef, signatureName, digest string, der []byte) error {
 	key, err := parsePublicKey(der)
 	if err != nil {
 		return err
 	}
 
-	file, err := openPackageFile(root, r.Release.Package.Name, r.Release.Package.Size)
+	file, err := openPackageFile(root, payload.Name, payload.Size)
 	if err != nil {
 		return err
 	}
@@ -212,15 +282,15 @@ func authenticateInstallPayload(ctx context.Context, root *os.Root, r installReq
 	defer func() { _ = file.Close() }()
 
 	hash := sha256.New()
-	if err := copyPackage(ctx, hash, file, r.Release.Package.Size, nil); err != nil {
+	if err := copyPackage(ctx, hash, file, payload.Size, nil); err != nil {
 		return err
 	}
 
-	if hex.EncodeToString(hash.Sum(nil)) != r.Digest {
+	if hex.EncodeToString(hash.Sum(nil)) != digest {
 		return errors.New("installer bytes changed from verified package")
 	}
 
-	signature, err := readStagedSignature(root, r.Release.Signature.Name)
+	signature, err := readStagedSignature(root, signatureName)
 	if err != nil {
 		return err
 	}
@@ -250,28 +320,23 @@ func executeCommittedInstall(ctx context.Context, c InstallWorkerConfig, root *o
 }
 
 func writeInstallResult(root *os.Root, directory string, r installRequest, outcome error) error {
-	status := "installed"
+	status := InstallSucceeded
 	message := ""
 
 	if outcome != nil {
-		status = "failed"
+		status = InstallFailed
 		message = outcome.Error()
 	}
 
 	if errors.Is(outcome, errInstallerOutcomeUnknown) {
-		status = "unknown"
+		status = InstallUnknown
 	}
 
 	if len(message) > 4096 {
 		message = message[:4096]
 	}
 
-	data, err := json.Marshal(struct {
-		Operation string `json:"operation"`
-		Tag       string `json:"tag"`
-		Status    string `json:"status"`
-		Error     string `json:"error,omitempty"`
-	}{r.Operation, r.Target.ReleaseTag, status, message})
+	data, err := json.Marshal(installResultRecord{r.Operation, r.Target.ReleaseTag, status, message})
 	if err != nil {
 		return err
 	}
@@ -299,5 +364,5 @@ func writeInstallResult(root *os.Root, directory string, r installRequest, outco
 		return err
 	}
 
-	return root.Rename(".install-result.tmp", "install-result.json")
+	return root.Rename(".install-result.tmp", installResultName)
 }

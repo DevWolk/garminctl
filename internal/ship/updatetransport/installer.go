@@ -81,6 +81,11 @@ func (i *Installer) validate(ctx context.Context, target MatchRequest, payload *
 func (i *Installer) prepare(ctx context.Context, target MatchRequest, payload *StagedPackage, options InstallOptions) (result *PendingInstall, err error) {
 	s := i.stager
 
+	// A finished operation leaves its package and CLI copy for diagnosis. One
+	// that cannot be removed yet is tried again by the next installation and
+	// must not block this one.
+	_ = removeStaleInstallations(s.cacheDir)
+
 	directory, cli, err := prepareStage(ctx, s.cacheDir, s.cliPath)
 	if err != nil {
 		return nil, err
@@ -125,7 +130,7 @@ func (i *Installer) prepare(ctx context.Context, target MatchRequest, payload *S
 		return nil, err
 	}
 
-	if err := pending.readEvent(ctx, "ready", 2*time.Minute); err != nil {
+	if err := pending.readEvent(ctx, installReady, 2*time.Minute); err != nil {
 		return nil, err
 	}
 
@@ -233,7 +238,12 @@ func (p *PendingInstall) readEvent(ctx context.Context, kind string, timeout tim
 		return errors.Join(err, ctx.Err(), bound.Err())
 	}
 
-	if event.Protocol != installProtocol || event.Operation != p.request.Operation || event.BuildVersion != p.request.BuildVersion || event.KeyID != p.request.KeyID || event.Kind != kind {
+	owned := event.Protocol == installProtocol && event.Operation == p.request.Operation && event.BuildVersion == p.request.BuildVersion && event.KeyID == p.request.KeyID
+	if owned && event.Kind == installRefused && event.Message != "" {
+		return errors.New(event.Message)
+	}
+
+	if !owned || event.Kind != kind {
 		return errors.New("installer reply does not match its owner")
 	}
 
@@ -265,7 +275,7 @@ func (p *PendingInstall) Commit(ctx context.Context) error {
 		return err
 	}
 
-	return p.readEvent(ctx, "accepted", 10*time.Second)
+	return p.readEvent(ctx, installAccepted, 10*time.Second)
 }
 
 // Close aborts/joins an uncommitted helper; after an attempt it releases only local handles.

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -28,8 +29,8 @@ func TestWatchDiagnosticDispatchRetainsUnsupportedErrors(t *testing.T) {
 			args := append([]string{rootFlag, testdump.Root(t)}, test.args...)
 
 			err := run(args, &out, &diagnostics)
-			if exitCode(err) != test.code || !strings.Contains(err.Error(), test.message) {
-				t.Fatalf("diagnostic error=%v exit=%d", err, exitCode(err))
+			if clix.ExitCode(err) != test.code || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("diagnostic error=%v exit=%d", err, clix.ExitCode(err))
 			}
 		})
 	}

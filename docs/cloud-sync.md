@@ -32,6 +32,9 @@ It does not save the password. Saving replaces a complete temporary file;
 a failed write or replacement keeps the previous tokens. Config-path,
 protection and unreadable-session errors are reported instead of silently
 using another directory. `cloud logout` can remove a malformed token file.
+Signing out, from the CLI or the app, also deletes the copies of the token and
+pending-verification files that application data backups hold; those backups
+stay usable for the remaining files.
 See [data locations](desktop.md#data-updates-and-uninstall) for token paths and
 the separate Windows/WSL stores.
 

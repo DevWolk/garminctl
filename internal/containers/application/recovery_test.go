@@ -132,3 +132,66 @@ func TestRecoveryRejectsUnverifiedMismatchedAndCanceledExports(t *testing.T) {
 		t.Fatalf("canceled export=%+v attempts=%d error=%v", result, source.exports, err)
 	}
 }
+
+func TestRecoveryListKeepsUsablePackagesBesideInvalidMetadata(t *testing.T) {
+	t.Parallel()
+
+	usable, invalid, unsupported := recoveryRecord("a", "v1.2.0"), recoveryRecord("b", "v1.3.0"), recoveryRecord("c", "v1.4.0")
+	invalid.Digest = "not-a-digest"
+	unsupported.Installation = "flatpak"
+
+	source := &recoveryCleanupFixture{unusable: []UnusableEntry{{ID: strings.Repeat("9", 64), Reason: "no manifest"}}}
+	source.rows = []PackageRecord{invalid, usable, unsupported}
+	action := NewRecoveryAction(source, "linux", "amd64")
+
+	rows, err := action.List(t.Context())
+	if err != nil || !slices.Equal(rows, []PackageRecord{usable}) {
+		t.Fatalf("metadata=%+v error=%v", rows, err)
+	}
+
+	rows, unusable, err := action.Catalog(t.Context())
+	if err != nil || !slices.Equal(rows, []PackageRecord{usable}) || len(unusable) != 3 || unusable[0] != source.unusable[0] || unusable[1].ID != invalid.ID || unusable[2].ID != unsupported.ID || unusable[1].Reason == "" {
+		t.Fatalf("metadata=%+v unusable=%+v error=%v", rows, unusable, err)
+	}
+}
+
+type recoveryCleanupFixture struct {
+	recoveryFixture
+	unusable []UnusableEntry
+	removed  []string
+}
+
+func (s *recoveryCleanupFixture) Unusable(context.Context) ([]UnusableEntry, error) {
+	return s.unusable, s.err
+}
+
+func (s *recoveryCleanupFixture) Remove(_ context.Context, id string) error {
+	s.removed = append(s.removed, id)
+
+	return s.err
+}
+
+func TestRecoveryRemoveDeletesOnlyAnExplicitIdentity(t *testing.T) {
+	t.Parallel()
+
+	source := new(recoveryCleanupFixture)
+	action := NewRecoveryAction(source, "linux", "amd64")
+	id := strings.Repeat("9", 64)
+
+	if err := action.Remove(t.Context(), "../outside"); err == nil || len(source.removed) != 0 {
+		t.Fatalf("path reached the store: %v error=%v", source.removed, err)
+	}
+
+	if err := action.Remove(t.Context(), id); err != nil || !slices.Equal(source.removed, []string{id}) {
+		t.Fatalf("removed=%v error=%v", source.removed, err)
+	}
+
+	source.err = errors.New("fixture removal failure")
+	if err := action.Remove(t.Context(), id); !errors.Is(err, source.err) {
+		t.Fatalf("store failure lost: %v", err)
+	}
+
+	if err := NewRecoveryAction(new(recoveryFixture), "linux", "amd64").Remove(t.Context(), id); err == nil {
+		t.Fatal("a store without removal reported success")
+	}
+}

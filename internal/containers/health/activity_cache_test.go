@@ -165,6 +165,93 @@ func TestActivityCacheMergeRetainsConcurrentIndependentEntries(t *testing.T) {
 	}
 }
 
+// cacheWriteCounter reports how often the cache file was replaced between the
+// activity reads of one decode run.
+type cacheWriteCounter struct {
+	device.Device
+	cachePath string
+	last      os.FileInfo
+	writes    int
+}
+
+func (d *cacheWriteCounter) Read(ctx context.Context, path string) ([]byte, error) {
+	if strings.HasPrefix(path, "GARMIN/Activity/") {
+		if info, err := os.Stat(d.cachePath); err == nil {
+			if d.last == nil || !os.SameFile(d.last, info) {
+				d.writes++
+			}
+
+			d.last = info
+		}
+	}
+
+	return d.Device.Read(ctx, path)
+}
+
+func TestActivityDecodeDoesNotRewriteCacheForEveryFile(t *testing.T) {
+	t.Parallel()
+	dev, entries := activityTestDevice(t, 24)
+
+	cp := filepath.Join(t.TempDir(), "activities.json")
+	counter := &cacheWriteCounter{Device: dev, cachePath: cp}
+	started := time.Now()
+
+	if err := newActivityReader(fit.MustProfile(), watchsession.New(counter)).decodeActivities(t.Context(), cp, entries); err != nil {
+		t.Fatal(err)
+	}
+
+	if allowed := 1 + int(time.Since(started)/activityFlushInterval); counter.writes > allowed {
+		t.Fatalf("cache replaced %d times while decoding %d files, want at most %d", counter.writes, len(entries), allowed)
+	}
+
+	activityCacheMu.Lock()
+	cache := loadActivityCache(cp)
+	activityCacheMu.Unlock()
+
+	if len(cache.Entries) != len(entries) {
+		t.Fatalf("cache holds %d of %d decoded activities", len(cache.Entries), len(entries))
+	}
+}
+
+func TestActivityDecodeKeepsFinishedFilesWhenInterrupted(t *testing.T) {
+	t.Parallel()
+	dev, entries := activityTestDevice(t, 3)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	gate := make(chan struct{})
+	defer close(gate)
+
+	dev.gate, dev.blocked = gate, "GARMIN/Activity/"+entries[2].Name
+	cp := filepath.Join(t.TempDir(), "activities.json")
+	done := make(chan error, 1)
+
+	go func() {
+		done <- newActivityReader(fit.MustProfile(), watchsession.New(dev)).decodeActivities(ctx, cp, entries)
+	}()
+
+	waitActivityBarrier(t, dev.entered)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("interrupted decode: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("interrupted decode did not return")
+	}
+
+	activityCacheMu.Lock()
+	cache := loadActivityCache(cp)
+	activityCacheMu.Unlock()
+
+	if len(cache.Entries) != 2 {
+		t.Fatalf("finished activities lost on interruption: %v", cache.Entries)
+	}
+}
+
 func TestActivitiesWaitJoinsBackgroundAndReadsEachFileOnce(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
@@ -259,7 +346,7 @@ func TestActivityCacheReplacementFailureCleansTemporaryFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := mergeActivityCache(cp, ActivitySummary{File: "new.fit"}); err == nil {
+	if _, err := mergeActivityCache(cp, []ActivitySummary{{File: "new.fit"}}); err == nil {
 		t.Fatal("failed cache replacement reported success")
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -54,7 +55,7 @@ func newMusicJobFixture(t *testing.T, dropAfterWrite bool) *musicJobFixture {
 			}
 		}}, err
 	})
-	f.cli = &cli{runtime: runtime, out: newPrinter(io.Discard), errOut: newPrinter(io.Discard)}
+	f.cli = &cli{runtime: runtime, out: clix.NewPrinter(io.Discard), errOut: clix.NewPrinter(io.Discard)}
 
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
@@ -121,7 +122,7 @@ func TestMusicJobsKeepPerFileLeaseAndProgressTiming(t *testing.T) {
 
 			probe := &musicProgressProbe{t: t, gate: f.cli.runtime.Manager().Gate(), operations: test.operations}
 
-			f.cli.out = newPrinter(probe)
+			f.cli.out = clix.NewPrinter(probe)
 			if err := f.cli.runSessionJob(t.Context(), f.cli.musicJob, args); err != nil {
 				t.Fatal(err)
 			}

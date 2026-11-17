@@ -111,8 +111,8 @@ func ServeRuntime(listener net.Listener, runtime Runtime, account *gc.Client, au
 	srv := &http.Server{
 		Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 120 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context { return ctx },
-		ConnState:   connections.state,
 	}
+	connections.attach(srv)
 
 	var shutdownErr error
 
@@ -224,7 +224,7 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 	mux.HandleFunc("GET /{tab}", page)
 	mux.HandleFunc("GET /{tab}/{rest...}", page)
 
-	return logRequests(localOnly(addr, mux)), nil
+	return logRequests(httpx.LocalOnly(addr, mux)), nil
 }
 
 // uiTab finds the tab names index.html declares, so the page routes follow
@@ -241,10 +241,10 @@ func (s *Server) routes(mux *http.ServeMux) {
 	mux.Handle("POST /mcp", s.mcp)
 	mux.Handle("DELETE /mcp", s.mcp)
 	mux.HandleFunc("GET /api/mcp", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"endpoint": "http://" + r.Host + "/mcp", "status": s.mcp.Snapshot()})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"endpoint": "http://" + r.Host + "/mcp", "status": s.mcp.Snapshot()})
 	})
 	mux.HandleFunc("GET /api/server", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))
@@ -266,7 +266,7 @@ func logRequests(h http.Handler) http.Handler {
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	if s.manager.Current() == nil && r.URL.Query().Get("connect") == "" {
-		writeJSON(w, http.StatusOK, statusResponse{Auto: s.autoSnapshot()})
+		httpx.WriteJSON(w, http.StatusOK, statusResponse{Auto: s.autoSnapshot()})
 		return
 	}
 
@@ -293,7 +293,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) disconnectHandler(w http.ResponseWriter, _ *http.Request) {
 	s.manager.Drop()
-	writeJSON(w, http.StatusOK, statusResponse{})
+	httpx.WriteJSON(w, http.StatusOK, statusResponse{})
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {

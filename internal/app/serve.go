@@ -59,7 +59,7 @@ func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, autoS
 
 	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{
 		HTTP: []httpx.RouteRegistrar{
-			&connecthttp.Handler{Manager: runtime.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: ConnectFor(runtime, account), JobFor: func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
+			&connecthttp.Handler{Manager: runtime.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: ConnectFor(runtime, account), ForgetSessionCopies: ForgetApplicationSessionCopies, JobFor: func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
 				return JobConnect(runtime, account, epoch)
 			}},
 			&healthhttp.Handler{Manager: runtime.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: HealthAccess(runtime, account)},

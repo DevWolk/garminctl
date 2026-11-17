@@ -14,6 +14,7 @@ const (
 	debMetadataTool = "/usr/bin/dpkg-deb"
 	debQueryTool    = "/usr/bin/dpkg-query"
 	debCompareTool  = "/usr/bin/dpkg"
+	rpmMetadataTool = "/usr/bin/rpm"
 )
 
 type nativeVersionQuery func(context.Context, string, ...string) (string, error)
@@ -23,33 +24,70 @@ func prepareNativeInstaller(ctx context.Context, r installRequest, directory str
 		return installerInvocation{}, err
 	}
 
-	if r.Target.Installation == InstallDEB && !r.Install.AllowDowngrade {
-		// Release selection and consent already belong to Application. Native
-		// ordering can reverse that selection, e.g. 1.2.3.rc.1 -> 1.2.3.
-		lower, err := debTargetIsLower(ctx, filepath.Join(directory, r.Release.Package.Name), query)
+	path := filepath.Join(directory, r.Release.Package.Name)
+
+	switch r.Target.Installation {
+	case InstallDEB:
+		target, err := packagedVersion(ctx, r.Target.ReleaseTag, query, debMetadataTool, "--field", path, "Version")
 		if err != nil {
-			return installerInvocation{}, fmt.Errorf("compare selected DEB with installed package: %w", err)
+			return installerInvocation{}, err
 		}
 
-		r.Install.AllowDowngrade = lower
+		if !r.Install.AllowDowngrade {
+			// Release selection and consent already belong to Application. Native
+			// ordering can reverse that selection, e.g. 1.2.3.rc.1 -> 1.2.3.
+			lower, err := debTargetIsLower(ctx, target, query)
+			if err != nil {
+				return installerInvocation{}, fmt.Errorf("compare selected DEB with installed package: %w", err)
+			}
+
+			r.Install.AllowDowngrade = lower
+		}
+	case InstallRPM:
+		if _, err := packagedVersion(ctx, r.Target.ReleaseTag, query, rpmMetadataTool, "--query", "--package", "--queryformat", "%{VERSION}", path); err != nil {
+			return installerInvocation{}, err
+		}
+	case InstallSetup, InstallPortable:
 	}
 
 	return nativeInstallerCommand(r, directory)
 }
 
-func debTargetIsLower(ctx context.Context, path string, query nativeVersionQuery) (bool, error) {
-	target, err := query(ctx, debMetadataTool, "--field", path, "Version")
+// packagedVersion reads the version the package itself declares. The signature
+// covers bytes only, so a signed package of another release published under
+// this release's name is recognised here, before the package manager runs.
+func packagedVersion(ctx context.Context, tag string, query nativeVersionQuery, tool string, args ...string) (string, error) {
+	output, err := query(ctx, tool, args...)
 	if err != nil {
-		return false, err
+		return "", fmt.Errorf("read the version inside the selected package: %w", err)
 	}
 
+	version := strings.TrimSpace(output)
+	if !validNativeVersion(version) {
+		return "", errors.New("native package version is missing or invalid")
+	}
+
+	if version != nativePackageVersion(tag) {
+		return "", fmt.Errorf("the package contains version %s, not the selected release %s", version, tag)
+	}
+
+	return version, nil
+}
+
+// nativePackageVersion spells a release tag the way the packaging script
+// writes it into the DEB and RPM version fields.
+func nativePackageVersion(tag string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(tag, "v"), "-", ".")
+}
+
+func debTargetIsLower(ctx context.Context, target string, query nativeVersionQuery) (bool, error) {
 	current, err := query(ctx, debQueryTool, "-W", "-f=${Version}", "garminctl")
 	if err != nil {
 		return false, err
 	}
 
-	target, current = strings.TrimSpace(target), strings.TrimSpace(current)
-	if !validNativeVersion(target) || !validNativeVersion(current) {
+	current = strings.TrimSpace(current)
+	if !validNativeVersion(current) {
 		return false, errors.New("native package version is missing or invalid")
 	}
 
@@ -75,7 +113,7 @@ func queryNativeVersion(ctx context.Context, program string, args ...string) (st
 	bound, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(bound, program, args...) //nolint:gosec // Private caller supplies fixed read-only dpkg tools and separate argv, never a shell or a caller-supplied executable.
+	command := exec.CommandContext(bound, program, args...) //nolint:gosec // Private caller supplies fixed read-only dpkg/rpm tools and separate argv, never a shell or a caller-supplied executable.
 	command.WaitDelay = time.Second
 
 	var output, diagnostic stageDiagnostics

@@ -9,12 +9,13 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/device/wpd"
 	"github.com/DevWolk/garminctl/internal/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 )
 
 // desktop opens the installed native app; WSL launches the Windows installation.
 func (c *cli) desktop(ctx context.Context, args []string) error {
 	if len(args) != 0 {
-		return usageErrorf("usage: garminctl desktop")
+		return clix.UsageErrorf("usage: garminctl desktop")
 	}
 
 	if ps := wpd.PowerShellPath(); ps != "" {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
@@ -103,17 +104,17 @@ func TestExitCode(t *testing.T) {
 
 			err := run(tt.args, &out, &errOut)
 
-			if got := exitCode(err); got != tt.expected {
-				t.Fatalf("exitCode(%v) = %d, want %d (stderr %q)", err, got, tt.expected, errOut.String())
+			if got := clix.ExitCode(err); got != tt.expected {
+				t.Fatalf("clix.ExitCode(%v) = %d, want %d (stderr %q)", err, got, tt.expected, errOut.String())
 			}
 		})
 	}
 
-	if exitCode(context.Canceled) != 130 {
+	if clix.ExitCode(context.Canceled) != 130 {
 		t.Fatal("an interrupted run should exit with 130")
 	}
 
-	if !errors.Is(parseFlags(flag.NewFlagSet("x", flag.ContinueOnError), []string{"-h"}), flag.ErrHelp) {
+	if !errors.Is(clix.ParseFlags(flag.NewFlagSet("x", flag.ContinueOnError), []string{"-h"}), flag.ErrHelp) {
 		t.Fatal("-h must surface flag.ErrHelp")
 	}
 }

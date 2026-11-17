@@ -101,7 +101,8 @@ type Info struct {
 
 // Device is a file store on the watch. Paths are slash separated and
 // relative to the storage root, e.g. "GARMIN/Settings/Settings.fit".
-// Name matching is case-insensitive.
+// Name matching is case-insensitive. Read returns a buffer the caller owns:
+// an implementation neither keeps nor reuses it.
 type Device interface {
 	Info() Info
 	List(ctx context.Context, path string) ([]Entry, error)

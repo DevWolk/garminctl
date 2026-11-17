@@ -128,12 +128,17 @@ func (s *restoreSnapshots) Verify(_ context.Context, id string) (*RecoverySnapsh
 }
 
 type restoreEffect struct {
-	calls int
-	err   error
+	calls   int
+	err     error
+	refusal func(target, safety RecoverySnapshot) *DataRestoreResult
 }
 
 func (s *restoreEffect) Restore(_ context.Context, target, safety RecoverySnapshot) (*DataRestoreResult, error) {
 	s.calls++
+	if s.refusal != nil {
+		return s.refusal(target, safety), s.err
+	}
+
 	return &DataRestoreResult{TargetSnapshotID: target.ID, SafetySnapshotID: safety.ID, Attempted: true, Completed: s.err == nil, Replaced: 1, Removed: 1}, s.err
 }
 
@@ -217,6 +222,34 @@ func TestRestoreDataConsumesConfirmedPlanAndPreservesFailureReceipt(t *testing.T
 
 			if again, err := action.Run(t.Context(), plan, consent); again != nil || err == nil || store.calls != 1 {
 				t.Fatalf("replayed=%+v count=%d %v", again, store.calls, err)
+			}
+		})
+	}
+}
+
+func TestRestoreDataReportsARefusalBeforeAnyWriteAsUntouched(t *testing.T) {
+	t.Parallel()
+
+	for name, refusal := range map[string]func(target, safety RecoverySnapshot) *DataRestoreResult{
+		"no receipt": func(RecoverySnapshot, RecoverySnapshot) *DataRestoreResult { return nil },
+		"untouched receipt": func(target, safety RecoverySnapshot) *DataRestoreResult {
+			return &DataRestoreResult{TargetSnapshotID: target.ID, SafetySnapshotID: safety.ID}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			action, source, store, current, target := restorePolicyFixture()
+			store.err, store.refusal = errors.New("live state differs from its reviewed snapshot"), refusal
+
+			plan, err := action.Prepare(t.Context(), current, target, source.target.ID, source.safety.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := action.Run(t.Context(), plan, RestoreConsent{Confirmed: true, EditsResolved: true, ReviewID: plan.View().ReviewID})
+			if !errors.Is(err, store.err) || result == nil || result.Attempted || result.Completed || result.Replaced != 0 || result.Removed != 0 {
+				t.Fatalf("result=%+v error=%v", result, err)
 			}
 		})
 	}

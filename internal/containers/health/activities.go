@@ -231,63 +231,133 @@ func saveActivityCache(cp string, cache activityCache) (err error) {
 	return os.Rename(f.Name(), cp)
 }
 
-// mergeActivityCache reads current entries and replaces the cache under one lock.
-// The caller has already finished device I/O and never holds this lock over USB.
-func mergeActivityCache(cp string, a ActivitySummary) error {
+// activityFlushInterval bounds how long decoded summaries stay in memory, so a
+// polling caller sees progress while the cache is not rewritten for every file.
+const activityFlushInterval = time.Second
+
+// mergeActivityCache adds decoded summaries to the current entries under one
+// lock and returns the merged cache; without summaries it only reads. The
+// caller has already finished device I/O and never holds this lock over USB.
+func mergeActivityCache(cp string, decoded []ActivitySummary) (activityCache, error) {
 	activityCacheMu.Lock()
 	defer activityCacheMu.Unlock()
 
 	cache := loadActivityCache(cp)
-	cache.Entries[a.File] = a
+	if len(decoded) == 0 {
+		return cache, nil
+	}
 
-	return saveActivityCache(cp, cache)
+	for _, a := range decoded {
+		cache.Entries[a.File] = a
+	}
+
+	return cache, saveActivityCache(cp, cache)
 }
 
-func cachedActivity(cp string, entry device.Entry) bool {
-	activityCacheMu.Lock()
-	defer activityCacheMu.Unlock()
+// activityBatch collects the summaries decoded since the cache was last written.
+type activityBatch struct {
+	path    string
+	known   map[string]ActivitySummary
+	pending []ActivitySummary
+	written time.Time
+}
 
-	a, ok := loadActivityCache(cp).Entries[entry.Name]
+func (b *activityBatch) cached(entry device.Entry) bool {
+	a, ok := b.known[entry.Name]
 
 	return ok && a.Size == entry.Size
 }
 
+// flush merges the pending summaries into the latest cache, which may hold
+// entries another decoder wrote meanwhile, and keeps that cache for rechecks.
+func (b *activityBatch) flush() error {
+	pending := b.pending
+	b.pending, b.written = nil, time.Now()
+
+	cache, err := mergeActivityCache(b.path, pending)
+	if err != nil {
+		return fmt.Errorf("save activity cache: %w", err)
+	}
+
+	b.known = cache.Entries
+
+	return nil
+}
+
 // decodeActivities rechecks entries after obtaining decode ownership and merges
-// each result into the latest cache, including independent concurrent entries.
-func (s *activityReader) decodeActivities(ctx context.Context, cp string, entries []device.Entry) error {
+// its results into the latest cache, including independent concurrent entries.
+// Summaries decoded before an error or cancellation are still saved.
+func (s *activityReader) decodeActivities(ctx context.Context, cp string, entries []device.Entry) (err error) {
+	batch := &activityBatch{path: cp}
+	if err := batch.flush(); err != nil {
+		return err
+	}
+
+	defer func() {
+		if len(batch.pending) == 0 {
+			return
+		}
+
+		if flushErr := batch.flush(); err == nil {
+			err = flushErr
+		} else if flushErr != nil {
+			err = errors.Join(err, flushErr)
+		}
+	}()
+
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 
-		if cachedActivity(cp, entry) {
+		if batch.cached(entry) {
 			continue
 		}
 
-		data, err := s.session.ReadFile(ctx, "GARMIN/Activity/"+entry.Name)
-		if ctx.Err() != nil {
-			return ctx.Err()
+		a, err := s.decodeActivity(ctx, entry)
+		if err != nil {
+			return err
 		}
 
-		if err != nil {
-			if errors.Is(err, device.ErrDisconnected) {
-				return err
-			}
-
+		if a == nil {
 			continue
 		}
 
-		a, err := s.summarize(data, entry.Name)
-		if err != nil {
-			a = ActivitySummary{File: entry.Name, Sport: "unreadable", Size: int64(len(data))}
+		batch.pending = append(batch.pending, *a)
+		if time.Since(batch.written) < activityFlushInterval {
+			continue
 		}
 
-		if err := mergeActivityCache(cp, a); err != nil {
-			return fmt.Errorf("save activity cache: %w", err)
+		if err := batch.flush(); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+// decodeActivity reads and summarises one file. A file that cannot be read is
+// skipped with a nil summary; only cancellation and a lost watch end the run.
+func (s *activityReader) decodeActivity(ctx context.Context, entry device.Entry) (*ActivitySummary, error) {
+	data, err := s.session.ReadFile(ctx, "GARMIN/Activity/"+entry.Name)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	if err != nil {
+		if errors.Is(err, device.ErrDisconnected) {
+			return nil, err
+		}
+
+		return nil, nil //nolint:nilnil // an unreadable file stays pending for the next run; the others are still decoded
+	}
+
+	a, err := s.summarize(data, entry.Name)
+	if err != nil {
+		a = ActivitySummary{File: entry.Name, Sport: "unreadable", Size: int64(len(data))}
+	}
+
+	return &a, nil
 }
 
 // reserveActivityJob publishes ownership before either background or wait=true

@@ -29,6 +29,12 @@ type App struct {
 	operations  nativeOperations
 	onReady     func(context.Context, Scope)
 	readyNotice sync.Once
+
+	// closeHolds counts confirmed work that must end before the window closes;
+	// closeAsked remembers a close request that arrived meanwhile.
+	closeMu    sync.Mutex
+	closeHolds int
+	closeAsked bool
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -38,13 +44,69 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) emit(action string) { a.host.Emit(action) }
 
 func (a *App) beforeClose(_ context.Context) bool {
-	if a.closing.Load() || !a.ready.Load() {
+	if a.closing.Load() {
+		return false
+	}
+
+	if a.postponeClose(false) {
+		return true
+	}
+
+	if !a.ready.Load() {
 		return false
 	}
 
 	a.emit("close")
 
 	return true
+}
+
+// postponeClose records a close request while confirmed work holds the window
+// open. A final request that is not postponed marks the window as closing.
+func (a *App) postponeClose(final bool) bool {
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+
+	if a.closeHolds > 0 {
+		a.closeAsked = true
+		return true
+	}
+
+	if final {
+		a.closing.Store(true)
+	}
+
+	return false
+}
+
+// holdClose keeps the window open until release. It is refused once the
+// window is closing, so held work never starts under a cancelled window.
+func (a *App) holdClose() (func(), error) {
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+
+	if a.closing.Load() {
+		return nil, errors.New("desktop window is closing")
+	}
+
+	a.closeHolds++
+
+	return sync.OnceFunc(a.releaseClose), nil
+}
+
+func (a *App) releaseClose() {
+	a.closeMu.Lock()
+	a.closeHolds--
+
+	asked := a.closeHolds == 0 && a.closeAsked
+	if asked {
+		a.closeAsked = false
+	}
+	a.closeMu.Unlock()
+
+	if asked && !a.closing.Load() {
+		a.FinishClose()
+	}
 }
 
 // Ready enables the frontend's unsaved-edit guard after the page has loaded.
@@ -66,8 +128,12 @@ func (a *App) Ready() {
 }
 
 // FinishClose is called after the frontend confirms pending edits may be lost.
+// While confirmed work holds the window open, the close waits for its end.
 func (a *App) FinishClose() {
-	a.closing.Store(true)
+	if a.postponeClose(true) {
+		return
+	}
+
 	a.operations.cancel()
 	a.host.Quit()
 }

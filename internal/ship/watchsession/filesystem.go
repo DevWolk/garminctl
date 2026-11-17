@@ -1,7 +1,6 @@
 package watchsession
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,12 +42,7 @@ func (s *Session) ReadFile(ctx context.Context, p string) ([]byte, error) {
 		return nil, err
 	}
 
-	data, err := s.dev.Read(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-
-	return bytes.Clone(data), nil
+	return s.dev.Read(ctx, p)
 }
 
 // ReadCached returns defensively copied bytes from the generation-aware cache.

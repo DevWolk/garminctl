@@ -15,28 +15,82 @@ import (
 // SnapshotReader inspects a trusted local backup root without restoring files.
 type SnapshotReader struct{ directory string }
 
+// UnusableSnapshot names a backup directory whose manifest this build cannot
+// read. It stays on disk until Remove deletes it.
+type UnusableSnapshot struct{ ID, Reason string }
+
+// ErrSnapshotNotRetained reports a request for an identity the backup root does not hold.
+var ErrSnapshotNotRetained = errors.New("the selected data snapshot is not retained")
+
 // NewSnapshotReader performs no IO; the directory comes from local composition.
 func NewSnapshotReader(directory string) *SnapshotReader {
 	return &SnapshotReader{directory: directory}
 }
 
 // List returns manifest metadata only, without verifying retained file bytes.
+// Snapshots whose manifest this build cannot read are left out; Catalog names them.
 func (r *SnapshotReader) List(ctx context.Context) ([]Snapshot, error) {
+	result, _, err := r.Catalog(ctx)
+
+	return result, err
+}
+
+// Catalog returns the same metadata as List and the entries it had to skip, so
+// one unreadable backup never hides the backups beside it.
+func (r *SnapshotReader) Catalog(ctx context.Context) ([]Snapshot, []UnusableSnapshot, error) {
 	if err := r.check(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	parent, err := r.openParent()
 	if errors.Is(err, os.ErrNotExist) {
-		return []Snapshot{}, nil
+		return []Snapshot{}, []UnusableSnapshot{}, nil
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer parent.Close()
 
+	names, err := snapshotNames(parent)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	result, skipped := make([]Snapshot, 0), make([]UnusableSnapshot, 0)
+
+	for _, name := range names {
+		value, err := r.read(ctx, parent, name, false)
+		if canceled := ctx.Err(); canceled != nil {
+			return nil, nil, canceled
+		}
+
+		if err != nil {
+			skipped = append(skipped, UnusableSnapshot{ID: name, Reason: err.Error()})
+
+			continue
+		}
+
+		result = append(result, *value)
+	}
+
+	if err := checkSnapshotDestination(parent, r.directory); err != nil {
+		return nil, nil, err
+	}
+
+	slices.SortFunc(result, func(a, b Snapshot) int {
+		if order := b.CreatedAt.Compare(a.CreatedAt); order != 0 {
+			return order
+		}
+
+		return strings.Compare(a.ID, b.ID)
+	})
+
+	return result, skipped, nil
+}
+
+func snapshotNames(parent *os.Root) ([]string, error) {
 	file, err := parent.Open(".")
 	if err != nil {
 		return nil, err
@@ -52,30 +106,17 @@ func (r *SnapshotReader) List(ctx context.Context) ([]Snapshot, error) {
 		return nil, errors.New("snapshot catalog exceeds the directory-entry limit")
 	}
 
-	result := make([]Snapshot, 0)
+	names := make([]string, 0, len(entries))
 
 	for _, entry := range entries {
-		if !validSnapshotID(entry.Name()) {
-			continue
+		if validSnapshotID(entry.Name()) {
+			names = append(names, entry.Name())
 		}
-
-		value, err := r.read(ctx, parent, entry.Name(), false)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, *value)
 	}
 
-	slices.SortFunc(result, func(a, b Snapshot) int {
-		if order := b.CreatedAt.Compare(a.CreatedAt); order != 0 {
-			return order
-		}
+	slices.Sort(names)
 
-		return strings.Compare(a.ID, b.ID)
-	})
-
-	return result, nil
+	return names, nil
 }
 
 // Open checks every retained file against its local manifest, not a publisher key.
@@ -89,10 +130,19 @@ func (r *SnapshotReader) Open(ctx context.Context, id string) (*Snapshot, error)
 	}
 
 	parent, err := r.openParent()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrSnapshotNotRetained
+	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer parent.Close()
+
+	if _, err := parent.Lstat(id); errors.Is(err, os.ErrNotExist) {
+		return nil, ErrSnapshotNotRetained
+	}
 
 	return r.read(ctx, parent, id, true)
 }
@@ -131,6 +181,7 @@ func (r *SnapshotReader) read(ctx context.Context, parent *os.Root, id string, v
 	if err != nil {
 		return nil, err
 	}
+
 	defer root.Close()
 
 	manifest, err := readSnapshotManifest(ctx, root, directory, id)

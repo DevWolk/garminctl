@@ -80,6 +80,10 @@ Section "Uninstall"
   SetRegView 64
   Delete "$SMPROGRAMS\garminctl.lnk"
   Delete "$DESKTOP\garminctl.lnk"
+  ; "garminctl autostart on" adds a sign-in shortcut and its own CLI copy.
+  ; Caches in the same directory stay.
+  Delete "$SMSTARTUP\garminctl.lnk"
+  Delete "$LOCALAPPDATA\garminctl\garminctl.exe"
   Delete "$INSTDIR\garmin-desktop.exe"
   Delete "$INSTDIR\garminctl.exe"
   Delete "$INSTDIR\LICENSE"

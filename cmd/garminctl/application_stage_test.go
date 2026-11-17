@@ -12,7 +12,7 @@ import (
 func TestCLIPrivateStageRefusesUnconfiguredKey(t *testing.T) {
 	t.Parallel()
 
-	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand, app.ApplicationInstallCommand} {
+	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand, app.ApplicationInstallCommand, app.ApplicationPackageCommand} {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()
 
@@ -29,7 +29,7 @@ func TestCLIPrivateStageRefusesUnconfiguredKey(t *testing.T) {
 func TestCLIPrivateStageRejectsArguments(t *testing.T) {
 	t.Parallel()
 
-	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand, app.ApplicationInstallCommand} {
+	for _, command := range []string{app.ApplicationStageCommand, app.ApplicationVerifyCommand, app.ApplicationInstallCommand, app.ApplicationPackageCommand} {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()
 

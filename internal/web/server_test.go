@@ -456,7 +456,7 @@ func TestServer_UploadTooLargeIsRefused(t *testing.T) {
 
 	ts, _ := newTestServer(t)
 
-	body := bytes.NewReader(make([]byte, maxUploadBytes+1))
+	body := bytes.NewReader(make([]byte, httpx.MaxUploadBytes+1))
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, ts.URL+"/api/file?path=GARMIN/NewFiles/big.bin", body)
 	if err != nil {

@@ -3,9 +3,11 @@ package native_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
@@ -230,6 +232,8 @@ func TestNativeInstallExitsAfterReleaseEvenForUncertainCommit(t *testing.T) {
 				t.Fatal("stopped or uncertain handoff replayed")
 			}
 
+			assertInstallationOutcomePhase(t, name, state)
+
 			if _, err := s.StartDownload("v1.3.0", false); err == nil {
 				t.Fatal("new download admitted after stop")
 			}
@@ -258,6 +262,24 @@ func TestNativeInstallExitsAfterReleaseEvenForUncertainCommit(t *testing.T) {
 	}
 }
 
+// assertInstallationOutcomePhase keeps a lost acknowledgement apart from an accepted handoff.
+func assertInstallationOutcomePhase(t *testing.T, name string, state *applicationnative.InstallationState) {
+	t.Helper()
+
+	want, failed := name, false
+
+	switch name {
+	case "lost acknowledgement":
+		want, failed = "uncertain", true
+	case installStopFailed:
+		want, failed = "failed", true
+	}
+
+	if state.Phase != want || (state.Error != "") != failed || !state.StopRequested {
+		t.Fatalf("terminal state=%+v, want phase %s", state, want)
+	}
+}
+
 func installationOutcome(name string) (*application.InstallHandoffResult, error) {
 	value := &application.InstallHandoffResult{From: "v1.0.0", To: installTestTag, State: application.HandoffAccepted}
 
@@ -270,5 +292,89 @@ func installationOutcome(name string) (*application.InstallHandoffResult, error)
 		return value, errors.New(installStopFailed)
 	default:
 		return value, nil
+	}
+}
+
+func TestNativeInstallReportsExpiredPreparationInOneSentence(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		r := &installReader{install: func(ctx context.Context, _ application.PreflightRequest, _ application.InstallConsent, p func(string)) (*application.InstallHandoffResult, error) {
+			p("backing-up")
+			<-ctx.Done()
+			// Each layer below joins the same expired deadline to its own error.
+			return nil, errors.Join(ctx.Err(), ctx.Err(), ctx.Err(), ctx.Err())
+		}}
+		s, w := installationFixture(t, r)
+
+		if _, err := s.StartInstallation(installationRequest(), installationConsent()); err != nil {
+			t.Fatal(err)
+		}
+
+		time.Sleep(26 * time.Minute)
+		synctest.Wait()
+
+		state, err := s.InstallationStatus()
+		if err != nil || state.Active || state.Phase != "failed" {
+			t.Fatalf("expired preparation=%+v %v", state, err)
+		}
+
+		if strings.Contains(state.Error, "context deadline exceeded") || strings.Contains(state.Error, "\n") || !strings.Contains(state.Error, "ran out of time") || !strings.Contains(state.Error, "nothing was installed") {
+			t.Fatalf("expired preparation is shown as %q", state.Error)
+		}
+
+		select {
+		case <-w.exited:
+			t.Fatal("expired preparation quit the window")
+		default:
+		}
+	})
+}
+
+type installRecordsReader struct {
+	installReader
+	outcome *application.InstallationOutcome
+	err     error
+}
+
+func (r *installRecordsReader) LastInstallation(context.Context) (*application.InstallationOutcome, error) {
+	return r.outcome, r.err
+}
+
+// A failure after handoff happens while the application is closed; the next
+// start is the first chance to show it.
+func TestNativeIdleStatusShowsLastIncompleteInstallation(t *testing.T) {
+	t.Parallel()
+
+	failed := &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationFailed, Error: "exit status 126", Directory: "/cache/stage-1"}
+
+	for _, tc := range []struct {
+		name    string
+		outcome *application.InstallationOutcome
+		err     error
+		shown   bool
+	}{
+		{"failed", failed, nil, true},
+		{"unknown", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationUnknown}, nil, true},
+		{"installed", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationInstalled}, nil, false},
+		{"none", nil, nil, false},
+		{"unreadable", nil, errors.New("record is damaged"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := &installRecordsReader{outcome: tc.outcome, err: tc.err}
+			w := &installWindow{current: t.Context, owned: true, exited: make(chan struct{})}
+			s := applicationnative.NewService(w, func(string, bool) (applicationnative.Reader, error) { return r, nil })
+
+			state, err := s.InstallationStatus()
+			if err != nil || state.Phase != "idle" || (state.LastResult != "") != tc.shown {
+				t.Fatalf("idle state=%+v %v", state, err)
+			}
+
+			if tc.shown && state.LastResult != tc.outcome.Summary() {
+				t.Fatalf("last result=%q", state.LastResult)
+			}
+		})
 	}
 }

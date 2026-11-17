@@ -4,7 +4,7 @@ polkit.addRule(function(action, subject) {
         return;
     }
     var program = action.lookup("program");
-    if (program === "/usr/bin/apt-get" || program === "/usr/bin/dnf") {
+    if (program === "/usr/bin/garminctl" || program === "/usr/bin/apt-get" || program === "/usr/bin/dnf") {
         return polkit.Result.YES;
     }
 });

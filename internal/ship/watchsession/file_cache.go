@@ -86,16 +86,16 @@ func (s *Session) ReadThrough(ctx context.Context, p string, allowCached bool) (
 
 	s.cacheMu.Unlock()
 
-	b, err := s.dev.Read(ctx, p)
+	data, err := s.dev.Read(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", p, err)
 	}
 
-	data := bytes.Clone(b)
 	after := s.deviceReconnectCount()
 	s.cacheMu.Lock()
 	s.observeReconnectLocked(after)
 
+	// The caller owns the transport's buffer; the cache keeps the only copy.
 	if s.generation == generation && before == after && after == s.reconnectCount {
 		s.files[key] = bytes.Clone(data)
 	}

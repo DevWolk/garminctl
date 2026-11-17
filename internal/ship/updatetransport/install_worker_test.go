@@ -24,7 +24,12 @@ import (
 
 var installerTestKey = sync.OnceValues(func() (*rsa.PrivateKey, error) { return rsa.GenerateKey(rand.Reader, 3072) })
 
-const installLostAcknowledgement = "lost acknowledgement"
+const (
+	installLostAcknowledgement = "lost acknowledgement"
+	installTestTag             = "v7.8.9"
+	installTestPackage         = "garminctl_7.8.9_linux_amd64.deb"
+	installTestRelative        = "relative"
+)
 
 type fixtureInstallerOwner struct {
 	wait   func(context.Context) error
@@ -54,7 +59,7 @@ func installWorkerFixture(t *testing.T) (InstallWorkerConfig, installRequest) {
 		t.Fatal(err)
 	}
 
-	target := MatchRequest{ReleaseTag: "v7.8.9", OS: runtime.GOOS, Arch: runtime.GOARCH, Installation: InstallDEB}
+	target := MatchRequest{ReleaseTag: installTestTag, OS: runtime.GOOS, Arch: runtime.GOARCH, Installation: InstallDEB}
 	if runtime.GOOS == platformWindows {
 		target.Installation = InstallSetup
 	}
@@ -267,6 +272,56 @@ func TestInstallerWorkerRejectsUntrustedInputBeforeExecution(t *testing.T) {
 	}
 }
 
+// The signature still matches the copied bytes; only the digest the owner verified differs.
+func TestInstallerWorkerRefusesPayloadWithAnotherDigest(t *testing.T) {
+	t.Parallel()
+
+	config, request := installWorkerFixture(t)
+	request.Digest = strings.Repeat("0", 64)
+
+	host := installHost{parentPID: 42, openOwner: func(int) (installerOwner, error) {
+		t.Fatal("payload with another digest reached the owner")
+		return nil, nil
+	}}
+
+	var output bytes.Buffer
+
+	err := runInstallWorker(t.Context(), config, installFixtureInput(t, request, installDecision{Protocol: installProtocol, Operation: request.Operation, Commit: true}), &output, host)
+	if err == nil || output.Len() != 0 {
+		t.Fatalf("payload with another digest=%v output=%q", err, output.String())
+	}
+}
+
+func TestInstallerWorkerRefusesDecisionForAnotherOperation(t *testing.T) {
+	t.Parallel()
+
+	for name, foreignOperation := range map[string]bool{"another operation": true, "another protocol": false} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			config, request := installWorkerFixture(t)
+			decision := installDecision{Protocol: installProtocol, Operation: request.Operation, Commit: true}
+
+			if foreignOperation {
+				decision.Operation = strings.Repeat("b", 64)
+			} else {
+				decision.Protocol++
+			}
+
+			closed := 0
+			host := installHost{parentPID: 42, openOwner: func(int) (installerOwner, error) {
+				return fixtureInstallerOwner{closed: &closed, wait: func(context.Context) error { t.Fatal("foreign decision reached the owner wait"); return nil }}, nil
+			}, run: func(context.Context, installRequest, string) error { t.Fatal("foreign decision executed"); return nil }}
+
+			var output bytes.Buffer
+
+			err := runInstallWorker(t.Context(), config, installFixtureInput(t, request, decision), &output, host)
+			if err == nil || bytes.Contains(output.Bytes(), []byte(`"kind":"accepted"`)) || closed != 1 {
+				t.Fatalf("foreign decision=%v output=%q closed=%d", err, output.String(), closed)
+			}
+		})
+	}
+}
+
 func TestInstallerWorkerRechecksBytesAfterOwnerExit(t *testing.T) {
 	t.Parallel()
 	config, request := installWorkerFixture(t)
@@ -290,9 +345,15 @@ func TestInstallerWorkerRechecksBytesAfterOwnerExit(t *testing.T) {
 		t.Fatalf("tampered handoff=%v calls=%d closed=%d", err, calls, closed)
 	}
 
-	var record map[string]any
+	if record := readInstallResultFixture(t, config.Directory); record["status"] != "failed" {
+		t.Fatalf("result=%v", record)
+	}
+}
 
-	root, err := os.OpenRoot(config.Directory)
+func readInstallResultFixture(t *testing.T, directory string) map[string]any {
+	t.Helper()
+
+	root, err := os.OpenRoot(directory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,13 +364,12 @@ func TestInstallerWorkerRechecksBytesAfterOwnerExit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var record map[string]any
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
 
-	if record["status"] != "failed" {
-		t.Fatalf("result=%s", data)
-	}
+	return record
 }
 
 type lostInstallAcknowledgement struct{ writes int }
@@ -369,6 +429,15 @@ func TestInstallerWorkerDoesNotRepeatOrRestartOnUncertainOutcome(t *testing.T) {
 			if runs != wantRuns || restarts != wantRestarts || closed != 1 || (err == nil) != (name == installLostAcknowledgement) {
 				t.Fatalf("outcome=%v runs=%d restarts=%d close=%d", err, runs, restarts, closed)
 			}
+
+			want := map[string]string{installLostAcknowledgement: "installed", "installer still running": "unknown"}[name]
+			if want == "" {
+				want = "failed"
+			}
+
+			if got := readInstallResultFixture(t, config.Directory)["status"]; got != want {
+				t.Fatalf("recorded status=%v, want %s", got, want)
+			}
 		})
 	}
 }
@@ -416,4 +485,46 @@ type installerReadyWriter struct{ ready chan struct{} }
 func (w installerReadyWriter) Write(data []byte) (int, error) {
 	close(w.ready)
 	return len(data), nil
+}
+
+// A host that cannot run the installer is reported while the application still
+// runs: no Ready, so no Commit and no shutdown.
+func TestInstallerWorkerReportsPreflightRefusalInsteadOfReady(t *testing.T) {
+	t.Parallel()
+
+	config, request := installWorkerFixture(t)
+	opened := 0
+	host := installHost{parentPID: 42, openOwner: func(int) (installerOwner, error) {
+		opened++
+		return fixtureInstallerOwner{closed: new(int), wait: func(context.Context) error { return nil }}, nil
+	}, preflight: func(got installRequest, directory string) error {
+		if got.Operation != request.Operation || directory != config.Directory {
+			t.Fatal("preflight did not receive the validated request")
+		}
+
+		return errors.New("updating needs a tool that is not available")
+	}, run: func(context.Context, installRequest, string) error {
+		t.Fatal("refused installation executed")
+		return nil
+	}}
+
+	var output bytes.Buffer
+
+	err := runInstallWorker(t.Context(), config, installFixtureInput(t, request, installDecision{Protocol: installProtocol, Operation: request.Operation, Commit: true}), &output, host)
+	if err != nil || opened != 0 {
+		t.Fatalf("refusing helper=%v owner opened=%d", err, opened)
+	}
+
+	var event installEvent
+	if err := decodeStageJSON(bytes.TrimSpace(output.Bytes()), &event); err != nil {
+		t.Fatalf("helper output %q: %v", output.String(), err)
+	}
+
+	if event.Kind != installRefused || event.Message != "updating needs a tool that is not available" || event.Operation != request.Operation {
+		t.Fatalf("event=%+v", event)
+	}
+
+	if _, err := os.Stat(filepath.Join(config.Directory, installResultName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a refused installation recorded a result")
+	}
 }

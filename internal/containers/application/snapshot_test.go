@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
@@ -303,4 +304,32 @@ func TestBackupDataPortBusyErrorReleasesItsOwnPreparation(t *testing.T) {
 	}
 
 	assertPreflightReleased(t, gate, packages)
+}
+
+func TestBackupDataTimeoutReportsItsCauseOnce(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		inventory, packages, request := preflightFixture()
+		gate := new(lifecycle.Gate)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+		defer cancel()
+
+		prepared, err := application.NewPreflightAction(inventory, packages, gate.TryMaintenance).Run(ctx, request)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		store := dataSnapshotStore{create: func(ctx context.Context, _ application.PreflightInfo) (*application.DataSnapshot, error) {
+			<-ctx.Done()
+
+			return nil, ctx.Err()
+		}}
+
+		got, err := application.NewBackupDataAction(store).Run(ctx, prepared)
+		if got != nil || !errors.Is(err, context.DeadlineExceeded) || strings.Count(err.Error(), context.DeadlineExceeded.Error()) != 1 {
+			t.Fatalf("snapshot=%v error=%q", got, err)
+		}
+	})
 }

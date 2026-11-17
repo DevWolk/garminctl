@@ -167,11 +167,11 @@ func TestReadFilePreservesDirectReadCachePolicy(t *testing.T) {
 	}
 
 	d.mu.Lock()
-	d.lastRead[0] = 'x'
+	handedOver := &first[0] == &d.lastRead[0]
 	d.mu.Unlock()
 
-	if string(first) != "fresh source" {
-		t.Fatalf("fresh bytes alias the transport buffer: %q", first)
+	if string(first) != "fresh source" || !handedOver {
+		t.Fatalf("fresh read copied the transport's buffer or changed it: %q", first)
 	}
 
 	d.replace("cached snapshot", false)

@@ -90,7 +90,7 @@ func TestMain(m *testing.M) {
 	}
 
 	if len(os.Args) == 2 && os.Args[1] == updatetransport.InstallCommand {
-		if err := RunApplicationInstall(context.Background(), downloadTestBuild, base64.StdEncoding.EncodeToString(downloadPublicKey), os.Stdin, os.Stdout); err != nil {
+		if err := runApplicationInstall(context.Background(), downloadTestBuild, base64.StdEncoding.EncodeToString(downloadPublicKey), os.Stdin, os.Stdout, installTestHostCheck()); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -218,25 +218,64 @@ func TestApplicationDownloadUsesRealCachedCLIAndReverifiesRetainedPackage(t *tes
 	}
 
 	assertDownloadOperationsClean(t, pipeline)
+}
 
-	entries, err := os.ReadDir(filepath.Join(pipeline.packageDirectory, result.CacheID))
+// savedPackageFile names the package inside a saved catalog entry.
+func savedPackageFile(t *testing.T, pipeline applicationPackageDownload, id string) string {
+	t.Helper()
+
+	entries, err := os.ReadDir(filepath.Join(pipeline.packageDirectory, id))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".deb") || strings.HasSuffix(entry.Name(), ".exe") {
-			if err := os.WriteFile(filepath.Join(pipeline.packageDirectory, result.CacheID, entry.Name()), bytes.Repeat([]byte{0}, len(downloadTestBytes)), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			return filepath.Join(pipeline.packageDirectory, id, entry.Name())
 		}
 	}
 
-	if value, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil); err == nil || value != nil {
-		t.Fatalf("corrupt cache accepted=%+v %v", value, err)
+	t.Fatalf("no package file in %v", entries)
+
+	return ""
+}
+
+func TestApplicationDownloadReplacesASavedPackageThatNoLongerVerifies(t *testing.T) {
+	t.Parallel()
+	pipeline, target := downloadPipeline(t, applicationDownloadTag, false)
+
+	result, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	saved := savedPackageFile(t, pipeline, result.CacheID)
+	if err := os.WriteFile(saved, bytes.Repeat([]byte{0}, len(downloadTestBytes)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The damaged copy is never accepted: the release is downloaded again and
+	// the verified bytes replace the entry under the same identity.
+	repaired, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil)
+	if err != nil || repaired == nil || *repaired != *result {
+		t.Fatalf("repair=%+v %v", repaired, err)
+	}
+
+	entry, err := os.OpenRoot(filepath.Dir(saved))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer entry.Close()
+
+	if data, err := entry.ReadFile(filepath.Base(saved)); err != nil || !bytes.Equal(data, downloadTestBytes) {
+		t.Fatalf("saved bytes after repair differ from the signed package: %v", err)
 	}
 
 	assertDownloadOperationsClean(t, pipeline)
+
+	if entries, err := os.ReadDir(pipeline.packageDirectory); err != nil || len(entries) != 1 {
+		t.Fatalf("repair left entries behind: %v %v", entries, err)
+	}
 }
 
 func assertDownloadOperationsClean(t *testing.T, pipeline applicationPackageDownload) {

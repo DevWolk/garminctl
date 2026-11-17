@@ -36,8 +36,8 @@ func proxyWithPageFailure(backend *url.URL, script []byte, pageFailed func()) ht
 			r.Out.Header.Del("Sec-Fetch-Site")
 		},
 		ModifyResponse: injectDesktopScript,
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			if pageFailed != nil && errors.Is(err, errNativePage) {
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if pageFailed != nil && (errors.Is(err, errNativePage) || pageRequest(r)) {
 				pageFailed()
 			}
 
@@ -78,6 +78,21 @@ func proxyWithPageFailure(backend *url.URL, script []byte, pageFailed func()) ht
 
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+// pageRequest reports a document navigation. Its response replaces the page
+// and the script that answers close requests, unlike a fetch from a page that
+// stays loaded.
+func pageRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+
+	if destination := r.Header.Get("Sec-Fetch-Dest"); destination != "" {
+		return destination == "document"
+	}
+
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 func desktopOrigin(r *http.Request) bool {

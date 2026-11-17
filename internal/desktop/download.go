@@ -159,7 +159,7 @@ func saveDownload(ctx context.Context, client *http.Client, u *url.URL, target s
 
 	defer func() {
 		_ = f.Close()
-		if cleanupErr := os.Remove(f.Name()); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) { // #nosec G703 -- remove only our own CreateTemp output
+		if cleanupErr := os.Remove(f.Name()); cleanupErr != nil && !errors.Is(cleanupErr, os.ErrNotExist) {
 			err = errors.Join(err, fmt.Errorf("remove download temporary file: %w", cleanupErr))
 		}
 	}()

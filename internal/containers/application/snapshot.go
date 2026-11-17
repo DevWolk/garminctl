@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"errors"
+
+	"golang.org/x/mod/semver"
 )
 
 // ErrPreparationBusy refuses a second use without cancelling the first operation.
@@ -101,5 +103,18 @@ func (p *PreparedUpdate) withInfo(ctx context.Context, use func(context.Context,
 
 	err := use(bound, p.info)
 
-	return errors.Join(err, bound.Err(), p.lifetime.Err())
+	// One expired deadline reaches the use and both contexts; it is reported once.
+	for _, cause := range []error{bound.Err(), p.lifetime.Err()} {
+		if cause != nil && !errors.Is(err, cause) {
+			err = errors.Join(err, cause)
+		}
+	}
+
+	return err
+}
+
+// Downgrade reports a preparation whose selected package is older than the
+// installed one, as an explicit rollback selects.
+func (i PreflightInfo) Downgrade() bool {
+	return semver.Compare(semanticVersion(i.Update.Tag), semanticVersion(i.Current.Tag)) < 0
 }

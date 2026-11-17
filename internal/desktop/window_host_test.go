@@ -5,10 +5,12 @@ package desktop
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -114,6 +116,168 @@ func TestWindowCanCloseAfterNativePageFailureOnReload(t *testing.T) {
 
 	if response.Code != http.StatusOK {
 		t.Fatal("page failure prevented reuse of the backend")
+	}
+}
+
+func TestWindowCanCloseAfterReloadFailsOnAnUnreachableBackend(t *testing.T) {
+	t.Parallel()
+
+	var listen net.ListenConfig
+
+	listener, err := listen.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gone, err := url.Parse("http://" + listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name, path          string
+		destination, accept string
+		guarded             bool
+	}{
+		{name: "navigation with fetch metadata", path: "/", destination: "document", accept: "text/html,application/xhtml+xml"},
+		{name: "navigation without fetch metadata", path: "/apps/Face", accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
+		{name: "status poll from the loaded page", path: "/api/status", destination: "empty", accept: "*/*", guarded: true},
+		{name: "font fetched by the loaded page", path: "/vendor/fonts/inter.woff2", accept: "*/*", guarded: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			host := new(fakeWindowHost)
+			app := &App{host: host}
+			app.Ready()
+
+			proxy := proxyWithPageFailure(gone, nil, func() { app.ready.Store(false) })
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+windowsDesktopHost+test.path, nil)
+			request.Header.Set("Accept", test.accept)
+
+			if test.destination != "" {
+				request.Header.Set("Sec-Fetch-Dest", test.destination)
+			}
+
+			response := httptest.NewRecorder()
+			proxy.ServeHTTP(response, request)
+
+			if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), "<script") {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+
+			// A page that still runs answers the close request; a replaced one cannot.
+			if guarded := app.beforeClose(t.Context()); guarded != test.guarded || (len(host.actions) == 1) != test.guarded {
+				t.Fatalf("close deferred to the page=%v actions=%v, want %v", guarded, host.actions, test.guarded)
+			}
+		})
+	}
+}
+
+func TestWindowCloseWaitsForConfirmedWorkThatHoldsTheWindow(t *testing.T) {
+	t.Parallel()
+
+	host := new(fakeWindowHost)
+	app := &App{host: host}
+	app.startup(t.Context())
+	t.Cleanup(app.operations.close)
+	app.Ready()
+
+	scope := serviceScope{app: app}
+
+	ctx, release, err := scope.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unhold, err := scope.HoldClose()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close button, Quit and signals arrive here; the page's own request arrives as FinishClose.
+	for range 2 {
+		if !app.beforeClose(t.Context()) {
+			t.Fatal("window closed during held work")
+		}
+	}
+
+	app.FinishClose()
+	app.ready.Store(false)
+
+	if !app.beforeClose(t.Context()) || len(host.actions) != 0 || host.quits != 0 || ctx.Err() != nil {
+		t.Fatalf("held work interrupted: actions=%v quits=%d ctx=%v", host.actions, host.quits, ctx.Err())
+	}
+
+	host.quit = func() {
+		if !errors.Is(ctx.Err(), context.Canceled) || app.beforeClose(t.Context()) {
+			t.Error("postponed close did not cancel the window or was vetoed again")
+		}
+	}
+
+	release()
+	unhold()
+	unhold()
+
+	if host.quits != 1 {
+		t.Fatalf("postponed close ran %d times", host.quits)
+	}
+
+	if _, err := scope.HoldClose(); err == nil {
+		t.Fatal("closing window accepted new work")
+	}
+}
+
+func TestWindowStaysOpenAfterHeldWorkWhenNoCloseWasRequested(t *testing.T) {
+	t.Parallel()
+
+	host := new(fakeWindowHost)
+	app := &App{host: host}
+	app.startup(t.Context())
+	t.Cleanup(app.operations.close)
+	app.Ready()
+
+	unhold, err := serviceScope{app: app}.HoldClose()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unhold()
+
+	if host.quits != 0 || !app.beforeClose(t.Context()) || !reflect.DeepEqual(host.actions, []string{"close"}) {
+		t.Fatalf("quits=%d actions=%v", host.quits, host.actions)
+	}
+}
+
+func TestWindowUpdateExitEndsHeldWorkWithoutASecondQuit(t *testing.T) {
+	t.Parallel()
+
+	host := new(fakeWindowHost)
+	app := &App{host: host}
+	app.startup(t.Context())
+	t.Cleanup(app.operations.close)
+	app.Ready()
+
+	scope := serviceScope{app: app}
+
+	unhold, err := scope.HoldClose()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !app.beforeClose(t.Context()) {
+		t.Fatal("window closed during held work")
+	}
+
+	scope.ExitForUpdate()
+	unhold()
+
+	if host.quits != 1 || app.beforeClose(t.Context()) {
+		t.Fatalf("quits=%d", host.quits)
 	}
 }
 

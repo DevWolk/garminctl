@@ -12,6 +12,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/device/wpd"
 	"github.com/DevWolk/garminctl/internal/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 )
 
 // autostart manages a Startup shortcut for the hidden Windows server.
@@ -65,7 +66,7 @@ func (c *cli) autostart(ctx context.Context, args []string) error {
 			`$s.WorkingDirectory = $dir; $s.Description = 'garminctl: sync the Garmin watch in the background'; $s.Save(); ` +
 			`'on: ' + $lnk + ' (web UI at http://127.0.0.1:8787 after the next sign-in)'`
 	default:
-		return usageErrorf("usage: autostart on|off|status")
+		return clix.UsageErrorf("usage: autostart on|off|status")
 	}
 
 	//nolint:gosec // argv is fixed: ps is powershell.exe as found by PowerShellPath; the script is built from literals and a quoted path

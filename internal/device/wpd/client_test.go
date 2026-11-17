@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/device"
 )
@@ -171,25 +172,93 @@ func TestRemoteErrorClassification(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name    string
-		message string
-		want    error
+		name     string
+		message  string
+		notFound bool
+		want     error
+		never    error
 	}{
-		{name: "not found", message: "not found: GARMIN/test.txt", want: device.ErrNotFound},
+		{name: "bridge reports absence", message: "not found: GARMIN/test.txt", notFound: true, want: device.ErrNotFound},
+		{name: "absence is not a disconnect", message: "not found", notFound: true, never: device.ErrDisconnected},
 		{name: "busy", message: "0x800700AA: processing another operation", want: device.ErrBusy},
 		{name: "unplug", message: "0x8007048F: device not found", want: device.ErrDisconnected},
-		{name: "ordinary error mentioning bridge", message: "invalid application bridge label"},
+		{name: "unplug is not absence", message: "0x8007048F: device not found", never: device.ErrNotFound},
+		{name: "ordinary error mentioning bridge", message: "invalid application bridge label", never: device.ErrDisconnected},
+		{name: "failure whose text mentions not found", message: "Element not found. (Exception from HRESULT: 0x80070490)", never: device.ErrNotFound},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := remoteError(tt.message)
+			err := remoteError(&response{Error: tt.message, NotFound: tt.notFound})
 			if tt.want != nil && !errors.Is(err, tt.want) {
-				t.Fatalf("classification = %v", err)
+				t.Fatalf("classification = %v, want %v", err, tt.want)
 			}
 
-			if !errors.Is(tt.want, device.ErrDisconnected) && errors.Is(err, device.ErrDisconnected) {
-				t.Fatal("ordinary error classified as a disconnect")
+			if tt.never != nil && errors.Is(err, tt.never) {
+				t.Fatalf("classification = %v, must not be %v", err, tt.never)
+			}
+		})
+	}
+}
+
+func TestBridgeAbsenceComesFromItsFlagNotItsText(t *testing.T) {
+	t.Parallel()
+
+	flagged, _ := scriptedBridge("{\"id\":1,\"ok\":false,\"error\":\"GARMIN/test.txt is missing\",\"notFound\":true}\n")
+	if _, err := flagged.call(t.Context(), pathReq("read", "GARMIN/test.txt")); !errors.Is(err, device.ErrNotFound) {
+		t.Fatalf("flagged absence = %v", err)
+	}
+
+	unflagged, _ := scriptedBridge("{\"id\":1,\"ok\":false,\"error\":\"storage object not found while reading\"}\n")
+	if _, err := unflagged.call(t.Context(), pathReq("read", "GARMIN/test.txt")); err == nil || errors.Is(err, device.ErrNotFound) {
+		t.Fatalf("failure reported as absence: %v", err)
+	}
+}
+
+// lateCancelContext reports cancellation from its nth Err call on, as a context
+// cancelled while the caller waits for the bridge lock does.
+type lateCancelContext struct{ calls, live int }
+
+func (*lateCancelContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (*lateCancelContext) Done() <-chan struct{}       { return nil }
+func (*lateCancelContext) Value(any) any               { return nil }
+
+func (c *lateCancelContext) Err() error {
+	c.calls++
+	if c.calls > c.live {
+		return context.Canceled
+	}
+
+	return nil
+}
+
+func TestBridgeCallCancelledWhileWaitingWritesNothing(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		live   int
+		nextID int
+	}{
+		{name: "cancelled before the lock is acquired", live: 1},
+		{name: "cancelled while the request is encoded", live: 2, nextID: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			b, input := scriptedBridge(fmt.Sprintf("{\"id\":%d,\"ok\":true}\n", tt.nextID+1))
+			ctx := &lateCancelContext{live: tt.live}
+
+			if _, err := b.call(ctx, pathReq("read", "GARMIN/test.txt")); !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelled call = %v", err)
+			}
+
+			if input.writes != 0 || b.nextID != tt.nextID {
+				t.Fatalf("cancelled call reached the bridge: writes=%d nextID=%d", input.writes, b.nextID)
+			}
+
+			if _, err := b.call(t.Context(), pathReq("read", "GARMIN/test.txt")); err != nil {
+				t.Fatalf("bridge unusable after a cancelled call: %v", err)
 			}
 		})
 	}

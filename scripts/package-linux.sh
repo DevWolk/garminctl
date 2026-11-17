@@ -20,7 +20,7 @@ Package: garminctl
 Version: $version
 Architecture: amd64
 Maintainer: DevWolk <devwolk@users.noreply.github.com>
-Depends: libc6 (>= 2.34), libgtk-3-0t64, libwebkit2gtk-4.1-0, libusb-1.0-0
+Depends: libc6 (>= 2.34), libgtk-3-0t64, libwebkit2gtk-4.1-0, libusb-1.0-0, pkexec | policykit-1
 Section: utils
 Priority: optional
 Description: Native Garmin watch manager with CLI and MCP integration
@@ -34,7 +34,7 @@ Release: 1
 Summary: Native Garmin watch manager with CLI and MCP integration
 License: MIT
 URL: https://github.com/DevWolk/garminctl
-Requires: glibc >= 2.34, gtk3, webkit2gtk4.1, libusb1
+Requires: glibc >= 2.34, gtk3, webkit2gtk4.1, libusb1, /usr/bin/pkexec
 AutoReqProv: no
 %description
 Manage Garmin watches from a native desktop window, CLI or an MCP client.

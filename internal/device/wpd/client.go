@@ -54,19 +54,21 @@ type Bridge struct {
 }
 
 type response struct {
-	ID      int             `json:"id"`
-	OK      bool            `json:"ok"`
-	Error   string          `json:"error"`
-	Ready   bool            `json:"ready"`
-	Devices []device.Info   `json:"devices"`
-	Entries []device.Entry  `json:"entries"`
-	Entry   *device.Entry   `json:"entry"`
-	B64     string          `json:"b64"`
-	Code    uint32          `json:"code"`
-	Params  []uint32        `json:"params"`
-	Object  string          `json:"objectId"`
-	Storage string          `json:"storage"`
-	Raw     json.RawMessage `json:"-"`
+	ID    int    `json:"id"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error"`
+	// NotFound marks the bridge's own finding that the path does not exist.
+	NotFound bool            `json:"notFound"`
+	Ready    bool            `json:"ready"`
+	Devices  []device.Info   `json:"devices"`
+	Entries  []device.Entry  `json:"entries"`
+	Entry    *device.Entry   `json:"entry"`
+	B64      string          `json:"b64"`
+	Code     uint32          `json:"code"`
+	Params   []uint32        `json:"params"`
+	Object   string          `json:"objectId"`
+	Storage  string          `json:"storage"`
+	Raw      json.RawMessage `json:"-"`
 }
 
 // PowerShellPath returns the path of powershell.exe, or "" when unavailable.
@@ -274,7 +276,7 @@ func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
 	}
 
 	if !resp.OK {
-		err := remoteError(resp.Error)
+		err := remoteError(resp)
 		if errors.Is(err, device.ErrDisconnected) {
 			return nil, b.fail(err)
 		}
@@ -285,7 +287,11 @@ func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
 	return resp, nil
 }
 
-func remoteError(message string) error {
+// remoteError classifies a failed bridge reply. Absence comes only from the
+// bridge's flag: other failures can mention "not found" in their text.
+func remoteError(resp *response) error {
+	message := resp.Error
+
 	err := errors.New(message)
 	if strings.Contains(message, "0x800700AA") || strings.Contains(message, "0x80070964") {
 		return fmt.Errorf("%w: %w", device.ErrBusy, err)
@@ -295,7 +301,7 @@ func remoteError(message string) error {
 		return fmt.Errorf("%w: %w", device.ErrDisconnected, err)
 	}
 
-	if strings.Contains(message, "not found") {
+	if resp.NotFound {
 		return fmt.Errorf("%w: %w", device.ErrNotFound, err)
 	}
 

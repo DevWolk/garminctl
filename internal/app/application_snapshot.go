@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
@@ -13,7 +14,24 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 
+// applicationBackups names the data backup directory beside the account store.
+const applicationBackups = "application-backups"
+
 type applicationDataSnapshots struct{ build string }
+
+// ForgetApplicationSessionCopies deletes the saved Connect session and pending
+// verification state from every application data backup, so that signing out
+// leaves no copy a later restore could bring back. The backups stay usable.
+func ForgetApplicationSessionCopies(ctx context.Context) error {
+	account := gc.DefaultStorePath()
+	if account == "" {
+		return errors.New("application data directory is unavailable")
+	}
+
+	name := filepath.Base(account)
+
+	return hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups)).Forget(ctx, applicationStateConfig, name, name+".mfa")
+}
 
 type applicationBackupMetadata struct {
 	Current, Update application.PackageRecord
@@ -39,13 +57,23 @@ func (s applicationDataSnapshots) Create(ctx context.Context, info application.P
 		return nil, err
 	}
 
-	store := hostfile.NewSnapshotStore(filepath.Join(config, "application-backups"), []hostfile.SnapshotSource{
+	backups := filepath.Join(config, applicationBackups)
+	store := hostfile.NewSnapshotStore(backups, []hostfile.SnapshotSource{
 		{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()},
 	}, applicationSnapshotPath)
 
 	result, err := store.Create(ctx, metadata)
 	if err != nil {
 		return nil, err
+	}
+
+	// A rollback restores an older backup chosen before this safety copy was
+	// made, so only a forward update may remove old backups. The new backup is
+	// published; a leftover that cannot be removed now must not fail the update.
+	if !info.Downgrade() {
+		if err := hostfile.NewSnapshotReader(backups).Prune(ctx, application.RetainedBackups); err != nil {
+			slog.Warn("application backup retention left files behind", "error", err)
+		}
 	}
 
 	var bytes int64

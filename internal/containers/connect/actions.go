@@ -2,6 +2,7 @@ package connect
 
 import (
 	"context"
+	"errors"
 
 	"github.com/DevWolk/garminctl/internal/gc"
 )
@@ -75,7 +76,21 @@ type MFAAction struct{ Client *gc.Client }
 func (a MFAAction) Run(ctx context.Context, code string) error { return a.Client.ResumeMFA(ctx, code) }
 
 // LogoutAction clears the account client's owned state.
-type LogoutAction struct{ Client *gc.Client }
+type LogoutAction struct {
+	Client *gc.Client
+	// ForgetCopies deletes copies of the saved session that the entry point
+	// keeps outside the account store, such as application data backups. Nil
+	// when it keeps none.
+	ForgetCopies func(context.Context) error
+}
 
-// Run retains account-store protection and cleanup errors.
-func (a LogoutAction) Run(_ context.Context) error { return a.Client.Logout() }
+// Run retains account-store protection and cleanup errors. Copies are deleted
+// even when the store itself could not be cleared, and both failures are reported.
+func (a LogoutAction) Run(ctx context.Context) error {
+	err := a.Client.Logout()
+	if a.ForgetCopies != nil {
+		err = errors.Join(err, a.ForgetCopies(ctx))
+	}
+
+	return err
+}

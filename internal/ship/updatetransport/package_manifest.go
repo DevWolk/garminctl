@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -110,7 +111,7 @@ func (c *PackageCache) readManifest(ctx context.Context, id string) (packageMani
 
 	directory := filepath.Join(c.directory, id)
 	if err := hostfile.Protect(directory, true); err != nil {
-		return manifest, err
+		return manifest, fmt.Errorf("catalog entry directory: %w", err)
 	}
 
 	if err := hostfile.Protect(filepath.Join(directory, packageManifestFile), false); err != nil {
@@ -158,7 +159,7 @@ func (c *PackageCache) readManifest(ctx context.Context, id string) (packageMani
 }
 
 func (c *PackageCache) validateManifest(id string, manifest packageManifest) error {
-	if manifest.Version != 2 || manifest.Source != releasesEndpoint || manifest.KeyID != c.stager.key || manifest.ID != id || !validPackageID(manifest.Digest) {
+	if manifest.Version != 2 || manifest.Source != releasesEndpoint || !c.acceptsKey(manifest.KeyID) || manifest.ID != id || !validPackageID(manifest.Digest) {
 		return errors.New("package manifest schema, source or compiled key does not match")
 	}
 
@@ -176,6 +177,16 @@ func (c *PackageCache) validateManifest(id string, manifest packageManifest) err
 	}
 
 	return nil
+}
+
+// A catalog without a verifier lists entries saved under any key; opening one
+// still requires the build whose compiled key matches.
+func (c *PackageCache) acceptsKey(id string) bool {
+	if c.stager == nil {
+		return validPackageID(id)
+	}
+
+	return id == c.stager.key
 }
 
 func copyPackagePair(ctx context.Context, source, destination string, release ResolvedRelease) error {

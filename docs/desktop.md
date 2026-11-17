@@ -138,7 +138,13 @@ package of the current version, saves a protected data backup and asks before
 handoff. Active watch jobs or a separately owned backend prevent preparation.
 Cancellation is available before handoff and waits for cleanup. Once the system
 installer takes ownership, its outcome must be checked after restart; an accepted
-handoff does not prove successful installation.
+handoff does not prove successful installation. An installation that did not
+complete is shown in **Application** on the next start and by
+`garminctl application status`, with the directory of its logs.
+DEB and RPM updates ask once for system authorization (`pkexec`) to run the
+installed `garminctl`, which verifies the package again before the package
+manager installs it. Missing system tools, or on Windows a running
+`garminctl.exe`, are reported before the application closes.
 The **Updates** tab manages watch software and apps. The GitHub packages do not
 configure an APT/DNF repository, so system updates alone will not fetch newer
 versions of garminctl.
@@ -157,7 +163,8 @@ it never silently switches to restoring the older copy.
 Review the selected mode, the two backup IDs and any file replacement/removal, then
 check the explicit consent box and choose **Restore backup and install older
 version** or **Keep current data and install older version**. Cancel keeps the
-current files and waits for preparation cleanup.
+current files and waits for preparation cleanup. Confirmed work cannot be
+canceled; a request to close the window waits until it ends.
 
 Explicit restoration replaces the listed files with the selected backup; newer
 changes to them remain only in the fresh safety copy. The compatible mode makes
@@ -166,7 +173,9 @@ installer handoff. Other files, browser data and retained packages stay in place
 Reload resumes the same review and never confirms it automatically.
 
 Restoration across files is not atomic. A failure may leave a partial data set
-or an uncertain installer outcome. Do not repeat the operation; retain both
+or an uncertain installer outcome; the dialog states whether local data is
+unchanged, partly restored or fully restored. After a partial or full restore
+do not repeat the operation; retain both
 backup IDs and the packages for manual recovery. The GUI-independent
 `garminctl application recovery snapshots` lists backups and
 `garminctl application recovery inspect ID` checks an explicit copy.
@@ -174,11 +183,47 @@ backup IDs and the packages for manual recovery. The GUI-independent
 `garminctl application recovery export ID` verifies and exports a manual repair
 package. These CLI commands do not restore data or run an installer.
 
+### What garminctl keeps for updates
+
+Updates and rollbacks keep the files below, private to the current user.
+`<config>` is the directory of the Connect tokens and `<cache>` the cache
+directory from the [table above](#data-updates-and-uninstall).
+
+| Directory | Contents | Kept |
+| --- | --- | --- |
+| `<config>/application-backups/` | Data backups, one saved before each installation and each rollback review: copies of the Connect token and pending-verification files, upload ledgers and the watch recovery copies. | The 10 newest. |
+| `<cache>/application-packages/` | Downloaded packages with their signatures. | The 5 most recently saved, and always the package of the installed version. |
+| `<cache>/application-recovery/` | Copies made by `application recovery export`. | Until you delete them. |
+| `<cache>/application-staging/` | Working copies of a download or a verification. | Removed when the operation ends. |
+| `<cache>/application-installing/` | The package, a copy of the CLI and the log of an installation. | Removed when an installation is canceled. After a handoff to the system installer, the operation with the latest recorded result. |
+| `<cache>/application-history/` | The release list of the last successful check. | Replaced by the next successful check. |
+
+The counts are fixed. An update that saves a new backup deletes the backups
+beyond the newest 10; preparing a rollback deletes none, so the backup selected
+for it stays. A download that saves a new package deletes the packages beyond
+the limit, and of two saved copies of one release it keeps the later one. A
+working copy left by an interrupted operation is deleted by the next download,
+update or installation once it has been unchanged for a day.
+
+Signing out of Garmin Connect, in the app or with `garminctl cloud logout`,
+deletes the token and pending-verification copies from every backup. The
+backups stay valid for their other files.
+
+A saved package or backup that this build cannot read is skipped, not deleted:
+it may belong to a build with another update key or a later format.
+`garminctl application recovery list` and `snapshots` name skipped entries and
+the `remove-package ID` or `remove-snapshot ID` command that deletes one; see
+[application recovery](cli.md#application-recovery). Downloading a release
+again replaces a damaged copy of its package.
+
 ### Uninstall
 
 Uninstall through
 Windows Installed Apps (**garminctl Desktop**), `sudo apt remove garminctl`, or
 `sudo dnf remove garminctl`. Uninstall preserves configuration and caches.
+On Windows it also removes the sign-in shortcut and the server copy created by
+`garminctl autostart on`; a server that is still running keeps its copy until
+it exits.
 
 Sources: [installer](../build/windows/installer.nsi),
 [Linux packages](../scripts/package-linux.sh),

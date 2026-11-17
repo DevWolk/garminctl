@@ -84,7 +84,7 @@ func TestRecoveryCLIDistinguishesMetadataAndVerifiedExport(t *testing.T) {
 func TestRecoveryCLIValidatesBeforeComposition(t *testing.T) {
 	t.Parallel()
 
-	for _, args := range [][]string{nil, {recoveryCommand}, {recoveryCommand, listCommand, "extra"}, {recoveryCommand, exportCommand}, {recoveryCommand, exportCommand, "../outside"}, {recoveryCommand, exportCommand, strings.Repeat("a", 64), "extra"}, {recoveryCommand, "install"}, {recoveryCommand, listCommand, "--public-key=foreign"}, {recoveryCommand, snapshotsCommand, "extra"}, {recoveryCommand, inspectCommand}, {recoveryCommand, inspectCommand, "../outside"}} {
+	for _, args := range [][]string{nil, {recoveryCommand}, {recoveryCommand, removePackageCommand}, {recoveryCommand, removePackageCommand, "../outside"}, {recoveryCommand, removeSnapshotCommand}, {recoveryCommand, listCommand, "extra"}, {recoveryCommand, exportCommand}, {recoveryCommand, exportCommand, "../outside"}, {recoveryCommand, exportCommand, strings.Repeat("a", 64), "extra"}, {recoveryCommand, "install"}, {recoveryCommand, listCommand, "--public-key=foreign"}, {recoveryCommand, snapshotsCommand, "extra"}, {recoveryCommand, inspectCommand}, {recoveryCommand, inspectCommand, "../outside"}} {
 		t.Run(strings.Join(args, "/"), func(t *testing.T) {
 			t.Parallel()
 			cli, _, _ := newRecoveryCommand(t, false)
@@ -107,5 +107,85 @@ func TestRecoveryCLINeverReportsVerifiedOnFailure(t *testing.T) {
 	store.err = errors.New("invalid signature")
 	if err := cli.Run(t.Context(), []string{recoveryCommand, exportCommand, store.row.ID}); err == nil || out.Len() != 0 {
 		t.Fatalf("failed export output=%q error=%v", out, err)
+	}
+}
+
+type cleanupStore struct {
+	recoveryStore
+	unusable []application.UnusableEntry
+	removed  []string
+}
+
+func (s *cleanupStore) Unusable(context.Context) ([]application.UnusableEntry, error) {
+	return s.unusable, nil
+}
+
+func (s *cleanupStore) Remove(_ context.Context, id string) error {
+	s.removed = append(s.removed, id)
+
+	return s.err
+}
+
+// skippedPackageCommand lists one usable package beside one the store skipped.
+func skippedPackageCommand(t *testing.T, asJSON bool) (*Command, *cleanupStore, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+
+	cli, base, out := newRecoveryCommand(t, asJSON)
+	store := &cleanupStore{unusable: []application.UnusableEntry{{ID: strings.Repeat("9", 64), Reason: "package manifest schema, source or compiled key does not match"}}}
+	store.row = base.row
+	diagnostics := new(bytes.Buffer)
+
+	cli.ErrOut = clix.NewPrinter(diagnostics)
+	cli.Recovery = func() (*application.RecoveryAction, error) {
+		return application.NewRecoveryAction(store, "linux", "amd64"), nil
+	}
+
+	return cli, store, out, diagnostics
+}
+
+func TestRecoveryCLIWarnsAboutSkippedPackages(t *testing.T) {
+	t.Parallel()
+
+	cli, store, out, diagnostics := skippedPackageCommand(t, false)
+	skipped := store.unusable[0].ID
+
+	if err := cli.Run(t.Context(), []string{recoveryCommand, listCommand}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), store.row.ID) || strings.Contains(out.String(), skipped) || !strings.Contains(diagnostics.String(), "garminctl application recovery remove-package "+skipped) {
+		t.Fatalf("out=%q diagnostics=%q", out, diagnostics)
+	}
+
+	cli, _, out, diagnostics = skippedPackageCommand(t, true)
+	if err := cli.Run(t.Context(), []string{recoveryCommand, listCommand}); err != nil {
+		t.Fatal(err)
+	}
+
+	var value struct {
+		Packages []any                         `json:"packages"`
+		Unusable []struct{ ID, Reason string } `json:"unusable"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &value); err != nil || len(value.Packages) != 1 || len(value.Unusable) != 1 || value.Unusable[0].ID != skipped || value.Unusable[0].Reason == "" || diagnostics.Len() != 0 {
+		t.Fatalf("json=%s diagnostics=%q error=%v", out, diagnostics, err)
+	}
+}
+
+func TestRecoveryCLIRemovesOnePackageAndReportsAFailedRemoval(t *testing.T) {
+	t.Parallel()
+
+	cli, store, out, _ := skippedPackageCommand(t, false)
+	skipped := store.unusable[0].ID
+
+	if err := cli.Run(t.Context(), []string{recoveryCommand, removePackageCommand, skipped}); err != nil || len(store.removed) != 1 || store.removed[0] != skipped || !strings.Contains(out.String(), skipped) {
+		t.Fatalf("removed=%v out=%q error=%v", store.removed, out, err)
+	}
+
+	store.err = errors.New("the selected package is not retained")
+
+	out.Reset()
+
+	if err := cli.Run(t.Context(), []string{recoveryCommand, removePackageCommand, skipped}); err == nil || out.Len() != 0 {
+		t.Fatalf("failed removal out=%q error=%v", out, err)
 	}
 }

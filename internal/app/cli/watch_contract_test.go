@@ -11,6 +11,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/DevWolk/garminctl/internal/testdump"
 )
@@ -49,7 +50,7 @@ func TestWatchCLIReadContracts(t *testing.T) {
 
 			var out, diagnostics bytes.Buffer
 
-			c := &cli{asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
+			c := &cli{asJSON: test.json, out: clix.NewPrinter(&out), errOut: clix.NewPrinter(&diagnostics)}
 			if err := c.sessionCommands()[test.cmd](t.Context(), sess, test.args); err != nil || diagnostics.Len() != 0 {
 				t.Fatalf("command error=%v diagnostics=%s", err, &diagnostics)
 			}
@@ -98,7 +99,7 @@ func TestWatchCLIBackupContracts(t *testing.T) {
 
 			var out, diagnostics bytes.Buffer
 
-			c := &cli{runtime: runtime, epoch: epoch, asJSON: test.json, out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
+			c := &cli{runtime: runtime, epoch: epoch, asJSON: test.json, out: clix.NewPrinter(&out), errOut: clix.NewPrinter(&diagnostics)}
 			if err := c.runDeviceJob(t.Context(), "backup", c.backup, []string{dest}); err != nil || diagnostics.Len() != 0 {
 				t.Fatalf("backup error=%v diagnostics=%s", err, &diagnostics)
 			}
@@ -136,7 +137,7 @@ func TestWatchCLIMutationsAndExportPreserveBytes(t *testing.T) {
 
 	var out, diagnostics bytes.Buffer
 
-	c := &cli{out: newPrinter(&out), errOut: newPrinter(&diagnostics)}
+	c := &cli{out: clix.NewPrinter(&out), errOut: clix.NewPrinter(&diagnostics)}
 	input, exported := filepath.Join(t.TempDir(), "input"), filepath.Join(t.TempDir(), "exported")
 
 	data := []byte{0, 0xff, 0x7f, 1}

@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
+	"github.com/DevWolk/garminctl/internal/hostfile"
 )
 
 func TestApplicationCompatibleRollbackPreservesCurrentEditsAndMFAWithoutRestoration(t *testing.T) { //nolint:paralleltest // Owns isolated account/cache paths and a real fixture backend.
@@ -134,5 +136,36 @@ func TestSnapshotFormatProvenanceRequiresProducingBuildIdentity(t *testing.T) { 
 		if (verified.Formats != nil) != (build == f.current.Tag) {
 			t.Fatalf("incorrect producer provenance for %s", build)
 		}
+	}
+}
+
+func TestApplicationDataInspectionNamesTheFileAndTheReaderReason(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, area, path, data, reason string
+	}{
+		{name: "account", area: applicationStateConfig, path: "garmin-connect.json", data: `{"laterField":1}`, reason: `unknown field "laterField"`},
+		{name: "pending verification", area: applicationStateConfig, path: "garmin-connect.json.mfa", data: `{"version":1}`, reason: "no creation time"},
+		{name: "upload ledger", area: "cache", path: "uploaded-123.json", data: `null`, reason: "must be a JSON object"},
+		{name: "readable account", area: applicationStateConfig, path: "garmin-connect.json", data: `{"email":"reader@example.invalid"}`},
+		{name: "opaque watch recovery copy", area: "cache", path: "OUT.BIN-20261101-100000-abc/OUT.BIN", data: "not JSON"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := inspectApplicationData(hostfile.SnapshotFileInfo{Area: tc.area, Path: tc.path}, strings.NewReader(tc.data))
+			if tc.reason == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				return
+			}
+
+			if err == nil || !strings.Contains(err.Error(), tc.area+"/"+tc.path) || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("refusal=%v, want the file and %q", err, tc.reason)
+			}
+		})
 	}
 }

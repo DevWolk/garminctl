@@ -16,6 +16,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/devicehost"
+	"github.com/DevWolk/garminctl/internal/ship/clix"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -85,10 +86,15 @@ Commands:
   backup DIR [-skip Music,Podcasts,Audiobooks]
                                   copy the watch's storage to a folder
   desktop                         open the installed native app
+  application status              show the result of the last update installed from the app
   application recovery list       list retained application packages (metadata only)
   application recovery export ID  verify and export a package for manual recovery
+  application recovery remove-package ID
+                                  delete one saved application package
   application recovery snapshots  list local application backup metadata
   application recovery inspect ID verify a backup's files without restoring data
+  application recovery remove-snapshot ID
+                                  delete one application data backup
   serve [-addr 127.0.0.1:8787] [-autosync=false]
                                   run the web UI, HTTP API and HTTP MCP server
   mcp                             run the MCP server on stdio
@@ -105,8 +111,8 @@ type cli struct {
 	root    string
 	devID   string
 	asJSON  bool
-	out     *printer // program output
-	errOut  *printer // prompts and diagnostics
+	out     *clix.Printer // program output
+	errOut  *clix.Printer // prompts and diagnostics
 	// buildVersion names the build for the version command and the servers.
 	buildVersion    string
 	updatePublicKey string
@@ -127,7 +133,7 @@ func Run(version string, args []string, stdout, stderr io.Writer) error {
 // RunWithUpdateKey adds only the build-time public pin for application recovery.
 // Command arguments and environment variables cannot choose the trust root.
 func RunWithUpdateKey(version, compiledKey string, args []string, stdout, stderr io.Writer) error {
-	c := &cli{out: newPrinter(stdout), errOut: newPrinter(stderr), buildVersion: version, updatePublicKey: compiledKey}
+	c := &cli{out: clix.NewPrinter(stdout), errOut: clix.NewPrinter(stderr), buildVersion: version, updatePublicKey: compiledKey}
 
 	return errors.Join(c.run(args), c.out.Err())
 }
@@ -140,14 +146,14 @@ func (c *cli) run(args []string) error {
 	fs.StringVar(&c.devID, "device", "", "device ID")
 	fs.BoolVar(&c.asJSON, "json", false, "JSON output")
 
-	if err := parseFlags(fs, args); err != nil {
+	if err := clix.ParseFlags(fs, args); err != nil {
 		return err
 	}
 
 	rest := fs.Args()
 	if len(rest) == 0 {
 		fs.Usage()
-		return usageErrorf("command required")
+		return clix.UsageErrorf("command required")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -166,7 +172,7 @@ func (c *cli) run(args []string) error {
 	fn, ok := c.jobCommands()[cmd]
 	if !ok && c.sessionCommands()[cmd] == nil {
 		fs.Usage()
-		return usageErrorf("unknown command %q", cmd)
+		return clix.UsageErrorf("unknown command %q", cmd)
 	}
 
 	return c.runDevice(ctx, cmd, fn, rest)

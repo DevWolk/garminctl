@@ -9,13 +9,21 @@ const deliveredLimit = 256
 type claim int
 
 const (
-	// claimSkip: another pull holds the message, or it was written and acknowledged.
+	// claimSkip: the message was written and acknowledged.
 	claimSkip claim = iota
+	// claimBusy: another pull holds the message.
+	claimBusy
 	// claimDeliver: download, write and acknowledge the message.
 	claimDeliver
 	// claimAck: the message was written, but Connect was not told; only acknowledge it.
 	claimAck
 )
+
+// deliveredMessage is a written message and whether Connect was told.
+type deliveredMessage struct {
+	file  PulledFile
+	acked bool
+}
 
 // MessageClaims tracks the queued messages pulls of this process are
 // delivering or have written to the watch. A pull may work from a listing
@@ -26,25 +34,27 @@ const (
 type MessageClaims struct {
 	mu        sync.Mutex
 	held      map[int64]struct{}
-	delivered map[int64]bool // written message ID → acknowledged
-	order     []int64        // delivered IDs, oldest first
+	delivered map[int64]deliveredMessage
+	order     []int64 // delivered IDs, oldest first
 }
 
-func (m *MessageClaims) claim(id int64) claim {
+// claim reserves a message for the caller. With claimAck it also returns the
+// file an earlier pull wrote.
+func (m *MessageClaims) claim(id int64) (claim, PulledFile) {
 	if m == nil {
-		return claimDeliver
+		return claimDeliver, PulledFile{}
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if _, taken := m.held[id]; taken {
-		return claimSkip
+		return claimBusy, PulledFile{}
 	}
 
-	acked, written := m.delivered[id]
-	if written && acked {
-		return claimSkip
+	earlier, written := m.delivered[id]
+	if written && earlier.acked {
+		return claimSkip, PulledFile{}
 	}
 
 	if m.held == nil {
@@ -54,15 +64,16 @@ func (m *MessageClaims) claim(id int64) claim {
 	m.held[id] = struct{}{}
 
 	if written {
-		return claimAck
+		return claimAck, earlier.file
 	}
 
-	return claimDeliver
+	return claimDeliver, PulledFile{}
 }
 
-// finish ends a claim. A message written to the watch stays marked, even when
-// Connect was not told, because a second write would duplicate it there.
-func (m *MessageClaims) finish(id int64, written, acked bool) {
+// finish ends a claim. A file with a path was written to the watch and stays
+// marked, even when Connect was not told, because a second write would
+// duplicate it there.
+func (m *MessageClaims) finish(file PulledFile, acked bool) {
 	if m == nil {
 		return
 	}
@@ -70,22 +81,25 @@ func (m *MessageClaims) finish(id int64, written, acked bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	id := file.MessageID
 	delete(m.held, id)
 
-	if !written {
+	if file.Path == "" {
 		return
 	}
 
 	if m.delivered == nil {
-		m.delivered = make(map[int64]bool)
+		m.delivered = make(map[int64]deliveredMessage)
 	}
 
-	if _, ok := m.delivered[id]; ok {
-		m.delivered[id] = acked
+	file.Error = ""
+	_, known := m.delivered[id]
+	m.delivered[id] = deliveredMessage{file: file, acked: acked}
+
+	if known {
 		return
 	}
 
-	m.delivered[id] = acked
 	m.order = append(m.order, id)
 
 	if len(m.order) > deliveredLimit {

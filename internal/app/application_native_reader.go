@@ -22,6 +22,12 @@ type applicationNativeReader struct {
 }
 
 func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiledKey string) (*applicationNativeReader, error) {
+	return b.nativeReaderWith(config, compiledKey, nil)
+}
+
+// nativeReaderWith composes the installation pipeline over the given OS helper;
+// nil selects the production helper.
+func (b *ApplicationBackend) nativeReaderWith(config ApplicationReadConfig, compiledKey string, prepare applicationInstallPrepare) (*applicationNativeReader, error) {
 	reader, err := newApplicationNativeReader(config, compiledKey)
 	if err != nil {
 		return nil, err
@@ -36,7 +42,7 @@ func (b *ApplicationBackend) nativeReader(config ApplicationReadConfig, compiled
 
 	reader.snapshotContext = b.snapshotContextFor(address, config.Inventory.BackendOwned)
 	if reader.disabled == "" {
-		reader.handoff = application.NewInstallHandoffAction(reader.ApplicationReads, applicationInstallerPort{key: compiledKey, args: slices.Clone(config.RestartArgs)}, b.stopFor(address, config.Inventory.BackendOwned))
+		reader.handoff = application.NewInstallHandoffAction(reader.ApplicationReads, applicationInstallerPort{key: compiledKey, args: slices.Clone(config.RestartArgs), prepare: prepare}, b.stopFor(address, config.Inventory.BackendOwned))
 		reader.rollbackFor = func() (*application.RollbackAction, error) {
 			return b.rollbackAction(reader, address, config.Inventory.BackendOwned)
 		}

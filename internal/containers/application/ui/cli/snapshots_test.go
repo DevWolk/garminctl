@@ -82,3 +82,53 @@ func assertSnapshotCommandResponse(t *testing.T, name string, data []byte, verif
 		t.Fatalf("inspection=%s count=%d", data, verifies)
 	}
 }
+
+type snapshotCleanupStore struct {
+	snapshotCLIStore
+	unusable []application.UnusableEntry
+	removed  []string
+}
+
+func (s *snapshotCleanupStore) Unusable(context.Context) ([]application.UnusableEntry, error) {
+	return s.unusable, nil
+}
+
+func (s *snapshotCleanupStore) Remove(_ context.Context, id string) error {
+	s.removed = append(s.removed, id)
+
+	return nil
+}
+
+func TestSnapshotCLIWarnsAboutSkippedBackupsAndRemovesOne(t *testing.T) {
+	t.Parallel()
+
+	command, packages, out := newRecoveryCommand(t, false)
+
+	var diagnostics bytes.Buffer
+
+	command.ErrOut = clix.NewPrinter(&diagnostics)
+	skipped := strings.Repeat("9", 64)
+	store := &snapshotCleanupStore{unusable: []application.UnusableEntry{{ID: skipped, Reason: `json: unknown field "compression"`}}}
+	store.row = application.RecoverySnapshot{ID: strings.Repeat("e", 64), CreatedAt: time.Now(), Current: packages.row, Update: packages.row}
+	command.Snapshots = func() (*application.RecoverySnapshotsAction, error) {
+		return application.NewRecoverySnapshotsAction(store), nil
+	}
+
+	if err := command.Run(t.Context(), []string{recoveryCommand, snapshotsCommand}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), store.row.ID) || strings.Contains(out.String(), skipped) || !strings.Contains(diagnostics.String(), "garminctl application recovery remove-snapshot "+skipped) || !strings.Contains(diagnostics.String(), "compression") {
+		t.Fatalf("out=%q diagnostics=%q", out, &diagnostics)
+	}
+
+	out.Reset()
+
+	if err := command.Run(t.Context(), []string{recoveryCommand, removeSnapshotCommand, skipped}); err != nil || len(store.removed) != 1 || store.removed[0] != skipped || !strings.Contains(out.String(), skipped) {
+		t.Fatalf("removed=%v out=%q error=%v", store.removed, out, err)
+	}
+
+	if packages.calls != 0 {
+		t.Fatalf("snapshot command used package composition: %d", packages.calls)
+	}
+}

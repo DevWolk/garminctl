@@ -12,13 +12,25 @@ const InstallCommand = "_application-install"
 
 const installProtocol = 1
 
+// The helper answers its request with Ready, or with a refusal when it will
+// not accept a Commit.
+const (
+	installReady   = "ready"
+	installRefused = "refused"
+)
+
+// installAccepted acknowledges the one Commit.
+const installAccepted = "accepted"
+
 // InstallOptions combines observed local paths/arguments with explicit DEB rollback consent.
 type InstallOptions struct {
-	Root           string   `json:"root"`
-	Desktop        string   `json:"desktop"`
-	CLI            string   `json:"cli"`
-	Args           []string `json:"args"`
-	AllowDowngrade bool     `json:"allowDowngrade,omitempty"`
+	Root    string   `json:"root"`
+	Desktop string   `json:"desktop"`
+	CLI     string   `json:"cli"`
+	Args    []string `json:"args"`
+	// Dir is the working directory of the running desktop, which relative restart arguments refer to.
+	Dir            string `json:"dir,omitempty"`
+	AllowDowngrade bool   `json:"allowDowngrade,omitempty"`
 }
 
 type installRequest struct {
@@ -45,6 +57,7 @@ type installEvent struct {
 	BuildVersion string `json:"buildVersion"`
 	KeyID        string `json:"keyId"`
 	Kind         string `json:"kind"`
+	Message      string `json:"message,omitempty"`
 }
 
 func readInstallFrame(reader *bufio.Reader, value any) error {

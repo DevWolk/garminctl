@@ -14,8 +14,14 @@ See CLAUDE.md for the working rules. Module map:
   `_application-install` is a separate private cached executor. Bounded Ready/
   Commit IPC binds the real parent, build, compiled key and copied package.
   Before Commit, cancellation kills/joins only that helper and removes its
-  operation. After one attempt it waits for parent exit, verifies bytes again,
-  runs Setup or the Linux package manager and checks CLI version before restart.
+  operation. Before Ready it checks the host: Linux tools and a root-owned
+  installed CLI, on Windows an installed CLI that is not in use; a refusal is
+  shown while the application still runs. After one attempt it waits for parent
+  exit, verifies bytes again, runs Setup or the privileged package step and
+  checks CLI version before restart. `_application-package` is that step: the
+  helper starts the installed CLI with it through `pkexec`; as root it copies
+  the package to its own directory, verifies digest, compiled-key signature and
+  the version inside the package, then runs the package manager on the copy.
   Its private CLI scope handles SIGPIPE so a lost reply returns EPIPE without
   terminating an accepted executor; ordinary command signal policy is unchanged.
   An acknowledged handoff does not prove installation/startup. Native Apply is
@@ -36,7 +42,8 @@ See CLAUDE.md for the working rules. Module map:
   `serve.go`, `autostart.go`; extracted app CLI wrappers live in `apps_cli.go`.
 - `cmd/garmin-desktop`, `internal/desktop`: pinned Wails v3 native window (build tag
   `desktop`), owned/reused loopback backend, private-origin proxy, native Save
-  dialog and lifecycle/edit protection. A private windowHost isolates bridge calls;
+  dialog and lifecycle/edit protection. A failed page navigation disarms the edit
+  guard; held confirmed work postpones close. A private windowHost isolates bridge calls;
   native initialization precedes backend startup and shutdown joins owned work.
   The outer Assets middleware validates private origins before Wails dispatch;
   `/wails/runtime` accepts POST, while runtime modules remain available over GET.
@@ -91,7 +98,10 @@ See CLAUDE.md for the working rules. Module map:
   both backups, never resume stopped writers or replay. Native selection/review
   and confirmation share the existing installation operation/Scope. Review holds
   maintenance until exact consent or joined cancellation; reload observes only.
-  The confirming RPC releases its own lease before waking the worker. Compatible
+  The confirming RPC releases its own lease before waking the worker. Confirmed
+  work is detached from window cancellation and the review deadline, runs under
+  its own deadline and holds the window open (`CloseHolder`); a close request
+  waits for its end. The restore result separates untouched from partial data. Compatible
   keep-current-data rollback requires matching explicit StateFormats provenance
   in the older backup and fresh safety copy. App uses gc/connect reader checks
   and hostfile's read-only live/hash inspection before and after owned stop.
@@ -131,8 +141,14 @@ See CLAUDE.md for the working rules. Module map:
   manifest/layout/hash consistency and Application's allowed state paths, without
   a build key, backend or watch. Output omits file contents; no restore or schema
   compatibility is inferred. Snapshot inspection may tighten backup permissions.
-  Missing compiled key disables preparation while keeping
-  metadata reads available. Native Apply uses a blocking progress dialog and
+  Both lists skip entries this build cannot read and name them through Catalog;
+  `recovery remove-package|remove-snapshot ID` deletes one. hostfile's
+  SnapshotReader.Prune keeps Application's RetainedBackups newest snapshots
+  after a forward update's backup (a rollback preparation removes none), and
+  Forget deletes the account/MFA copies from every backup on Connect sign-out,
+  rewriting readable manifests so the backups stay valid.
+  Missing compiled key disables preparation and export while keeping
+  metadata reads and removal available. Native Apply uses a blocking progress dialog and
   existing unsaved-edit confirmation. No public HTTP/MCP installer or rollback UI.
 - `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden
@@ -140,6 +156,9 @@ See CLAUDE.md for the working rules. Module map:
   the libusb-enabled CLI; the portable WSL CLI stays free of shared-library
   dependencies. Hardware verification of the native Linux path is pending.
 - `internal/device`: `Device` interface (List/Stat/Read/Write/Delete/Mkdir).
+  `Read` hands its buffer to the caller. `ErrNotFound` means absence only:
+  `DirFS` returns other lookup failures as they are, and the WPD client takes
+  absence from the bridge's `notFound` flag, never from error text.
   `DirFS` serves a directory through an `os.Root`, so watch paths cannot
   escape it. `wpd/wpd.ps1` is the PowerShell+C# bridge, `wpd/client.go` its
   JSON-lines client. Protocol ops: devices, open, list, stat, read, write,
@@ -158,11 +177,12 @@ See CLAUDE.md for the working rules. Module map:
   list serves HTTP and stdio; protocol contracts use the production composition
   with fixture transports.
   `internal/ship/clix` owns CLI printing, errors and
-  parsing; `internal/app/cli/clix_compat.go` temporarily delegates existing commands.
+  parsing; the entry point and the feature CLI adapters call it directly.
 - `internal/ship/httpx` owns local HTTP guards, request limits, JSON/error output
   and shared status mapping, watch lease responses, mutating admission and the
-  route registrar contract. `internal/web/httpx_compat.go` temporarily delegates
-  existing routes; Wails-specific private-origin validation stays in desktop.
+  route registrar contract; the web shell calls it directly. Wails-specific
+  private-origin validation stays in desktop. `tests/contracts` pins the set of
+  registered route patterns.
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
   watch lease handlers, tool registration and annotation helpers. Its narrow
   owner/lease contracts accept the Session Manager directly.
@@ -266,7 +286,9 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/updatetransport` owns bounded, cancellable GitHub release
   metadata reads for the compiled repository. It retains raw channel flags;
   Application owns selection policy. Requests use no cookies or redirects,
-  and metadata pagination never follows response URLs. GitHub remains a
+  and metadata pagination never follows response URLs. Release history is
+  read in 20-record pages (a record carries its whole asset list), up to 1000
+  records, so no page approaches its 2 MiB bound. GitHub remains a
   metadata-only client. The package imports no feature or native runtime.
   Its pure MatchAssets function selects exactly one package and .sig sibling
   for the publishing filenames and supported OS/arch/install kind. It returns
@@ -302,16 +324,27 @@ See CLAUDE.md for the working rules. Module map:
   fresh cached CLI and the current compiled key to verify offline, returning
   an independently owned StagedPackage copy. The local asset transport never
   falls back to HTTP. Manifests have bounded reads and safe hex IDs; normal
-  errors clean only owned pending/operation directories. No automatic eviction,
-  process-crash sweep or installation is performed by this service.
+  errors clean only owned pending/operation directories. Catalog skips and names
+  entries it cannot read (another key or schema, a damaged directory); Remove
+  deletes one by ID and NewPackageCatalog lists/removes without a key. Put
+  replaces an entry of the same identity. Prune keeps the most recently saved
+  packages plus the running build's and one entry per release target, and
+  removes pending/stage directories unchanged for a day; app calls it after a
+  download with Application's RetainedPackages. No installation is performed
+  by this service.
   Installer owns a separate application-installing operation and private helper.
   It copies verified bytes before Ready and accepts one Commit. The helper uses
   pidfd on Linux or a Windows process handle to wait for its actual parent, then
-  verifies RSA again. Setup keeps the observed InstallDir; DEB/RPM use fixed
-  pkexec/package-manager argv, never direct writes to managed executables.
-  Committed OS transactions are not killed on monitoring timeout. Operation logs
-  and a bounded result remain for diagnosis; no replay, eviction or sweep is
-  added. App binds this port to the existing owned backend stop/join; reused
+  verifies RSA again. Setup keeps the observed InstallDir; DEB/RPM use one
+  `pkexec` prompt for the installed CLI's package step, which gives the fixed
+  package-manager argv only a root-owned verified copy; no shell, no direct
+  writes to managed executables. Stage and install operations refuse a cache
+  with a foreign-owned or world-writable ancestor; a linked home or cache
+  directory is accepted. Committed OS transactions are not killed on monitoring
+  timeout. Operation logs and a bounded result remain for diagnosis;
+  LastInstallResult reads the newest result for the Application tab and
+  `garminctl application status`. Prepare removes operations unchanged
+  for a day except the one holding that newest result. No replay is added. App binds this port to the existing owned backend stop/join; reused
   backends are refused. Native GUI/installation/restart acceptance is separate.
 - `internal/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
@@ -343,8 +376,9 @@ See CLAUDE.md for the working rules. Module map:
   exposes the same tools over local Streamable HTTP with bounded
   session/tool-call metadata for the web UI's AI & MCP tab.
 
-Quality gate: `make check` (module metadata, golangci-lint with govet,
-race tests, headless UI tests, govulncheck) must pass; the tools are pinned in
+Quality gate: `make check` (module metadata, golangci-lint with govet and
+govulncheck for Linux and Windows code, race tests, the `integration`-tagged
+package-tool tests, headless UI tests) must pass; the tools are pinned in
 `tools.mod`. Make targets in `.make/` use `docker/docker-compose.yml` and a
 host-UID toolchain container. `make package` builds native installers in `dist/`.
 `make install` rebuilds the CLI and desktop binaries and rolls the CLI out on

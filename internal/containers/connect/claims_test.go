@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -155,22 +156,10 @@ func TestPullWithStaleListingSkipsDeliveredMessage(t *testing.T) {
 	}
 }
 
-func TestPullRetriesFailedAckWithoutWritingAgain(t *testing.T) {
-	t.Parallel()
-
-	root := testdump.Root(t)
-
-	dev, err := device.NewDirFS(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Cleanup(func() { _ = dev.Close() })
-
-	var downloads, acks atomic.Int32
-
-	// The first acknowledgement fails, so Connect keeps listing the message as new.
-	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+// firstAckFails serves one queued message whose first acknowledgement fails,
+// so Connect keeps listing the message as new.
+func firstAckFails(downloads, acks *atomic.Int32) syncTransport {
+	return func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Path {
 		case deviceMessagesPath:
 			return syncResponse(req, syncMessages()), nil
@@ -189,7 +178,24 @@ func TestPullRetriesFailedAckWithoutWritingAgain(t *testing.T) {
 		default:
 			return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
 		}
-	})
+	}
+}
+
+func TestPullRetriesFailedAckWithoutWritingAgain(t *testing.T) {
+	t.Parallel()
+
+	root := testdump.Root(t)
+
+	dev, err := device.NewDirFS(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	var downloads, acks atomic.Int32
+
+	client := syncTestClient(t, firstAckFails(&downloads, &acks))
 
 	config := Config{CacheDir: t.TempDir(), Claims: new(MessageClaims)}
 	sess := watchsession.New(dev)
@@ -207,5 +213,113 @@ func TestPullRetriesFailedAckWithoutWritingAgain(t *testing.T) {
 
 	if downloads.Load() != 1 || acks.Load() != 2 || len(written) != 1 {
 		t.Fatalf("downloads=%d acks=%d files=%d, want 1, 2 and 1", downloads.Load(), acks.Load(), len(written))
+	}
+}
+
+func TestQueuedPullDoesNotWaitForMessageAnotherPullDelivers(t *testing.T) {
+	t.Parallel()
+
+	dev, err := device.NewDirFS(testdump.Root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	var listings atomic.Int32
+
+	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != deviceMessagesPath {
+			return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
+		}
+
+		listings.Add(1)
+
+		return syncResponse(req, syncMessages()), nil
+	})
+
+	claims := new(MessageClaims)
+	if got, _ := claims.claim(42); got != claimDeliver {
+		t.Fatalf("first claim = %v", got)
+	}
+
+	cloud := NewCloud(watchsession.New(dev), client, Config{CacheDir: t.TempDir(), Claims: claims})
+
+	pulled, delivering, err := cloud.pullQueued(t.Context(), "settings-change")
+	if err != nil || len(pulled) != 0 || !delivering {
+		t.Fatalf("pulled=%+v delivering=%t err=%v", pulled, delivering, err)
+	}
+
+	if listings.Load() != 1 {
+		t.Fatalf("queue listed %d times while another pull held the message", listings.Load())
+	}
+}
+
+func TestPullReportsEarlierWriteOnceConnectIsTold(t *testing.T) {
+	t.Parallel()
+
+	dev, err := device.NewDirFS(testdump.Root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	var downloads, acks atomic.Int32
+
+	client := syncTestClient(t, firstAckFails(&downloads, &acks))
+
+	config := Config{CacheDir: t.TempDir(), Claims: new(MessageClaims)}
+	sess := watchsession.New(dev)
+
+	first, err := NewCloud(sess, client, config).Pull(t.Context(), nil)
+	if err != nil || len(first) != 1 || first[0].Path == "" || first[0].Error == "" {
+		t.Fatalf("first pull: %+v %v", first, err)
+	}
+
+	second, err := NewCloud(sess, client, config).Pull(t.Context(), nil)
+	if err != nil || len(second) != 1 {
+		t.Fatalf("second pull: %+v %v", second, err)
+	}
+
+	if second[0].Path != first[0].Path || second[0].Bytes != first[0].Bytes || second[0].Error != "" {
+		t.Fatalf("acknowledged file reported as %+v, written as %+v", second[0], first[0])
+	}
+
+	third, err := NewCloud(sess, client, config).Pull(t.Context(), nil)
+	if err != nil || len(third) != 0 || downloads.Load() != 1 {
+		t.Fatalf("delivered and acknowledged message handled again: %+v %v downloads=%d", third, err, downloads.Load())
+	}
+}
+
+func TestSettingsChangeNamesRunningSyncInsteadOfEmptyQueue(t *testing.T) {
+	t.Parallel()
+
+	dev, err := device.NewDirFS(testdump.Root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodPut && strings.HasPrefix(req.URL.Path, "/device-service/deviceservice/device-info/settings/"):
+			return syncResponse(req, nil), nil
+		case req.URL.Path == deviceMessagesPath:
+			return syncResponse(req, syncMessages()), nil
+		default:
+			return nil, fmt.Errorf("unexpected request %s", req.URL.Path)
+		}
+	})
+
+	claims := new(MessageClaims)
+	claims.claim(42)
+
+	cloud := NewCloud(watchsession.New(dev), client, Config{CacheDir: t.TempDir(), Claims: claims})
+
+	res, err := cloud.SetSettings(t.Context(), map[string]any{"timeFormat": "time_twenty_four_hr"})
+	if err != nil || len(res.Pulled) != 0 || !strings.Contains(res.Note, "running sync") {
+		t.Fatalf("result=%+v err=%v", res, err)
 	}
 }

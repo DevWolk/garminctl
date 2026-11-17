@@ -10,6 +10,8 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/paths"
 )
 
 const (
@@ -112,5 +114,124 @@ func TestApplicationRecoverySnapshotRejectsChangedRetainedBytes(t *testing.T) { 
 
 	if live, err := f.root.ReadFile("garmin-connect.json"); err != nil || string(live) != recoveryNewState {
 		t.Fatalf("failed verify restored live state: %s %v", live, err)
+	}
+}
+
+// backupFromALaterBuild records a format component this build does not know,
+// as the safety copy of a rollback to this build does.
+func backupFromALaterBuild(t *testing.T, f recoverySnapshotFixture) *hostfile.Snapshot {
+	t.Helper()
+
+	metadata, err := json.Marshal(struct {
+		Current, Update application.PackageRecord
+		Formats         map[string]int
+	}{f.current, f.update, map[string]int{"Account": 1, "ActivityCache": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	backups := filepath.Dir(f.snapshot.Directory)
+	store := hostfile.NewSnapshotStore(backups, []hostfile.SnapshotSource{{Name: applicationStateConfig, Directory: filepath.Dir(backups)}}, applicationSnapshotPath)
+
+	snapshot, err := store.Create(t.Context(), metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return snapshot
+}
+
+func TestApplicationRecoverySnapshotsListBackupsBesideOneFromALaterBuild(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.
+	f := newRecoverySnapshotFixture(t)
+	foreign := backupFromALaterBuild(t, f)
+
+	rows, err := f.action.List(t.Context())
+	if err != nil || len(rows) != 1 || rows[0].ID != f.snapshot.ID {
+		t.Fatalf("snapshots=%+v error=%v", rows, err)
+	}
+
+	rows, unusable, err := f.action.Catalog(t.Context())
+	if err != nil || len(rows) != 1 || len(unusable) != 1 || unusable[0].ID != foreign.ID || !strings.Contains(unusable[0].Reason, "ActivityCache") {
+		t.Fatalf("snapshots=%+v unusable=%+v error=%v", rows, unusable, err)
+	}
+
+	if err := f.action.Remove(t.Context(), foreign.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, unusable, err := f.action.Catalog(t.Context()); err != nil || len(unusable) != 0 {
+		t.Fatalf("after removal unusable=%+v error=%v", unusable, err)
+	}
+}
+
+func TestApplicationBackupRetentionKeepsTheNewestAndSparesBackupsDuringRollback(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.
+	f := newRecoverySnapshotFixture(t)
+	update := application.PreflightInfo{Current: f.current, Update: f.update}
+
+	for range application.RetainedBackups + 2 {
+		if _, err := (applicationDataSnapshots{}).Create(t.Context(), update); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rows, err := f.action.List(t.Context())
+	if err != nil || len(rows) != application.RetainedBackups {
+		t.Fatalf("after updates: %d backups error=%v", len(rows), err)
+	}
+
+	for _, row := range rows {
+		if row.ID == f.snapshot.ID {
+			t.Fatal("the oldest backup outlived the retention count")
+		}
+	}
+
+	// A rollback has already selected one of the retained backups, possibly the oldest.
+	safety, err := (applicationDataSnapshots{}).Create(t.Context(), application.PreflightInfo{Current: f.update, Update: f.current})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := f.action.List(t.Context())
+	if err != nil || len(after) != application.RetainedBackups+1 || after[0].ID != safety.ID || after[len(after)-1].ID != rows[len(rows)-1].ID {
+		t.Fatalf("after rollback preparation: %d backups error=%v", len(after), err)
+	}
+}
+
+func TestForgetApplicationSessionCopiesRemovesAccountFilesFromBackups(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.
+	f := newRecoverySnapshotFixture(t)
+
+	if err := f.root.WriteFile("garmin-connect.json.mfa", []byte(`{"opaque":"fake-pending-secret"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	writeApplicationState(t, paths.Cache(), "uploaded-123.json", []byte(`{}`))
+
+	second, err := (applicationDataSnapshots{}).Create(t.Context(), application.PreflightInfo{Current: f.current, Update: f.update})
+	if err != nil || second.Files != 3 {
+		t.Fatalf("fixture backup=%+v error=%v", second, err)
+	}
+
+	if err := ForgetApplicationSessionCopies(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	err = filepath.WalkDir(filepath.Dir(f.snapshot.Directory), func(path string, _ os.DirEntry, err error) error {
+		if strings.HasPrefix(filepath.Base(path), "garmin-connect.json") {
+			t.Errorf("session copy stayed at %s", path)
+		}
+
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	verified, err := f.action.Verify(t.Context(), second.ID)
+	if err != nil || len(verified.Files) != 1 || verified.Files[0].Path != "uploaded-123.json" {
+		t.Fatalf("backup after sign-out=%+v error=%v", verified, err)
+	}
+
+	if live, err := f.root.ReadFile("garmin-connect.json"); err != nil || string(live) != recoveryNewState {
+		t.Fatalf("live account file changed: %s %v", live, err)
 	}
 }

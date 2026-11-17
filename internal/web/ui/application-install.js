@@ -80,6 +80,13 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
     }
     choices.value = rows.some(row => row.cacheId === previous) ? previous : (rows[0]?.cacheId || '');
   }
+  // A restore that never wrote leaves the data as it was; anything else needs manual recovery.
+  function restoreOutcome(restore) {
+    if (!restore?.attempted) return 'Local data was not changed. Close the app and start it again.';
+    const counts = restore.replaced + ' replaced, ' + restore.removed + ' removed';
+    return (restore.completed ? 'The older data was restored (' + counts + '), but the older version was not installed.' : 'The data restore is partial: ' + counts + '.')
+      + ' Keep both backups and do not retry. Close the app and recover manually using the retained package and backup IDs below.';
+  }
   function clearPoll() { if (timer !== null) clearTimeout(timer); timer = null; }
   function update() {
     const receipt = downloaded();
@@ -100,6 +107,9 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
     rollbackStart.disabled = !known || confirming || active() || leaving() || busy() || !rollbackSelection();
     rollbackChoices.disabled = confirming || active() || busy() || !rollbacks.length;
     rollbackKeep.disabled = confirming || active() || busy() || !rollbacks.length;
+    get('rollback-hint').textContent = rollbackKeep.checked
+      ? 'Current data stays in place and must pass a compatibility check with the older version. A fresh copy of it is saved first.'
+      : 'This flow restores the selected older data backup. Current data compatibility is not confirmed. A fresh copy of newer data is saved before you review the replacements.';
     get('rollback-note').textContent = rollbackReadError || (rollbacks.length ? 'Packages and backups are checked again during preparation.' : 'An older saved package and its matching data backup are required. Use the Releases link for manual installation.');
     const reviewing = state?.kind === 'rollback' && state.phase === 'review';
     const canConfirm = reviewing && known && !unresolved && !submitting && !confirmationPending && !canceling;
@@ -121,9 +131,9 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
       review: 'Review the data replacements below. Installation has not started.',
     };
     const phase = submitting ? 'handoff' : starting ? 'verifying' : state?.phase;
-    let message = messages[phase] || (phase === 'failed' ? 'Could not prepare installation: ' + state.error : '');
+    let message = messages[phase] || (phase === 'failed' ? 'Could not prepare installation: ' + state.error : '') || state?.lastResult || '';
     if (closeOnly) message = 'Application shutdown was requested before handoff completed. Close and restart the app manually. ' + (state.error || '');
-    if (closeOnly && state.kind === 'rollback') message = 'Rollback did not complete. Keep both backups and do not retry. Close the app and recover manually using the retained package and backup IDs below. ' + (state.error || '');
+    if (closeOnly && state.kind === 'rollback') message = 'Rollback did not complete. ' + restoreOutcome(state.restore) + ' ' + (state.error || '');
     if (state?.kind === 'rollback' && phase === 'handoff') message = state.review?.keepCurrentData
       ? 'Keeping current data and handing the older version to the installer. Do not interrupt or retry.'
       : 'Restoring the selected backup and handing the older version to the installer. Do not interrupt or retry.';
@@ -226,6 +236,7 @@ window.createApplicationInstall = ({downloaded, prerelease, busy, changed}) => {
   start.addEventListener('click', begin);
   choices.addEventListener('change', update);
   rollbackChoices.addEventListener('change', update);
+  rollbackKeep.addEventListener('change', update);
   rollbackStart.addEventListener('click', beginRollback);
   reviewConsent.addEventListener('change', update);
   reviewConfirm.addEventListener('click', confirmRollback);

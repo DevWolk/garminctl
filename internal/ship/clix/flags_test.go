@@ -1,4 +1,4 @@
-package cli
+package clix
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ func TestFlagsFirstPreservesParserContracts(t *testing.T) {
 
 			before := append([]string(nil), tc.args...)
 
-			if err := parseFlags(fs, flagsFirst(fs, tc.args)); err != nil {
+			if err := ParseFlags(fs, FlagsFirst(fs, tc.args)); err != nil {
 				t.Fatal(err)
 			}
 
@@ -82,7 +82,7 @@ func TestFlagsFirstPreservesHelpAndUsageErrors(t *testing.T) {
 				args = []string{token}
 			}
 
-			err := parseFlags(fs, flagsFirst(fs, args))
+			err := ParseFlags(fs, FlagsFirst(fs, args))
 			if token == "-h" || token == "--help" {
 				if !errors.Is(err, flag.ErrHelp) {
 					t.Fatalf("help error = %v", err)
@@ -91,7 +91,7 @@ func TestFlagsFirstPreservesHelpAndUsageErrors(t *testing.T) {
 				return
 			}
 
-			if _, ok := errors.AsType[*usageError](err); !ok {
+			if _, ok := errors.AsType[*UsageError](err); !ok {
 				t.Fatalf("usage error = %v", err)
 			}
 		})

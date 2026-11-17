@@ -141,6 +141,10 @@ func verifySnapshotCopy(ctx context.Context, root *os.Root, path string, expecte
 }
 
 func writeSnapshotManifest(ctx context.Context, root *os.Root, manifest SnapshotManifest, absolute string) error {
+	return writeSnapshotManifestAs(ctx, root, "manifest.json", manifest, absolute)
+}
+
+func writeSnapshotManifestAs(ctx context.Context, root *os.Root, name string, manifest SnapshotManifest, absolute string) error {
 	data, err := json.Marshal(manifest)
 	if err != nil {
 		return err
@@ -150,14 +154,14 @@ func writeSnapshotManifest(ctx context.Context, root *os.Root, manifest Snapshot
 		return errors.New("snapshot manifest exceeds the byte limit")
 	}
 
-	file, err := root.OpenFile("manifest.json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
 
 	defer func() { _ = file.Close() }()
 
-	if err := Protect(filepath.Join(absolute, "manifest.json"), false); err != nil {
+	if err := Protect(filepath.Join(absolute, name), false); err != nil {
 		return err
 	}
 
@@ -175,5 +179,5 @@ func writeSnapshotManifest(ctx context.Context, root *os.Root, manifest Snapshot
 
 	digest := sha256.Sum256(data)
 
-	return verifySnapshotCopy(ctx, root, "manifest.json", SnapshotFileInfo{Bytes: int64(len(data)), Digest: hex.EncodeToString(digest[:])})
+	return verifySnapshotCopy(ctx, root, name, SnapshotFileInfo{Bytes: int64(len(data)), Digest: hex.EncodeToString(digest[:])})
 }

@@ -52,9 +52,9 @@ func TestRecoverySnapshotDispatchUsesNoKeyWatchOrNativeHost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, command := range []string{"snapshots", "inspect"} {
-		args := []string{"-json", rootFlag, "/unavailable-watch", applicationCommandName, "recovery", command}
-		if command == "inspect" {
+	for _, command := range []string{"snapshots", inspectSubcommand} {
+		args := []string{"-json", rootFlag, "/unavailable-watch", applicationCommandName, recoverySubcommand, command}
+		if command == inspectSubcommand {
 			args = append(args, snapshot.ID)
 		}
 
@@ -67,7 +67,7 @@ func TestRecoverySnapshotDispatchUsesNoKeyWatchOrNativeHost(t *testing.T) {
 			t.Fatalf("unsafe %s output=%s", command, &out)
 		}
 
-		if command == "inspect" && !bytes.Contains(out.Bytes(), []byte(`"verification": "local_manifest"`)) {
+		if command == inspectSubcommand && !bytes.Contains(out.Bytes(), []byte(`"verification": "local_manifest"`)) {
 			t.Fatalf("inspection claim=%s", &out)
 		}
 	}

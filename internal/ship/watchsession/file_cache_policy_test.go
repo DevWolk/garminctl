@@ -3,6 +3,7 @@ package watchsession
 import (
 	"bytes"
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -89,10 +90,6 @@ func TestFileCacheBytesDoNotEscape(t *testing.T) {
 	first := readCachedTestValue(t, sess, true)
 	first[0] = 'x'
 
-	d.mu.Lock()
-	d.lastRead[1] = 'y' // a transport's buffer must not be the cache's storage
-	d.mu.Unlock()
-
 	second := readCachedTestValue(t, sess, true)
 	if string(second) != "original" {
 		t.Fatalf("caller/transport modified the cache: %q", second)
@@ -102,6 +99,30 @@ func TestFileCacheBytesDoNotEscape(t *testing.T) {
 
 	if got := readCachedTestValue(t, sess, true); string(got) != "original" || d.readCount() != 1 {
 		t.Fatalf("cache-hit buffer escaped: %q, reads=%d", got, d.readCount())
+	}
+}
+
+func TestCacheMissCopiesTransportBufferOnce(t *testing.T) {
+	t.Parallel()
+
+	d := &cacheTestDevice{data: []byte("original")}
+	sess := New(d)
+	got := readCachedTestValue(t, sess, true)
+
+	sess.cacheMu.Lock()
+	cached := sess.files[strings.ToLower("GARMIN/example.fit")]
+	sess.cacheMu.Unlock()
+
+	d.mu.Lock()
+	transport := d.lastRead
+	d.mu.Unlock()
+
+	if len(cached) == 0 || &got[0] == &cached[0] {
+		t.Fatal("the caller and the cache share one buffer")
+	}
+
+	if &got[0] != &transport[0] && &cached[0] != &transport[0] {
+		t.Fatal("the transport's buffer was copied for both the caller and the cache")
 	}
 }
 

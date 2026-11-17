@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
@@ -215,5 +216,126 @@ func assertCachedEntry(t *testing.T, cache *updatetransport.PackageCache, id str
 	items, err := cache.List(t.Context())
 	if err != nil || len(items) != 1 || items[0].ID != id {
 		t.Fatalf("catalog=%+v error=%v", items, err)
+	}
+}
+
+func rotatedKeyCache(t *testing.T, directory string) *updatetransport.PackageCache {
+	t.Helper()
+
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stager, err := updatetransport.NewStager(updatetransport.StagerConfig{
+		CLIPath: executable, CacheDir: filepath.Join(t.TempDir(), "stage"),
+		BuildVersion: stageTestVersion, PublicKey: otherStagePublicKey(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cache, err := updatetransport.NewPackageCache(directory, stager)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return cache
+}
+
+func TestPackageCacheListsUsableEntriesBesideUnusableOnes(t *testing.T) {
+	t.Parallel()
+
+	cache, entry, directory := retainedPackageForTest(t)
+
+	if err := os.Mkdir(filepath.Join(directory, strings.Repeat("ab", 32)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(directory, strings.Repeat("cd", 32)), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCachedEntry(t, cache, entry.ID)
+
+	if rows, err := rotatedKeyCache(t, directory).List(t.Context()); err != nil || len(rows) != 0 {
+		t.Fatalf("build with another key: rows=%+v error=%v", rows, err)
+	}
+}
+
+func stageAgain(t *testing.T, release func(*updatetransport.ResolvedRelease)) (updatetransport.MatchRequest, *updatetransport.StagedPackage) {
+	t.Helper()
+
+	stager, _ := stagerForTest(t)
+	request, selected := stageSelection(tag120)
+
+	if release != nil {
+		release(&selected)
+	}
+
+	staged, err := stager.Stage(t.Context(), request, selected, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if err := staged.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	return request, staged
+}
+
+func TestPackageCachePutRepairsADamagedEntry(t *testing.T) {
+	t.Parallel()
+
+	cache, entry, directory := retainedPackageForTest(t)
+
+	if err := os.Remove(filepath.Join(directory, entry.ID, entry.Release.Package.Name)); err != nil {
+		t.Fatal(err)
+	}
+
+	if verified, err := cache.Open(t.Context(), entry.ID, nil); err == nil {
+		_ = verified.Close()
+
+		t.Fatal("damaged entry opened")
+	}
+
+	request, staged := stageAgain(t, nil)
+
+	saved, err := cache.Put(t.Context(), request, staged)
+	if err != nil || saved.ID != entry.ID {
+		t.Fatalf("saved=%+v error=%v", saved, err)
+	}
+
+	verified, err := cache.Open(t.Context(), entry.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := verified.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if entries, err := os.ReadDir(directory); err != nil || len(entries) != 1 {
+		t.Fatalf("repair left files behind: %v error=%v", entries, err)
+	}
+}
+
+func TestPackageCachePutAcceptsTheSameBytesFromARepublishedRelease(t *testing.T) {
+	t.Parallel()
+
+	cache, entry, _ := retainedPackageForTest(t)
+	request, staged := stageAgain(t, func(release *updatetransport.ResolvedRelease) { release.ReleaseID++ })
+
+	saved, err := cache.Put(t.Context(), request, staged)
+	if err != nil || saved.ID != entry.ID {
+		t.Fatalf("saved=%+v error=%v", saved, err)
+	}
+
+	rows, err := cache.List(t.Context())
+	if err != nil || len(rows) != 1 || rows[0].Release.ReleaseID != entry.Release.ReleaseID+1 {
+		t.Fatalf("catalog=%+v error=%v", rows, err)
 	}
 }

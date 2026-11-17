@@ -69,7 +69,9 @@ func (c *Cloud) DeviceXML(ctx context.Context) (*deviceinfo.DeviceXML, error) {
 
 // PullQueued preserves filtered queue polling for consumer workflows.
 func (c *Cloud) PullQueued(ctx context.Context, kind string) ([]PulledFile, error) {
-	return c.pullQueued(ctx, kind)
+	pulled, _, err := c.pullQueued(ctx, kind)
+
+	return pulled, err
 }
 
 // DisplayName supplies identity without incidental watch registration.
@@ -389,48 +391,49 @@ func (c *Cloud) SetSettings(ctx context.Context, changes map[string]any) (*Cloud
 
 	res := &CloudApplyResult{Applied: keys}
 
-	pulled, err := c.pullQueued(ctx, "settings-change")
+	pulled, delivering, err := c.pullQueued(ctx, "settings-change")
 	res.Pulled = pulled
 
-	if err != nil {
+	switch {
+	case err != nil:
 		res.Note = "Saved in Garmin Connect, but the settings file could not be fetched: " + err.Error()
-
-		return res, nil //nolint:nilerr // partial success: Connect saved the settings; the pull problem is reported in Note
-	}
-
-	if len(res.Pulled) == 0 {
-		res.Note = "Saved in Garmin Connect. Connect has not queued a settings file yet; press Sync later or let the phone sync."
-	} else {
+	case len(res.Pulled) > 0:
 		res.Note = "Saved in Garmin Connect and written to GARMIN/NewFiles; unplug the watch to apply."
+	case delivering:
+		res.Note = "Saved in Garmin Connect. A running sync is writing the settings file to the watch; unplug the watch when it finishes."
+	default:
+		res.Note = "Saved in Garmin Connect. Connect has not queued a settings file yet; press Sync later or let the phone sync."
 	}
 
+	// Connect saved the settings; a pull problem is reported in Note.
 	return res, nil
 }
 
 // pullQueued fetches what Connect queued for the watch under one message
 // type. Connect queues the file a moment after the request that caused it,
-// so this tries a few times. What was pulled before an error is returned
-// with it.
-func (c *Cloud) pullQueued(ctx context.Context, messageType string) ([]PulledFile, error) {
-	var pulled []PulledFile
-
+// so this tries a few times. It stops waiting when another pull of this
+// process is already delivering such a message and reports that instead:
+// that pull cannot write before the caller releases the watch. What was
+// pulled before an error is returned with it.
+func (c *Cloud) pullQueued(ctx context.Context, messageType string) (pulled []PulledFile, delivering bool, err error) {
 	for range 4 {
-		p, err := c.Pull(ctx, func(m DeviceMessage) bool { return m.MessageType == messageType })
+		pass, err := c.pull(ctx, func(m DeviceMessage) bool { return m.MessageType == messageType })
+		pulled = append(pulled, pass.files...)
+
 		if err != nil {
-			return pulled, err
+			return pulled, false, err
 		}
 
-		pulled = append(pulled, p...)
-		if len(p) > 0 {
-			break
+		if pass.settled || pass.delivering {
+			return pulled, pass.delivering, nil
 		}
 
 		if err := sleepCtx(ctx, pullRetryDelay); err != nil {
-			return pulled, err
+			return pulled, false, err
 		}
 	}
 
-	return pulled, nil
+	return pulled, false, nil
 }
 
 // ---------- device messages (what Connect queued for the watch) ----------
@@ -469,22 +472,40 @@ func (c *Cloud) Messages(ctx context.Context) ([]DeviceMessage, error) {
 	return r.Messages, nil
 }
 
+// pullPass is what one pass over Connect's queue did.
+type pullPass struct {
+	files []PulledFile
+	// settled: the pass delivered a message itself or reported a failure. A
+	// pass that only acknowledged an earlier write leaves it unset, because
+	// the file a caller waits for may still follow.
+	settled bool
+	// delivering: another pull of this process holds a matching message.
+	delivering bool
+}
+
 // Pull downloads every queued message that matches (nil = all), writes it
 // where the watch expects it and tells Connect it was received. A message
 // another pull of this process is delivering or has written is skipped; one it
-// wrote without telling Connect is only acknowledged.
+// wrote without telling Connect is acknowledged and reported with the earlier
+// write.
 func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]PulledFile, error) {
+	pass, err := c.pull(ctx, match)
+
+	return pass.files, err
+}
+
+func (c *Cloud) pull(ctx context.Context, match func(DeviceMessage) bool) (pullPass, error) {
+	var pass pullPass
+
 	msgs, err := c.Messages(ctx)
 	if err != nil {
-		return nil, err
+		return pass, err
 	}
 
 	dx, err := c.deviceXML(ctx)
 	if err != nil {
-		return nil, err
+		return pass, err
 	}
-
-	var out []PulledFile
 
 	for _, m := range msgs {
 		if m.MessageStatus != "new" && m.MessageStatus != "" {
@@ -495,31 +516,37 @@ func (c *Cloud) Pull(ctx context.Context, match func(DeviceMessage) bool) ([]Pul
 			continue
 		}
 
-		switch c.claims.claim(m.MessageID) {
-		case claimSkip:
-			continue
-		case claimAck:
-			err := c.ack(ctx, m.MessageID)
-			c.claims.finish(m.MessageID, true, err == nil)
+		c.pullClaimed(ctx, dx, m, &pass)
+	}
 
-			if err != nil {
-				out = append(out, PulledFile{MessageID: m.MessageID, Type: m.MessageType, Name: m.MetaData.MessageName, Error: "written earlier, but Connect was not told: " + err.Error()})
-			}
+	return pass, c.invalidateApps(ctx)
+}
 
-			continue
-		case claimDeliver:
+// pullClaimed handles one matching message according to its claim.
+func (c *Cloud) pullClaimed(ctx context.Context, dx *deviceinfo.DeviceXML, m DeviceMessage, pass *pullPass) {
+	state, written := c.claims.claim(m.MessageID)
+
+	switch state {
+	case claimSkip:
+	case claimBusy:
+		pass.delivering = true
+	case claimAck:
+		err := c.ack(ctx, m.MessageID)
+		c.claims.finish(written, err == nil)
+
+		if err != nil {
+			written.Error = "written earlier, but Connect was not told: " + err.Error()
+			pass.settled = true
 		}
 
+		pass.files = append(pass.files, written)
+	case claimDeliver:
 		pf := c.pullMessage(ctx, dx, m)
-		c.claims.finish(m.MessageID, pf.Path != "", pf.Path != "" && pf.Error == "")
-		out = append(out, pf)
-	}
+		c.claims.finish(pf, pf.Path != "" && pf.Error == "")
 
-	if err := c.invalidateApps(ctx); err != nil {
-		return out, err
+		pass.files = append(pass.files, pf)
+		pass.settled = true
 	}
-
-	return out, nil
 }
 
 // pullMessage downloads one queued message, writes it and acknowledges it.

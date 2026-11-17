@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,7 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 		// direct lookup would succeed without telling the on-disk spelling.
 		found, err := d.findFold(cur, part)
 		if err != nil {
-			return "", ErrNotFound
+			return "", d.lookupError(cur, err)
 		}
 
 		if found == "" {
@@ -83,6 +84,20 @@ func (d *DirFS) resolve(path string, create bool) (string, error) {
 	}
 
 	return cur, nil
+}
+
+// lookupError keeps absence apart from a directory that could not be read:
+// only a missing parent, or one that is a file, means the path does not exist.
+func (d *DirFS) lookupError(dir string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrNotFound
+	}
+
+	if st, statErr := d.root.Stat(dir); statErr == nil && !st.IsDir() {
+		return ErrNotFound
+	}
+
+	return err
 }
 
 // findFold returns the entry of dir named name, or the first one that
@@ -158,8 +173,12 @@ func (d *DirFS) Stat(_ context.Context, path string) (Entry, error) {
 	}
 
 	st, err := d.root.Stat(p)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return Entry{}, ErrNotFound
+	}
+
+	if err != nil {
+		return Entry{}, err
 	}
 
 	en := Entry{Name: st.Name(), Dir: st.IsDir(), Modified: st.ModTime().UTC().Format(timeLayout)}

@@ -93,7 +93,7 @@ func (r *SnapshotRestorer) restoreArea(staged *restoreStaging, name string) (*re
 
 		if err := os.MkdirAll(source.Directory, 0o700); err != nil {
 			return nil, err
-		} // #nosec G703 -- source root is trusted local composition.
+		}
 
 		if err := Protect(source.Directory, true); err != nil {
 			return nil, err

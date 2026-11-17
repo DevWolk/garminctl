@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"reflect"
 
@@ -92,11 +93,16 @@ func (s applicationDataRestorations) Restore(ctx context.Context, target, safety
 
 	value, err := s.restorer.Restore(ctx, old, newer)
 
-	result := &application.DataRestoreResult{TargetSnapshotID: target.ID, SafetySnapshotID: safety.ID, Attempted: true}
+	result := &application.DataRestoreResult{TargetSnapshotID: target.ID, SafetySnapshotID: safety.ID}
 	if value != nil {
+		result.Attempted = value.Attempted
 		result.Completed = value.Completed
 		result.Replaced = value.Replaced
 		result.Removed = value.Removed
+
+		if value.Cleanup != nil {
+			slog.Warn("restore staging directory was not removed", "error", value.Cleanup)
+		}
 	}
 
 	return result, err

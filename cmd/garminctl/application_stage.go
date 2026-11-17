@@ -30,6 +30,8 @@ func runCLI(args []string, input io.Reader, stdout, stderr io.Writer) error {
 		worker = app.RunApplicationVerify
 	case app.ApplicationInstallCommand:
 		worker = runInstallerWorker
+	case app.ApplicationPackageCommand:
+		worker = app.RunApplicationPackage
 	default:
 		return cli.RunWithUpdateKey(version, updatePublicKey, args, stdout, stderr)
 	}

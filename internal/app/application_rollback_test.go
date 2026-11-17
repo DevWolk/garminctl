@@ -17,6 +17,8 @@ type applicationRollbackFixture struct {
 	old     *application.DataSnapshot
 	account string
 	commits int
+	// payload runs once the installer payload is prepared, before the owned stop.
+	payload func()
 }
 
 func newApplicationRollbackFixture(t *testing.T) *applicationRollbackFixture {
@@ -59,6 +61,10 @@ func (f *applicationRollbackFixture) action(t *testing.T, fail bool) *applicatio
 		}
 
 		copyApplicationHandoffFixture(t, input)
+
+		if f.payload != nil {
+			f.payload()
+		}
 
 		if got := readApplicationState(t, filepath.Dir(f.account), filepath.Base(f.account)); string(got) != `{"opaque":"edited after upgrade"}` {
 			t.Fatal("restore preceded installer payload preparation")

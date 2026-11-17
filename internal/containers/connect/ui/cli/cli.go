@@ -29,6 +29,9 @@ type Command struct {
 	Client  *gc.Client
 	Cloud   *connect.Cloud
 	RunSync func(context.Context, bool, bool, connect.Progress) (*connect.SyncResult, error)
+	// ForgetSessionCopies is supplied by the composition that keeps copies of
+	// the saved session; sign-out deletes them.
+	ForgetSessionCopies func(context.Context) error
 }
 
 func (c *Command) flagSet(name string) *flag.FlagSet {
@@ -44,7 +47,7 @@ func (c *Command) Account(ctx context.Context, args []string) error {
 
 	switch args[0] {
 	case "logout":
-		if err := (connect.LogoutAction{Client: client}).Run(ctx); err != nil {
+		if err := (connect.LogoutAction{Client: client, ForgetCopies: c.ForgetSessionCopies}).Run(ctx); err != nil {
 			return err
 		}
 

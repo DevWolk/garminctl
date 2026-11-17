@@ -2,10 +2,13 @@ package updatetransport_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -26,7 +29,7 @@ func TestGitHubReleasesRejectsInvalidOrExcessivePages(t *testing.T) {
 		{name: "invalid JSON", body: "["},
 		{name: "invalid timestamp", body: `[{"published_at":"yesterday"}]`},
 		{name: "overlong body", body: "[]" + strings.Repeat(" ", 2<<20)},
-		{name: "too many records", body: "[" + strings.Repeat("{},", 100) + "{}]"},
+		{name: "too many records", body: "[" + strings.Repeat("{},", 20) + "{}]"},
 		{name: "malformed pagination", body: "[]", link: "<broken"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -62,8 +65,68 @@ func TestGitHubReleasesPageLimit(t *testing.T) {
 	}))
 
 	got, err := source.Releases(t.Context())
-	if got != nil || err == nil || calls != 10 {
-		t.Fatalf("result=%+v error=%v calls=%d, want failure at ten pages", got, err, calls)
+	if got != nil || err == nil || calls != 50 {
+		t.Fatalf("result=%+v error=%v calls=%d, want failure at fifty pages", got, err, calls)
+	}
+}
+
+// publishedRelease has the wire size of a release with sixteen assets and
+// four kilobytes of notes, about 33 KB.
+func publishedRelease(index int) any {
+	type asset struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		Uploader string `json:"uploader"`
+	}
+
+	assets := make([]asset, 0, 16)
+	for number := range 16 {
+		assets = append(assets, asset{ID: index*100 + number + 1, Name: fmt.Sprintf("garminctl_0.%d.0_asset_%02d.bin", index, number), Uploader: strings.Repeat("u", 1400)})
+	}
+
+	return struct {
+		Tag    string  `json:"tag_name"`
+		Notes  string  `json:"body"`
+		Assets []asset `json:"assets"`
+	}{fmt.Sprintf("v0.%d.0", index), strings.Repeat("n", 4094), assets}
+}
+
+func TestGitHubReleasesReadsHistoryLargerThanOnePageByteLimit(t *testing.T) {
+	t.Parallel()
+
+	const published = 130
+
+	source := updatetransport.NewGitHub(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		size, sizeErr := strconv.Atoi(r.URL.Query().Get("per_page"))
+		page, pageErr := strconv.Atoi(r.URL.Query().Get("page"))
+
+		if sizeErr != nil || pageErr != nil || size < 1 || page < 1 {
+			t.Errorf("unexpected metadata request: %s", r.URL)
+		}
+
+		first := min((page-1)*size, published)
+		last := min(first+size, published)
+
+		items := make([]any, 0, size)
+		for index := first; index < last; index++ {
+			items = append(items, publishedRelease(index))
+		}
+
+		recorder := httptest.NewRecorder()
+		if last < published {
+			recorder.Header().Set("Link", nextPage)
+		}
+
+		if err := json.NewEncoder(recorder).Encode(items); err != nil {
+			t.Error(err)
+		}
+
+		return recorder.Result(), nil
+	})})
+
+	got, err := source.Releases(t.Context())
+	if err != nil || len(got) != published || got[0].Tag != "v0.0.0" || got[published-1].Tag != "v0.129.0" {
+		t.Fatalf("releases=%d error=%v", len(got), err)
 	}
 }
 

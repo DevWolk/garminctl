@@ -40,30 +40,65 @@ func NewRecoveryAction(packages RecoveryPackages, os, arch string) *RecoveryActi
 }
 
 // List returns unverified metadata; only Export authenticates package bytes.
+// Records this build cannot use are left out; Catalog names them.
 func (a *RecoveryAction) List(ctx context.Context) ([]PackageRecord, error) {
+	result, _, err := a.catalog(ctx)
+
+	return result, err
+}
+
+// Catalog returns the List metadata together with what List left out: entries
+// the store could not read and records outside this build's package contract.
+// Remove deletes one of them.
+func (a *RecoveryAction) Catalog(ctx context.Context) ([]PackageRecord, []UnusableEntry, error) {
+	result, invalid, err := a.catalog(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	unusable, err := withStoredUnusable(ctx, a.packages, invalid)
+
+	return result, unusable, err
+}
+
+// Remove deletes one retained package, readable or not. It installs nothing
+// and restores no data.
+func (a *RecoveryAction) Remove(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
+	}
+
+	if !validPackageHash(id) {
+		return errors.New("select a retained recovery package ID")
+	}
+
+	return removeStored(ctx, a.packages, id)
+}
+
+func (a *RecoveryAction) catalog(ctx context.Context) ([]PackageRecord, []UnusableEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
 
 	if a.packages == nil || a.os == "" || a.arch == "" {
-		return nil, errors.New("application recovery is not configured")
+		return nil, nil, errors.New("application recovery is not configured")
 	}
 
 	rows, err := a.packages.List(ctx)
 	if err := errors.Join(err, ctx.Err()); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(rows) > 1000 {
-		return nil, errors.New("recovery catalog exceeds the record limit")
+		return nil, nil, errors.New("recovery catalog exceeds the record limit")
 	}
 
-	result := make([]PackageRecord, 0, len(rows))
+	result, invalid := make([]PackageRecord, 0, len(rows)), make([]UnusableEntry, 0)
 
 	ids := make(map[string]bool, len(rows))
 	for _, row := range rows {
 		if ids[row.ID] {
-			return nil, errors.New("recovery package identity is ambiguous")
+			return nil, nil, errors.New("recovery package identity is ambiguous")
 		}
 
 		ids[row.ID] = true
@@ -71,12 +106,10 @@ func (a *RecoveryAction) List(ctx context.Context) ([]PackageRecord, error) {
 			continue
 		}
 
-		if err := validatePreflightPackage(row, DownloadTarget{OS: a.os, Arch: a.arch, Installation: row.Installation}, true); err != nil {
-			return nil, err
-		}
+		if err := validateRecoveryPackage(row); err != nil {
+			invalid = append(invalid, UnusableEntry{ID: row.ID, Reason: err.Error()})
 
-		if !recoveryInstallation(row) {
-			return nil, errors.New("retained recovery package has an unsupported installation type")
+			continue
 		}
 
 		result = append(result, row)
@@ -90,7 +123,7 @@ func (a *RecoveryAction) List(ctx context.Context) ([]PackageRecord, error) {
 		return strings.Compare(a.ID, b.ID)
 	})
 
-	return result, nil
+	return result, invalid, nil
 }
 
 // Export authenticates one explicit choice without asserting data compatibility.
@@ -125,6 +158,18 @@ func (a *RecoveryAction) Export(ctx context.Context, id string) (*RecoveryExport
 	value := *result
 
 	return &value, nil
+}
+
+func validateRecoveryPackage(row PackageRecord) error {
+	if err := validatePreflightPackage(row, DownloadTarget{OS: row.OS, Arch: row.Arch, Installation: row.Installation}, true); err != nil {
+		return err
+	}
+
+	if !recoveryInstallation(row) {
+		return errors.New("retained recovery package has an unsupported installation type")
+	}
+
+	return nil
 }
 
 func recoveryInstallation(row PackageRecord) bool {

@@ -22,6 +22,9 @@ type Handler struct {
 	Coordinator *connect.SyncCoordinator
 	CloudFor    func(*watchsession.Session) *connect.Cloud
 	JobFor      func(watchsession.ConnectionEpoch) *connect.Cloud
+	// ForgetSessionCopies is supplied by the composition that keeps copies of
+	// the saved session; sign-out deletes them.
+	ForgetSessionCopies func(context.Context) error
 }
 
 // RegisterRoutes preserves nine account/settings/queue/sync routes and admission.
@@ -115,7 +118,7 @@ func (h *Handler) cloudMFA(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) cloudLogout(w http.ResponseWriter, r *http.Request) {
-	if err := (connect.LogoutAction{Client: h.Client}).Run(r.Context()); err != nil {
+	if err := (connect.LogoutAction{Client: h.Client, ForgetCopies: h.ForgetSessionCopies}).Run(r.Context()); err != nil {
 		httpx.WriteErr(w, err)
 		return
 	}

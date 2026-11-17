@@ -21,7 +21,7 @@ func NewApplicationRecoverySnapshots() (*application.RecoverySnapshotsAction, er
 		return nil, errors.New("application data directory is unavailable")
 	}
 
-	reader := hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), "application-backups"))
+	reader := hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups))
 
 	return application.NewRecoverySnapshotsAction(applicationRecoverySnapshots{reader: reader}), nil
 }
@@ -29,22 +29,46 @@ func NewApplicationRecoverySnapshots() (*application.RecoverySnapshotsAction, er
 type applicationRecoverySnapshots struct{ reader *hostfile.SnapshotReader }
 
 func (s applicationRecoverySnapshots) List(ctx context.Context) ([]application.RecoverySnapshot, error) {
-	rows, err := s.reader.List(ctx)
+	result, _, err := s.catalog(ctx)
+
+	return result, err
+}
+
+// Unusable names the backups List left out: a manifest or application metadata
+// this build cannot read, such as a backup written by a later build.
+func (s applicationRecoverySnapshots) Unusable(ctx context.Context) ([]application.UnusableEntry, error) {
+	_, skipped, err := s.catalog(ctx)
+
+	return skipped, err
+}
+
+func (s applicationRecoverySnapshots) Remove(ctx context.Context, id string) error {
+	return s.reader.Remove(ctx, id)
+}
+
+func (s applicationRecoverySnapshots) catalog(ctx context.Context) ([]application.RecoverySnapshot, []application.UnusableEntry, error) {
+	rows, unreadable, err := s.reader.Catalog(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	result := make([]application.RecoverySnapshot, 0, len(rows))
+	result, skipped := make([]application.RecoverySnapshot, 0, len(rows)), make([]application.UnusableEntry, 0, len(unreadable))
+	for _, entry := range unreadable {
+		skipped = append(skipped, application.UnusableEntry{ID: entry.ID, Reason: entry.Reason})
+	}
+
 	for _, row := range rows {
 		value, err := applicationRecoverySnapshot(row)
 		if err != nil {
-			return nil, err
+			skipped = append(skipped, application.UnusableEntry{ID: row.ID, Reason: "application backup metadata: " + err.Error()})
+
+			continue
 		}
 
 		result = append(result, *value)
 	}
 
-	return result, nil
+	return result, skipped, nil
 }
 
 func (s applicationRecoverySnapshots) Verify(ctx context.Context, id string) (*application.RecoverySnapshot, error) {

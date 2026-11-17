@@ -11,9 +11,12 @@ import (
 )
 
 // SnapshotRestoreResult records live-file attempts without promising an atomic set.
+// Cleanup reports a staging directory left behind after every reviewed change
+// was applied; it does not make the restore incomplete.
 type SnapshotRestoreResult struct {
 	Attempted, Completed bool
 	Replaced, Removed    int
+	Cleanup              error
 }
 
 // SnapshotRestorer replaces selected data only through caller-owned stopped-writer admission.
@@ -32,7 +35,7 @@ func NewSnapshotRestorer(directory string, sources []SnapshotSource, selectPath 
 
 // Restore re-verifies both retained copies and refuses live drift before replacement.
 // A failure after Attempted may leave a partial set; callers must keep writers stopped.
-func (r *SnapshotRestorer) Restore(ctx context.Context, target, safety *Snapshot) (result *SnapshotRestoreResult, err error) {
+func (r *SnapshotRestorer) Restore(ctx context.Context, target, safety *Snapshot) (*SnapshotRestoreResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -68,20 +71,19 @@ func (r *SnapshotRestorer) Restore(ctx context.Context, target, safety *Snapshot
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = errors.Join(err, staged.close()) }()
 
 	if err := r.checkLive(ctx, newer.Files); err != nil {
-		return nil, err
+		return nil, errors.Join(err, staged.close())
 	}
 
-	result = new(SnapshotRestoreResult)
+	result := new(SnapshotRestoreResult)
 	if err := r.apply(ctx, staged, newer, result); err != nil {
-		return result, err
+		return result, errors.Join(err, staged.close())
 	}
 
-	if err := staged.close(); err != nil {
-		return result, err
-	}
+	// The staged copies have all moved into place, so a directory that cannot
+	// be removed now holds no data and must not fail the verified restore.
+	result.Cleanup = staged.close()
 
 	if err := r.checkLive(ctx, old.Files); err != nil {
 		return result, err
