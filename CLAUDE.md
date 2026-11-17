@@ -14,8 +14,8 @@ Garmin watch manager with a native desktop app, CLI, web UI and MCP server.
   `settings.BuildChangeFile`). The watch applies NewFiles on USB disconnect.
 - Preserve unknown fields and record order when editing binary formats.
   Keep codec round-trip tests passing and add fixtures for new formats.
-- `make check` (module metadata, lint, race tests and govulncheck) must pass
-  before a commit. Fix findings rather than silence
+- `make check` (module metadata, lint and govulncheck for Linux and Windows
+  code, race tests, package-tool tests and UI tests) must pass before a commit. Fix findings rather than silence
   them; a `//nolint` names its linter and gives the reason.
 - For Go work load the `cc-skills-golang:golang-how-to` skill first; it
   routes to the lint, testing, security and concurrency guidance this
