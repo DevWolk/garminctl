@@ -60,7 +60,9 @@ function Find-Control([string]$Name, [string]$Kind = '') {
   $deadline = (Get-Date).AddSeconds(15)
   do {
     foreach ($window in (Get-Windows)) {
-      $elements = @($window) + @($window.FindAll($scope, $all))
+      # A dialog can close between the window listing and the walk of its controls.
+      try { $elements = @($window) + @($window.FindAll($scope, $all)) }
+      catch [System.Windows.Automation.ElementNotAvailableException] { continue }
       foreach ($element in $elements) {
         try {
           $current = $element.Current
@@ -71,7 +73,9 @@ function Find-Control([string]$Name, [string]$Kind = '') {
     Start-Sleep -Milliseconds 100
   } while ((Get-Date) -lt $deadline)
   $tree = foreach ($window in (Get-Windows)) {
-    foreach ($element in @($window) + @($window.FindAll($scope, $all))) {
+    try { $elements = @($window) + @($window.FindAll($scope, $all)) }
+    catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+    foreach ($element in $elements) {
       try { "$($element.Current.ControlType.ProgrammaticName):$($element.Current.Name):$($element.Current.AutomationId)" } catch { }
     }
   }
