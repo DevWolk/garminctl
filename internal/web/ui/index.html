@@ -457,9 +457,11 @@
         <h2>Connect an assistant</h2>
         <label for="mcp-endpoint">Streamable HTTP endpoint</label>
         <div class="mcp-copy"><input id="mcp-endpoint" readonly><button class="btn small" data-mcp-copy="mcp-endpoint">Copy URL</button></div>
-        <label for="mcp-claude">Claude Code — run once in your terminal</label>
-        <div class="mcp-copy"><input id="mcp-claude" readonly><button class="btn small" data-mcp-copy="mcp-claude">Copy command</button></div>
-        <p class="hint">In other MCP clients, add this URL as a Streamable HTTP server.</p>
+        <label for="mcp-client">Assistant</label>
+        <div class="mcp-copy"><select id="mcp-client"></select></div>
+        <label for="mcp-setup" id="mcp-setup-label">Claude Code — run once in your terminal</label>
+        <div class="mcp-copy"><textarea id="mcp-setup" readonly rows="1" spellcheck="false"></textarea><button type="button" class="btn small" id="mcp-setup-copy" data-mcp-copy="mcp-setup">Copy command</button></div>
+        <p class="hint">In other MCP clients, add the URL above as a Streamable HTTP server.</p>
       </section>
       <section class="panel panel-gap">
         <h2>Open sessions</h2>
@@ -519,6 +521,7 @@
 <script src="/application-install.js"></script>
 <script src="/application.js"></script>
 <script src="/app.js"></script>
+<script src="/mcp-setup.js"></script>
 <script src="/mcp.js"></script>
 </body>
 </html>

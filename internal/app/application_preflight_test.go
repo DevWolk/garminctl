@@ -175,9 +175,12 @@ func TestApplicationPreflightRejectsCorruptionInEitherRetainedPackage(t *testing
 
 			corruptPreflightPackage(t, f.pipeline.packageDirectory, id, test.signature)
 
-			if result, err := f.reader.Preflight(t.Context(), f.request()); err == nil || result != nil {
+			result, err := f.reader.Preflight(t.Context(), f.request())
+			if err == nil || result != nil {
 				t.Fatalf("corrupt package accepted: %v %v", result, err)
 			}
+
+			t.Logf("preflight refusal: %v", err)
 
 			f.assertClean(t)
 		})

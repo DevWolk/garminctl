@@ -6,13 +6,23 @@ or [CLI](cloud-sync.md) before using cloud tools; MCP does not handle passwords.
 
 ## HTTP connection
 
-Launch the [desktop app](desktop.md) or run `garminctl serve`. Open **AI & MCP**
-and copy its URL into the client's Streamable HTTP configuration. The default
-Claude Code command is:
+Launch the [desktop app](desktop.md) or run `garminctl serve`. Open **AI & MCP**,
+choose the assistant and copy its command or configuration; the tab fills in the
+server's own address. With the default address:
 
 ```sh
 claude mcp add --transport http --scope user garminctl http://127.0.0.1:8787/mcp
+codex mcp add garminctl --url http://127.0.0.1:8787/mcp
+gemini mcp add --transport http --scope user garminctl http://127.0.0.1:8787/mcp
 ```
+
+Antigravity reads `~/.gemini/config/mcp_config.json`; merge this entry into it:
+
+```json
+{"mcpServers":{"garminctl":{"serverUrl":"http://127.0.0.1:8787/mcp"}}}
+```
+
+In any other client, add the URL as a Streamable HTTP server.
 
 The endpoint is available while that server runs. The desktop uses a loopback
 address; a WSL client connecting to the Windows app needs access to Windows's
