@@ -1,5 +1,19 @@
 (() => {
-  let loading = false;
+  let loading = false, endpoint = '';
+  const client = $('#mcp-client');
+  client.innerHTML = window.mcpClients.map(({id, name}) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+  client.value = prefs.get('mcpClient', client.value);
+  // The poll calls this every few seconds: an unchanged field keeps the user's selection.
+  const showSetup = () => {
+    if (!endpoint) return;
+    const setup = window.mcpSetup(client.value, endpoint), field = $('#mcp-setup');
+    $('#mcp-setup-label').textContent = setup.label;
+    $('#mcp-setup-copy').textContent = setup.action;
+    if (field.value === setup.text) return;
+    field.value = setup.text;
+    field.rows = setup.text.split('\n').length;
+  };
+  client.onchange = () => { prefs.set('mcpClient', client.value); showSetup(); };
   const when = (value) => value ? new Date(value).toLocaleString() : '–';
   window.loadMCP = async () => {
     if (loading) return;
@@ -7,7 +21,8 @@
     try {
       const data = await api('GET', '/api/mcp');
       $('#mcp-endpoint').value = data.endpoint;
-      $('#mcp-claude').value = `claude mcp add --transport http --scope user garminctl ${data.endpoint}`;
+      endpoint = data.endpoint;
+      showSetup();
       const clients = data.status.clients || [], calls = data.status.activity || [];
       const active = clients.filter(client => client.sessionActive);
       $('#mcp-status').textContent = `MCP available · ${active.length} open session${active.length === 1 ? '' : 's'}`;
