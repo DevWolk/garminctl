@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -37,10 +39,10 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
-func TestEasyPlusValues(t *testing.T) {
+func TestFixtureValues(t *testing.T) {
 	t.Parallel()
 
-	data, err := os.ReadFile("testdata/G5RG4154.SET")
+	data, err := os.ReadFile("testdata/FACE0001.SET")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,24 +53,72 @@ func TestEasyPlusValues(t *testing.T) {
 	}
 
 	d, ok := v.(Dict)
-	if !ok || len(d) != 88 {
-		t.Fatalf("expected 88-entry dict, got %T len %d", v, len(d))
+	if !ok || len(d) != 17 {
+		t.Fatalf("expected 17-entry dict, got %T len %d", v, len(d))
 	}
 
-	if c, _ := d.Get("cust_color1"); c != "FF7A2A" {
-		t.Fatalf("cust_color1 = %v", c)
+	if c, _ := d.Get("custom_color"); c != "3366CC" {
+		t.Fatalf("custom_color = %v", c)
 	}
 
-	if s, _ := d.Get("seconds"); s != true {
-		t.Fatalf("seconds = %v", s)
+	if s, _ := d.Get("show_seconds"); s != true {
+		t.Fatalf("show_seconds = %v", s)
 	}
 
-	if s, _ := d.Get("metrics_scale"); s != float32(1.0) {
-		t.Fatalf("metrics_scale = %v", s)
+	if s, _ := d.Get("text_scale"); s != float32(1.25) {
+		t.Fatalf("text_scale = %v", s)
 	}
 
-	if s, _ := d.Get("field5a"); s != int32(14) {
-		t.Fatalf("field5a = %v", s)
+	if s, _ := d.Get("left_bar"); s != int32(103) {
+		t.Fatalf("left_bar = %v", s)
+	}
+
+	if s, _ := d.Get("caption"); s != "⌚" {
+		t.Fatalf("caption = %v", s)
+	}
+}
+
+// The fixtures come from Encode, so this vector written out by hand keeps the
+// byte layout of a watch-written file independent of the encoder: sentinels,
+// big-endian lengths, NUL-counted string entries, reuse of an interned string
+// and every type code.
+func TestEncodeWireLayout(t *testing.T) {
+	t.Parallel()
+
+	value := Dict{
+		{Key: "mode", Value: int32(-1)},
+		{Key: "on", Value: true},
+		{Key: "name", Value: "mode"},
+		{Key: "list", Value: []any{nil, float32(1.5), int64(1) << 40, 0.5, Dict{}}},
+	}
+
+	want := slices.Concat(
+		[]byte{0xAB, 0xCD, 0xAB, 0xCD, 0, 0, 0, 26},
+		[]byte{0, 5, 'm', 'o', 'd', 'e', 0}, // offset 0
+		[]byte{0, 3, 'o', 'n', 0},           // offset 7
+		[]byte{0, 5, 'n', 'a', 'm', 'e', 0}, // offset 12
+		[]byte{0, 5, 'l', 'i', 's', 't', 0}, // offset 19
+		[]byte{0xDA, 0x7A, 0xDA, 0x7A, 0, 0, 0, 71},
+		[]byte{0x0B, 0, 0, 0, 4},
+		[]byte{0x03, 0, 0, 0, 0}, []byte{0x01, 0xFF, 0xFF, 0xFF, 0xFF},
+		[]byte{0x03, 0, 0, 0, 7}, []byte{0x09, 1},
+		[]byte{0x03, 0, 0, 0, 12}, []byte{0x03, 0, 0, 0, 0},
+		[]byte{0x03, 0, 0, 0, 19}, []byte{0x05, 0, 0, 0, 5},
+		[]byte{0x00},
+		[]byte{0x02, 0x3F, 0xC0, 0, 0},
+		[]byte{0x0E, 0, 0, 1, 0, 0, 0, 0, 0},
+		[]byte{0x0F, 0x3F, 0xE0, 0, 0, 0, 0, 0, 0},
+		[]byte{0x0B, 0, 0, 0, 0},
+	)
+
+	got, err := Encode(value)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("Encode = %x, %v; want %x", got, err, want)
+	}
+
+	back, err := Decode(want)
+	if err != nil || !reflect.DeepEqual(back, value) {
+		t.Fatalf("Decode = %#v, %v; want %#v", back, err, value)
 	}
 }
 

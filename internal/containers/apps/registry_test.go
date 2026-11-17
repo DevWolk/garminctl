@@ -3,12 +3,14 @@ package apps
 import (
 	"os"
 	"testing"
+
+	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 func TestParseAppsConfig(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../testdump/testdata/OUT.BIN")
+	b, err := os.ReadFile(registryFixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,27 +20,27 @@ func TestParseAppsConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var easy *App
+	var face *App
 
 	for i := range apps {
-		if apps[i].FileName == "G5RG4154" {
-			easy = &apps[i]
+		if apps[i].FileName == testdump.AppRef {
+			face = &apps[i]
 		}
 	}
 
-	if easy == nil {
-		t.Fatalf("Easy+ not found among %d apps", len(apps))
+	if face == nil {
+		t.Fatalf("%s not found among %d apps", testdump.AppRef, len(apps))
 	}
 
-	if easy.Name != "Easy+" || easy.TypeName != "watchface" || easy.ID != "7c993e2b-70b3-459a-bbe0-db48a89af5a8" {
-		t.Fatalf("unexpected Easy+ entry: %+v", *easy)
+	if face.Name != testdump.AppName || face.TypeName != "watchface" || face.ID != testdump.StoreAppID {
+		t.Fatalf("unexpected watch face entry: %+v", *face)
 	}
 }
 
 func TestRewriteAppsRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../testdump/testdata/OUT.BIN")
+	b, err := os.ReadFile(registryFixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +55,7 @@ func TestRewriteAppsRoundTrip(t *testing.T) {
 	}
 
 	flipped, err := rewriteApps(b, func(a App, f []pbField) ([]pbField, error) {
-		if a.Name != "Easy+" {
+		if a.Name != testdump.AppName {
 			return f, nil
 		}
 
@@ -79,7 +81,7 @@ func TestRewriteAppsRoundTrip(t *testing.T) {
 	}
 
 	for _, a := range apps {
-		if a.Name == "Easy+" && a.Hidden {
+		if a.Name == testdump.AppName && a.Hidden {
 			t.Fatal("flag not flipped")
 		}
 	}

@@ -45,7 +45,7 @@ func TestAppSettingsEditContracts(t *testing.T) { //nolint:paralleltest // isola
 	sess := appTestSession(t, dev)
 	apply := NewApplySettingsAction(new(SchemaCache))
 
-	const path = "GARMIN/Apps/SETTINGS/G5RG4154.SET"
+	const path = "GARMIN/Apps/SETTINGS/" + testdump.AppRef + ".SET"
 
 	before, err := dev.Read(t.Context(), path)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestAppSettingsEditContracts(t *testing.T) { //nolint:paralleltest // isola
 		})
 	}
 
-	updated, err := apply.Run(t.Context(), sess, "easy", map[string]any{appModeKey: "Night"})
+	updated, err := apply.Run(t.Context(), sess, "face", map[string]any{appModeKey: "Night"})
 	if err != nil || updated.Values[appModeKey] != int32(2) {
 		t.Fatalf("updated=%+v error=%v", updated, err)
 	}
@@ -154,8 +154,8 @@ func TestAppBinaryInstallAndRemoveContracts(t *testing.T) {
 	removed, err := NewRemoveAction(cache).Run(t.Context(), sess, testdump.AppRef+".PRG")
 
 	want := []string{
-		"GARMIN/APPS/MEDIA/G5RG4154.PRG", "GARMIN/Apps/SETTINGS/G5RG4154.SET",
-		"GARMIN/Apps/DATA/G5RG4154.DAT", "GARMIN/Apps/DATA/G5RG4154.IDX", "GARMIN/Apps/DATA/G5RG4154.IMT",
+		"GARMIN/APPS/MEDIA/" + testdump.AppRef + ".PRG", "GARMIN/Apps/SETTINGS/" + testdump.AppRef + ".SET",
+		"GARMIN/Apps/DATA/" + testdump.AppRef + ".DAT", "GARMIN/Apps/DATA/" + testdump.AppRef + ".IDX", "GARMIN/Apps/DATA/" + testdump.AppRef + ".IMT",
 	}
 	if err != nil || !reflect.DeepEqual(removed, want) {
 		t.Fatalf("removed=%v error=%v", removed, err)
@@ -170,5 +170,32 @@ func TestAppBinaryInstallAndRemoveContracts(t *testing.T) {
 	after, err := dev.Read(t.Context(), PathAppsConfig)
 	if err != nil || !bytes.Equal(after, registry) {
 		t.Fatalf("binary install/removal changed registry bytes: %v", err)
+	}
+}
+
+func TestRemoveRefusesProtectedRegistryEntries(t *testing.T) {
+	t.Parallel()
+
+	dev, _ := testdump.Apps(t)
+	sess := appTestSession(t, dev)
+
+	registry, err := dev.Read(t.Context(), PathAppsConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for ref, want := range map[string]string{
+		"Toystore": "the Connect IQ Store app cannot be removed",
+		"Timer":    `"Timer" is not an installed Connect IQ app`,
+	} {
+		removed, err := NewRemoveAction(new(SchemaCache)).Run(t.Context(), sess, ref)
+		if err == nil || err.Error() != want || len(removed) != 0 {
+			t.Fatalf("remove %s: removed=%v error=%v", ref, removed, err)
+		}
+	}
+
+	after, err := dev.Read(t.Context(), PathAppsConfig)
+	if err != nil || !bytes.Equal(after, registry) {
+		t.Fatalf("refused removal changed registry bytes: %v", err)
 	}
 }

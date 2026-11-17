@@ -28,7 +28,7 @@ func TestSettingsHTTPContracts(t *testing.T) { //nolint:paralleltest // the prod
 		status                   int
 		hash                     string
 	}{
-		{name: "rows", method: http.MethodGet, path: "/api/settings", status: http.StatusOK, hash: "ad56638a931ec4a5ccb38112efdfa5dc9618915a514210122ff9d5cc3e18a790"},
+		{name: "rows", method: http.MethodGet, path: "/api/settings", status: http.StatusOK, hash: "29a4ea8a242fe85b5b06e6753a1da4fb38e79d1ee9dbe195dae667c6c1bdf93d"},
 		{name: "settings schema", method: http.MethodGet, path: "/api/schema?mesg=deviceSettings", status: http.StatusOK, hash: "165f663840af697d96d7c5761cd84744d558b14b38191e5b1dcfb6f03d6c48ef"},
 		{name: "unknown schema", method: http.MethodGet, path: "/api/schema?mesg=missing", status: http.StatusInternalServerError, hash: "225a75b4eb568acdb3ea2b0701e5deea5f8ff2155bd5c2c75f09650582e243fc"},
 		{name: "empty apply", method: http.MethodPost, path: "/api/settings/apply", body: `{"changes":[]}`, status: http.StatusInternalServerError, hash: "90385fd348624d7c50c3e4c8c02b0ef7a240d5b57e9d69eb8c6e782cefde2891"},

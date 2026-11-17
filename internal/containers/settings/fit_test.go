@@ -42,7 +42,7 @@ func TestGeneratedSettingsFITPreservesExistingBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	testdump.CheckDigest(t, data, "d81bf08eea4d9d3d63c4b241085a939ecd3e0f829d454e99113ee861f79ca8f7")
+	testdump.CheckDigest(t, data, "e2725b926750f6dbed70d3baeef1868253700164d2b4625d21592b3736925248")
 
 	if _, err := fit.Decode(data); err != nil {
 		t.Fatal(err)

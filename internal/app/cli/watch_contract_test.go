@@ -30,12 +30,12 @@ func TestWatchCLIReadContracts(t *testing.T) {
 		json bool
 		hash string
 	}{
-		{name: "info text", cmd: infoCommand, hash: "7033653ffdcc3a3f4cefb05c2768dec281e4e40faedbff7d83043e72c0c25a10"},
-		{name: "info JSON", cmd: infoCommand, json: true, hash: "98bfabe17c291b0667cd3b7c8ea5416cd9ea5ba5f422e358ec40a13a19bb724e"},
-		{name: "list text", cmd: "ls", args: []string{watchStorageDir}, hash: "0b3dac477c24cf48be105d6d439ee37637a984434b7b6019b327cb6854a5d951"},
-		{name: "list JSON", cmd: "ls", args: []string{watchStorageDir}, json: true, hash: "76d8f64ba5adf0ad11de9029d1ba41718d7a850d27e4690e0d13329b477a405c"},
-		{name: "decode text", cmd: "decode", args: []string{watchsession.PathSettings}, hash: "20612928fa469d61e7ea236d38bb93903ce2bcea68f8bb21a457ed32c37d54ab"},
-		{name: "decode JSON", cmd: "decode", args: []string{watchsession.PathSettings}, json: true, hash: "12428aa2bd441bc4296e0f9253d04241069955c77886f9e8d9762cd6ac83d32e"},
+		{name: "info text", cmd: infoCommand, hash: "a45243bedada3754fd4008c80fd8c38e6b84a821b0f35b17b1d6bef262e60612"},
+		{name: "info JSON", cmd: infoCommand, json: true, hash: "918027973413c7e47f03fd95185965d53962ddaa40b1611df83f7555fe583c29"},
+		{name: "list text", cmd: "ls", args: []string{watchStorageDir}, hash: "3c9fda9c6036f1cf1e381855c971c8c3f8a87404d2c0cadb2e61c63789954fd6"},
+		{name: "list JSON", cmd: "ls", args: []string{watchStorageDir}, json: true, hash: "f68106f20d987560fcc0269b013fc907aca8ff790a2a6b97a8f002a14132b1f8"},
+		{name: "decode text", cmd: "decode", args: []string{watchsession.PathSettings}, hash: "775cafea06677caec6e73fd15356ae14694071f34d9e9341b1cfb1b92e157317"},
+		{name: "decode JSON", cmd: "decode", args: []string{watchsession.PathSettings}, json: true, hash: "e3394a14f78098c189cca55179db9886834fbe51ac380873eec382ab494c8da0"},
 		{name: "cat text", cmd: watchCatCommand, args: []string{"GARMIN/notes.txt"}, hash: "52f000e01e486d4b4caca23e88c4a003305ba77b294fd563237f1012a3451ad3"},
 		{name: "cat binary", cmd: watchCatCommand, args: []string{"GARMIN/sample.bin"}, hash: "068a9db2aec30c1c6f182c6c9e6ed8f34b8b6e1d303e9918a29534d481bef126"},
 	} {
@@ -67,8 +67,8 @@ func TestWatchCLIBackupContracts(t *testing.T) {
 		json bool
 		hash string
 	}{
-		{name: "text", hash: "66b7c272d2939d9a8d387ff97baacb16a98f4c40568904c9b1bb91500aaffb8e"},
-		{name: "JSON flag", json: true, hash: "1aa7b1639fd5fa858e9388546b841711b24318a593bb79270751df669fe97f33"},
+		{name: "text", hash: "5cd9fcab25da9b3e3071fd81cb84fbdbd1ae831c194015c433435f81a5ec48ec"},
+		{name: "JSON flag", json: true, hash: "c403ee77f3da5cc10ecd7798dfc51d2af45e9a347bae3ec7007498b01b3f92fc"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

@@ -13,8 +13,11 @@ import (
 	"github.com/DevWolk/garminctl/internal/device"
 )
 
-// AppRef identifies the real Easy+ registry entry in OUT.BIN.
-const AppRef = "G5RG4154"
+// AppRef is the file name of the synthetic watch face in the OUT.BIN fixture.
+const AppRef = "FACE0001"
+
+// AppName is the registry name of the same synthetic watch face.
+const AppName = "Fixture Face"
 
 // AppEnvironment isolates schema/backup files and prevents real store requests.
 // Call before subtests; it changes process globals and cannot run in parallel.
@@ -31,7 +34,7 @@ func AppEnvironment(tb testing.TB) {
 	tb.Cleanup(func() { ciqstore.HTTPClient = previous })
 
 	schema := ciqstore.Schema{
-		AppID: "7c993e2b-70b3-459a-bbe0-db48a89af5a8", Version: 23, PartNumber: "006-B4426-00",
+		AppID: StoreAppID, Version: 23, PartNumber: "006-B4426-00",
 		Source: "fixture:app-schema", FetchedAt: "2000-01-02T03:04:05Z",
 		Settings: []ciqstore.Setting{
 			{Key: "Mode", Label: "Display mode", Type: "select", Options: []ciqstore.Option{{Value: "1", Label: "Day"}, {Value: "2", Label: "Night"}}},
@@ -62,7 +65,7 @@ func (offlineAppTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("offline app contract fixture")
 }
 
-// Apps adds synthetic settings and binary/sidecar files to the real registry.
+// Apps adds synthetic settings and binary/sidecar files to the registry fixture.
 // The ordered dictionary includes values unknown to the synthetic store schema.
 func Apps(tb testing.TB) (device.Device, string) {
 	tb.Helper()

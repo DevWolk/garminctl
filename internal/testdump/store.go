@@ -13,10 +13,10 @@ import (
 	"github.com/DevWolk/garminctl/internal/ciqstore"
 )
 
-// StoreAppID matches the real installed Easy+ registry entry, case-insensitively.
-const StoreAppID = "7c993e2b-70b3-459a-bbe0-db48a89af5a8"
+// StoreAppID matches the synthetic watch face in the registry fixture, case-insensitively.
+const StoreAppID = "5a000000-0000-4000-8000-0000000000d4"
 
-const storeRecord = `{"id":"7C993E2B-70B3-459A-BBE0-DB48A89AF5A8","typeId":"1","appLocalizations":[{"locale":"en-US","name":"Fixture 世界 watch face with a long name","description":"Fixture description.","whatsNew":"New fixture features."}],"latestExternalVersion":"2.4","latestInternalVersion":24,"downloadCount":1234,"changedDate":946684800000,"averageRating":4.5,"reviewCount":2,"compatibleDevicePartNumbers":["006-B4426-00"],"permissions":["Fit"],"developer":{"developerDisplayName":"Fixture Developer"},"fileSizeInfo":{"byteCountByDeviceTypeId":{"42":1024}},"settingsAvailabilityInfo":{"availabilityByDeviceTypeId":{"42":false}}}`
+const storeRecord = `{"id":"5A000000-0000-4000-8000-0000000000D4","typeId":"1","appLocalizations":[{"locale":"en-US","name":"Fixture 世界 watch face with a long name","description":"Fixture description.","whatsNew":"New fixture features."}],"latestExternalVersion":"2.4","latestInternalVersion":24,"downloadCount":1234,"changedDate":946684800000,"averageRating":4.5,"reviewCount":2,"compatibleDevicePartNumbers":["006-B4426-00"],"permissions":["Fit"],"developer":{"developerDisplayName":"Fixture Developer"},"fileSizeInfo":{"byteCountByDeviceTypeId":{"42":1024}},"settingsAvailabilityInfo":{"availabilityByDeviceTypeId":{"42":false}}}`
 
 const storeOtherRecord = `{"id":"new-app","typeId":"2","appLocalizations":[{"locale":"en","name":"New app"}],"latestInternalVersion":1,"compatibleDevicePartNumbers":["other-device"],"pricing":{"salePrice":{"formattedPrice":"$1.99"}}}`
 

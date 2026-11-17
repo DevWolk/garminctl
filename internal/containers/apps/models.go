@@ -11,7 +11,7 @@ type App struct {
 	Name     string `json:"name"`
 	Hidden   bool   `json:"hidden"` // field 4: hidden from activity, glance or app lists
 	Version  int    `json:"version,omitempty"`
-	FileName string `json:"fileName,omitempty"` // Connect IQ apps only, e.g. G5RG4154
+	FileName string `json:"fileName,omitempty"` // Connect IQ apps only, e.g. A1B2C3D4
 	Size     int    `json:"size,omitempty"`
 	NativeID int    `json:"nativeId,omitempty"` // built-in apps only
 	Native   bool   `json:"native"`

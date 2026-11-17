@@ -19,13 +19,13 @@ func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces 
 		hash                           string
 	}{
 		{name: "software", method: http.MethodGet, path: "/api/updates/software", status: http.StatusOK, hash: "959024256dd98d0661ff9eceadd237083ff87e8a7b3b52561d7e77e42f8c2132"},
-		{name: "app updates", method: http.MethodGet, path: "/api/updates/apps", status: http.StatusOK, hash: "8786614eb22446f9d2d3a10847ab06008d03d732061a1addf9bdb45b70c0f77c"},
+		{name: "app updates", method: http.MethodGet, path: "/api/updates/apps", status: http.StatusOK, hash: "f11e626442f8807a96d1cf93c9c0af1133bc6c3bc051dfdb5a9df5066f0923fa"},
 		{name: "inventory", method: http.MethodGet, path: "/api/software", status: http.StatusOK, hash: "edf78db57bfb47cdfb2b44a6aa77bef0ff8b6deccb67a4ce072144cc9a1a9abe"},
 		{name: "install", method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, status: http.StatusOK, hash: "5ddf1ab973ef354b2a98715fd78a3701d495186a12004775d8597575a5dfc12e"},
 		{name: "missing part", method: http.MethodPost, path: "/api/updates/software/install", body: `{}`, status: http.StatusBadRequest, hash: "3e2e35f88dcdb03e6e24fd1b384464449b0bd61ea6a932ee139941523bab746d"},
 		{name: updateChecksumMode, method: http.MethodPost, path: "/api/updates/software/install", body: `{"partNumber":"` + testdump.UpdatePart + `"}`, mode: updateChecksumMode, status: http.StatusInternalServerError, hash: "411fcc8047caec1e2040b422448692b554e0e7768968bb97a7a2f76f66adf2fc"},
 		{name: "software failure", method: http.MethodGet, path: "/api/updates/software", mode: "software", status: http.StatusInternalServerError, hash: "3dcd8896c34045c6daa139b5111586c5347f051f57a741eef40a61907b41ba1e"},
-		{name: "app failure", method: http.MethodGet, path: "/api/updates/apps", mode: "app", status: http.StatusOK, hash: "aef77e342753b5dc2dc6fc9bc3bf56c327c9883495ab5781d92b03c6507d99d0"},
+		{name: "app failure", method: http.MethodGet, path: "/api/updates/apps", mode: "app", status: http.StatusOK, hash: "2566cc93cf1f4ca6c58fde553e624ce64533682be0f51fabce48faf72dada108"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			previous := updates.HTTPClient

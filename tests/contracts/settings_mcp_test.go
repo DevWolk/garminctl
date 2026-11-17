@@ -26,10 +26,10 @@ func TestSettingsMCPContracts(t *testing.T) { //nolint:paralleltest // the produ
 		args       map[string]any
 		hash       string
 	}{
-		{name: "default", tool: settingsReadTool, args: map[string]any{}, hash: "82a2bdfedd352da06091841614d115345c3fdc7f21628493326afa38f320e4ea"},
-		{name: "all", tool: settingsReadTool, args: map[string]any{"includeUnknown": true}, hash: "ae0c498e31a957e6e664f3bc3f62ce570da846e039a9165f7d459a22b97dd116"},
-		{name: "named message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "7e5a71e3c202787cce36e28a4bc8641aa2077be0dd8ae56821f33396980ced99"},
-		{name: "numeric message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "2"}, hash: "7e5a71e3c202787cce36e28a4bc8641aa2077be0dd8ae56821f33396980ced99"},
+		{name: "default", tool: settingsReadTool, args: map[string]any{}, hash: "a58eedb174ea6004936d3e22cfef6ba966421cddce2537f7f0c1f65f866be79e"},
+		{name: "all", tool: settingsReadTool, args: map[string]any{"includeUnknown": true}, hash: "18269c87b22375ad2214aa5a9521a3c38f874ace9a9f375ffb92a7b33a63245c"},
+		{name: "named message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "7a372c1ae2c08cd61e2aad22d079e2bbd7cbb0fdfe943d821e1b6c8485384c6f"},
+		{name: "numeric message", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "2"}, hash: "7a372c1ae2c08cd61e2aad22d079e2bbd7cbb0fdfe943d821e1b6c8485384c6f"},
 		{name: "message case", tool: settingsReadTool, args: map[string]any{settingsMessageKey: "DEVICESETTINGS"}, hash: "498f1e8b975f4ae9496188a40a34a7088467f1458d55572cea4faf2a9717d516"},
 		{name: "settings schema", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: settingsMessage}, hash: "fcf4dbf35ce94bca4aae499a365b1448705bf7708fd1781872c280bece33d032"},
 		{name: "schema error", tool: settingsSchemaTool, args: map[string]any{settingsMessageKey: contractMissing}, hash: "deb119063faeefac3af4d5f9a51c291777de3a271f056c37c4f577b2e1518eb4"},

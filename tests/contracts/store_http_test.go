@@ -20,13 +20,13 @@ func TestStoreHTTPContracts(t *testing.T) { //nolint:paralleltest // fixture rep
 		status           int
 		hash             string
 	}{
-		{name: "offline list", path: "/api/store", status: http.StatusOK, hash: "4b9b2975bdb54807b13d587d54477ba8f8a7da5facbb203cb1849d4605c9d44e"},
-		{name: "connected list", path: "/api/store", connected: true, status: http.StatusOK, hash: "205c888e4274699254e7a036b3654ef664939daf8684b12bcea2b4edc81646ef"},
-		{name: "offline detail", path: "/api/store/apps/" + testdump.StoreAppID, status: http.StatusOK, hash: "62571ad0e3919fd95f2d6b161777960b212d08fed94559be379ed7360c049a9c"},
-		{name: "connected detail", path: "/api/store/apps/" + testdump.StoreAppID, connected: true, status: http.StatusOK, hash: "984e4ab2dd233b3b8db4171c76efac850a01f15598b3eb820b5492813143e638"},
-		{name: storeFilteredSearchCase, path: "/api/store?q=face&type=watchface&page=2", connected: true, status: http.StatusOK, hash: "e9b3d625ef8d889f47d2353e50bfef721912c39ae6f62c999c84bbe582f12db3"},
-		{name: "invalid page defaults", path: "/api/store?page=bad", status: http.StatusOK, hash: "4b9b2975bdb54807b13d587d54477ba8f8a7da5facbb203cb1849d4605c9d44e"},
-		{name: "reviews unavailable", path: "/api/store/apps/" + testdump.StoreAppID, connected: true, fail: "/apps/" + testdump.StoreAppID + "/reviews", status: http.StatusOK, hash: "785ea6742f62a57344c84e6a3fc7990be22049fececac047ee619bc6bd62ff54"},
+		{name: "offline list", path: "/api/store", status: http.StatusOK, hash: "95d681bd35e35d33f804cfd6cb0f88a6f20ac85fe4b54549692562449e79f7a7"},
+		{name: "connected list", path: "/api/store", connected: true, status: http.StatusOK, hash: "662d85149cad48c546428eba3d9663ff3a29cbcd7fc805ec1323e3a330867a52"},
+		{name: "offline detail", path: "/api/store/apps/" + testdump.StoreAppID, status: http.StatusOK, hash: "258f7126c2d524dbc0bfa95590cf780c7125e6a2cb544c256b1bd55d9000681a"},
+		{name: "connected detail", path: "/api/store/apps/" + testdump.StoreAppID, connected: true, status: http.StatusOK, hash: "981dcdd96deeb4f835b483f15c50ca3950f6bfe4e4d4ff12d7c8f0d0cda438fd"},
+		{name: storeFilteredSearchCase, path: "/api/store?q=face&type=watchface&page=2", connected: true, status: http.StatusOK, hash: "2edff596664955fb2ad6c6decf4d9ca8e85517e02bc2968d1601d388596874e9"},
+		{name: "invalid page defaults", path: "/api/store?page=bad", status: http.StatusOK, hash: "95d681bd35e35d33f804cfd6cb0f88a6f20ac85fe4b54549692562449e79f7a7"},
+		{name: "reviews unavailable", path: "/api/store/apps/" + testdump.StoreAppID, connected: true, fail: "/apps/" + testdump.StoreAppID + "/reviews", status: http.StatusOK, hash: "53f5201cda75bae151292658aa82b70e42c7615c1b3ddf89e0022a5230245a57"},
 		{name: "browse unavailable", path: "/api/store", fail: "/apps", status: http.StatusInternalServerError, hash: "4fe69e6b27cda04068fdc954a0aadae95721dd7bf4aebac4586780ac2794dbf4"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

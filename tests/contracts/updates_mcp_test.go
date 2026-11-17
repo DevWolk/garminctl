@@ -19,9 +19,9 @@ func TestUpdatesMCPContracts(t *testing.T) { //nolint:paralleltest // replaces p
 		args             map[string]any
 		hash             string
 	}{
-		{name: "check", tool: checkUpdatesTool, args: map[string]any{}, hash: "971781e8be4ca3fd34c5816ea6b83582864e26d75baef6fb72a80a62d9d5d4d1"},
-		{name: "software failure", tool: checkUpdatesTool, mode: "software", args: map[string]any{}, hash: "bb4c246ef9d44eaced3ec803ae6f3ab96486005d7f739f7ec65dde94d4202509"},
-		{name: "app failure", tool: checkUpdatesTool, mode: "app", args: map[string]any{}, hash: "33343029b210c20fdbc90f07a2ab960d4c2f17805ea32b86e1ec5b18e2ba4b48"},
+		{name: "check", tool: checkUpdatesTool, args: map[string]any{}, hash: "b445fc0aabc27810dbb79c7118aa8fc0a8821eac22918e4684ef168772701cbd"},
+		{name: "software failure", tool: checkUpdatesTool, mode: "software", args: map[string]any{}, hash: "57664224976a84a0a5d50b0c7da5f724a9fc905a8d445bdd15fd2cf7661099a1"},
+		{name: "app failure", tool: checkUpdatesTool, mode: "app", args: map[string]any{}, hash: "492e1f5f5a4fad9855a7ef033ce8ebcb37401a3ac181a340170b6897868ea63d"},
 		{name: "install", tool: "watch_install_update", args: map[string]any{"partNumber": testdump.UpdatePart}, hash: "b43c2176f8957d73d42be2ec3772d9fa19d3647255d664adf2359d7083581048"},
 		{name: updateChecksumMode, tool: "watch_install_update", mode: updateChecksumMode, args: map[string]any{"partNumber": testdump.UpdatePart}, hash: "8992d81046c6bf43fbe3648ee2f82731b678973d75cd1701ee6be4d6036e14e9"},
 	} {

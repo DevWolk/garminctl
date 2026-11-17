@@ -508,7 +508,7 @@ func TestServer_UIRoutes(t *testing.T) {
 		page bool
 	}{
 		{"/", http.StatusOK, true},
-		{"/apps/EASY+", http.StatusOK, true},
+		{"/apps/FACE+", http.StatusOK, true},
 		{"/files/GARMIN/Settings", http.StatusOK, true},
 		{"/files/GARMIN/Activity/run.fit?view=decode", http.StatusOK, true},
 		{"/store?q=solar", http.StatusOK, true},
@@ -523,7 +523,7 @@ func TestServer_UIRoutes(t *testing.T) {
 		{"/vendor/leaflet/images/marker-icon.png", http.StatusOK, false},
 		{"/vendor/leaflet/images/marker-icon-2x.png", http.StatusOK, false},
 		{"/vendor/leaflet/images/marker-shadow.png", http.StatusOK, false},
-		{"/nope/EASY+", http.StatusNotFound, false},
+		{"/nope/FACE+", http.StatusNotFound, false},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			t.Parallel()

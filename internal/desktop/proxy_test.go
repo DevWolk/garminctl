@@ -51,7 +51,7 @@ func TestProxy(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+test.host+"/apps/Easy+", nil)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+test.host+"/apps/Face+", nil)
 			req.Header.Set("Origin", test.origin)
 
 			response := httptest.NewRecorder()

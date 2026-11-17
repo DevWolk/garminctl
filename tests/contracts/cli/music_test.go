@@ -19,8 +19,8 @@ func TestMusicCLIContracts(t *testing.T) {
 		upload bool
 		hash   string
 	}{
-		{name: "default text", hash: "2d3c6801def30a291923cc3dfbc1be30036e09175f766a7dd581883b4e6a4faf"},
-		{name: "library JSON", args: []string{"ls"}, json: true, hash: "49d18728dfe30ce02d88e060a757bea8fa9aaa4879d4ae2c8935d45035d85488"},
+		{name: "default text", hash: "5f87618b21f9a7748efc110775fdacc123bd32eeffe042e10b1c4b701d14d358"},
+		{name: "library JSON", args: []string{"ls"}, json: true, hash: "2a884d34e405cf1d3fd613573f5737d8c721892b49a4f1899a90370d61a4fd49"},
 		{name: "add text", args: []string{musicAddSubcommand}, upload: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
 		{name: "add JSON flag", args: []string{musicAddSubcommand}, upload: true, json: true, hash: "eb6a5e6fb3da7a61a7f20d1488c342d91afed8570d9c753ea08562a1db8e71b4"},
 		{name: "remove text", args: []string{"rm", testdump.MusicTrack}, hash: "2517836304f6dba02f41b060438947dd631e4dbd7e58fd346d85dcd64efeb802"},

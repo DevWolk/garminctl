@@ -22,10 +22,10 @@ func TestSettingsCLIContracts(t *testing.T) {
 		args []string
 		hash string
 	}{
-		{name: "json", args: []string{settingsJSONFlag, settingsContractCommand}, hash: "937b641e6ed3438ff9cbac2714a20c0317503ab9517e143d5a0f99f11711e55d"},
-		{name: "json all", args: []string{settingsJSONFlag, settingsContractCommand, "-all"}, hash: "937b641e6ed3438ff9cbac2714a20c0317503ab9517e143d5a0f99f11711e55d"},
-		{name: "text", args: []string{settingsContractCommand}, hash: "0bb799b58bcedb164e8ac94a895c95815c3d81b758a213baf29634ee2107a47a"},
-		{name: "text all", args: []string{settingsContractCommand, "-all"}, hash: "bffa5e7ed42b6e8db534e043390653bee4baa2999bd2db330e25a0c50925654a"},
+		{name: "json", args: []string{settingsJSONFlag, settingsContractCommand}, hash: "ec6c8cb9e7554899b650d1bf18cd43c0126a83de7f4c6d449209dd2181872e87"},
+		{name: "json all", args: []string{settingsJSONFlag, settingsContractCommand, "-all"}, hash: "ec6c8cb9e7554899b650d1bf18cd43c0126a83de7f4c6d449209dd2181872e87"},
+		{name: "text", args: []string{settingsContractCommand}, hash: "b19af15b2660835354e98e49546af45575c61cfd34141ad7991c9177a5cd609c"},
+		{name: "text all", args: []string{settingsContractCommand, "-all"}, hash: "e77b348989d4df93324d1d70bf9503636ac224f9396a22eb5d56b78fba5e6f97"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

@@ -29,11 +29,11 @@ func TestWatchHTTPContracts(t *testing.T) { //nolint:paralleltest // the real en
 		status                   int
 		hash                     string
 	}{
-		{name: "files", method: http.MethodGet, path: "/api/files?path=GARMIN", status: http.StatusOK, hash: "a533e1efab112a20a105ca4000262a1f33b163a36dd1a674b130deec5a93ad0f"},
-		{name: "decode", method: http.MethodGet, path: "/api/decode?path=GARMIN/Settings/Settings.fit", status: http.StatusOK, hash: "772b34787f347e3621f449f3ed851018a8394a288e295985158278d0cb3841f0"},
-		{name: "connect", method: http.MethodPost, path: "/api/connect", status: http.StatusOK, hash: "3f077a08c442671570f47d4dfdc7e84f851f0d1245bf38b80d0cbf3efdda1259"},
+		{name: "files", method: http.MethodGet, path: "/api/files?path=GARMIN", status: http.StatusOK, hash: "2f28549f93e9d3bca528d84ab47104764b581bc75990388be610db1b7a2748b2"},
+		{name: "decode", method: http.MethodGet, path: "/api/decode?path=GARMIN/Settings/Settings.fit", status: http.StatusOK, hash: "b3df8934c98c791f9c87cb4212d1c17826eb0ec8b9f4795e711395ee853ea90c"},
+		{name: "connect", method: http.MethodPost, path: "/api/connect", status: http.StatusOK, hash: "d447e0e6888eed5d5810ad3bcccaa499dc0616fbff4cf4ee592f2f6676750f05"},
 		{name: "status idle", method: http.MethodGet, path: "/api/status", status: http.StatusOK, hash: "96be9bd16c393690286bf3382b7f5f22aacdfa584078ce6f812abdb43b520ebd"},
-		{name: "status connect", method: http.MethodGet, path: "/api/status?connect=1", status: http.StatusOK, hash: "7e410e5ae696f8f9d78de6aea3b548c0a3ce62784cb4b9e5ff9d0c1798e58845"},
+		{name: "status connect", method: http.MethodGet, path: "/api/status?connect=1", status: http.StatusOK, hash: "54517b442f1b8a653e7a3aecf1405f9d03827f8a6d22efe090498d33f12c93f5"},
 		{name: "refresh", method: http.MethodPost, path: "/api/refresh", status: http.StatusOK, hash: contractOKHash},
 		{name: "put", method: http.MethodPost, path: "/api/file?path=GARMIN/new.bin", body: "new data", status: http.StatusOK, hash: "4473d6c9c3762acd55da7c78b079af9869bc17658f5bd5212ae124126b56f859"},
 		{name: "delete", method: http.MethodDelete, path: "/api/file?path=GARMIN/notes.txt", status: http.StatusOK, hash: contractOKHash},

@@ -11,7 +11,7 @@ import (
 )
 
 // Watch returns a dump with stable transport metadata for contract snapshots.
-// File contents use real fixtures; Info, listing order/times and Storage are
+// File contents use the shared fixtures; Info, listing order/times and Storage are
 // synthetic inputs rather than values normalized out of an adapter response.
 func Watch(tb testing.TB) (device.Device, string) {
 	tb.Helper()

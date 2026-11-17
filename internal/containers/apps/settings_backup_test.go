@@ -12,6 +12,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/paths"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
+	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 func TestSetAppSettingsBacksUpSettingsFile(t *testing.T) { //nolint:paralleltest // replaces the shared schema HTTP client and cache environment
@@ -21,7 +22,7 @@ func TestSetAppSettingsBacksUpSettingsFile(t *testing.T) { //nolint:paralleltest
 	d, out, _ := registryFixture(t)
 	app := connectIQApp(t, out)
 
-	original, err := os.ReadFile(filepath.Join("..", "..", "ciq", "testdata", "G5RG4154.SET"))
+	original, err := os.ReadFile(filepath.Join("..", "..", "ciq", "testdata", testdump.AppRef+".SET"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestSetAppSettingsReadbackReusesLoadedSchema(t *testing.T) { //nolint:paral
 	d, out, _ := registryFixture(t)
 	app := connectIQApp(t, out)
 
-	original, err := os.ReadFile(filepath.Join("..", "..", "ciq", "testdata", "G5RG4154.SET"))
+	original, err := os.ReadFile(filepath.Join("..", "..", "ciq", "testdata", testdump.AppRef+".SET"))
 	if err != nil {
 		t.Fatal(err)
 	}

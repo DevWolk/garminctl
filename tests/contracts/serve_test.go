@@ -165,7 +165,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	}
 
 	var appSettings map[string]any
-	rootGetJSON(ctx, t, base, "/api/apps/G5RG4154/settings", &appSettings)
+	rootGetJSON(ctx, t, base, "/api/apps/"+testdump.AppRef+"/settings", &appSettings)
 
 	if appSettings["schemaSource"] != "fixture:app-schema" {
 		t.Fatalf("composition root did not load the fixture app schema: %v", appSettings)

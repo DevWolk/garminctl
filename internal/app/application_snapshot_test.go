@@ -54,12 +54,12 @@ func TestApplicationSnapshotPreservesSelectedOpaqueState(t *testing.T) { //nolin
 	config, cache := filepath.Dir(gc.DefaultStorePath()), paths.Cache()
 
 	selected := map[string][]byte{
-		"config/garmin-connect.json":                               []byte(`{"future":null,"token":"fake-account"}`),
-		"config/garmin-connect.json.mfa":                           []byte(`{"version":99,"cookie":"fake-pending"}`),
-		"cache/uploaded-123.json":                                  []byte(`{"file.fit":123}`),
-		"cache/OUT.BIN-20261112-090001-123456/OUT.BIN":             {0, 1, 255},
-		"cache/OUT.BIN-20261112-090001-123456/IN.BIN":              {2, 0, 1},
-		"cache/Hydration.SET-20261112-090001-123456/Hydration.SET": {255, 2, 0},
+		"config/garmin-connect.json":                             []byte(`{"future":null,"token":"fake-account"}`),
+		"config/garmin-connect.json.mfa":                         []byte(`{"version":99,"cookie":"fake-pending"}`),
+		"cache/uploaded-123.json":                                []byte(`{"file.fit":123}`),
+		"cache/OUT.BIN-20261112-090001-123456/OUT.BIN":           {0, 1, 255},
+		"cache/OUT.BIN-20261112-090001-123456/IN.BIN":            {2, 0, 1},
+		"cache/FACE0001.SET-20261112-090001-123456/FACE0001.SET": {255, 2, 0},
 	}
 	for name, data := range selected {
 		area, relative, _ := strings.Cut(name, "/")

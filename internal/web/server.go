@@ -211,7 +211,7 @@ func (s *Server) handler(addr string) (http.Handler, error) {
 		tabs[string(m[1])] = true
 	}
 
-	// The UI keeps the open tab and item in the path (/apps/EASY+), so a
+	// The UI keeps the open tab and item in the path (/apps/NAME), so a
 	// reload or a pasted link gets index.html; any other path is a file.
 	page := func(w http.ResponseWriter, r *http.Request) {
 		if !tabs[r.PathValue("tab")] {

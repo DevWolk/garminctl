@@ -23,16 +23,16 @@ func TestAppsMCPContracts(t *testing.T) { //nolint:paralleltest // isolates proc
 		args       map[string]any
 		hash       string
 	}{
-		{name: "apps list", tool: "watch_apps", args: map[string]any{}, hash: "ee2b85f5f81c4c66b78fa768a53424c480d754eb1c14de331ebe4e0f920b5e75"},
-		{name: "settings", tool: appSettingsTool, args: map[string]any{appArgument: testdump.AppRef}, hash: "0559a5f50a7414d9ed79faf7f9f11d1cddc2dd3d78de790a58103674989b2f29"},
-		{name: "apps schema", tool: appSchemaTool, args: map[string]any{appArgument: testdump.AppRef}, hash: "dcb789f0cc5d6215fb47e451638e0c12ca98b918dcf3c4d703fc9766f2f52c49"},
+		{name: "apps list", tool: "watch_apps", args: map[string]any{}, hash: "ad5de76282bd678b58f35c2c959358b03d7f342d84ca07ffc648e8e2607c2a66"},
+		{name: "settings", tool: appSettingsTool, args: map[string]any{appArgument: testdump.AppRef}, hash: "64ce521981998d2350f70640cd47c68706d386aa4af103e319ffc51214144f2b"},
+		{name: "apps schema", tool: appSchemaTool, args: map[string]any{appArgument: testdump.AppRef}, hash: "1cb8648b5ef0fb4f0da6e49a5e8aa6c51fbc092be2fcaa1234aa741eaf3d47b7"},
 		{name: "one key schema", tool: appSchemaTool, args: map[string]any{appArgument: testdump.AppRef, "key": "Mode"}, hash: "cda1dbe81a4704d4e2e8aa4c5a934bf5878af2ef5dd6a25dd4dddacd1d70dd6a"},
-		{name: "set", tool: "watch_set_app_settings", args: map[string]any{appArgument: testdump.AppRef, "values": map[string]any{"Mode": "Night"}}, hash: "99cb608af2b8ee5bf6bc2877f7ae33b8b5aaad4e9cb27e563c48d7362ddd1970"},
+		{name: "set", tool: "watch_set_app_settings", args: map[string]any{appArgument: testdump.AppRef, "values": map[string]any{"Mode": "Night"}}, hash: "8b751315e09fb1b4b2988974cf6ef3e6c713b1c1c3a0b52a564b5e873be937d9"},
 		{name: "missing key", tool: appSchemaTool, args: map[string]any{appArgument: testdump.AppRef, "key": contractMissing}, hash: "e356cef104f1d80601d9ee5ba30814ccf1e283db9863ddf0191345588f5f2aea"},
 		{name: "missing app", tool: appSettingsTool, args: map[string]any{appArgument: contractMissing}, hash: "191996b780d27504ce14eaab42db8a7c056fb27844a0c238fe8d96d81492d406"},
 		{name: "read only", tool: "watch_set_app_settings", args: map[string]any{appArgument: testdump.AppRef, "values": map[string]any{"Locked": 2}}, hash: "66fac48d0767c9e6728054c06c94853958ec30eca6b9fdd0a345c3593e1e2535"},
 		{name: "hide missing", tool: "watch_set_app_hidden", args: map[string]any{appArgument: contractMissing, "hidden": true}, hash: "f33cbd5bda52d80c4982487d9898c1253f0ee81a8d07bdb82ead297911c06ecd"},
-		{name: "remove", tool: "watch_remove_app", args: map[string]any{appArgument: testdump.AppRef}, hash: "c2bdb38a9aece042b73fabe30ab4f9c3d7fa4363ff0fb8b1093078786e557d78"},
+		{name: "remove", tool: "watch_remove_app", args: map[string]any{appArgument: testdump.AppRef}, hash: "8258faf1a6a654a748e46782054c4942952c9bbffc08f20da1b910d9155a48a9"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dev, _ := testdump.Apps(t)

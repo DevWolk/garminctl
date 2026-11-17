@@ -16,7 +16,7 @@ func schemaCacheTest(t *testing.T) (*bytes.Buffer, *int) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	page, err := os.ReadFile("testdata/easyplus-v24-vivoactive5.html")
+	page, err := os.ReadFile(settingsPageFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestSchemaCacheFailureWarnsAndRetainsFetchedSettings(t *testing.T) { //noli
 	}
 
 	schema, err := Load(t.Context(), testAppID, 12, testPartNumber)
-	if err != nil || schema == nil || len(schema.Settings) != 88 {
+	if err != nil || schema == nil || len(schema.Settings) != 17 {
 		t.Fatalf("valid fetched schema discarded: %v, %v", schema, err)
 	}
 
@@ -54,7 +54,7 @@ func TestSchemaCacheFailureWarnsAndRetainsFetchedSettings(t *testing.T) { //noli
 		t.Fatalf("cache failure was silent: calls=%d log=%s", *calls, logs)
 	}
 
-	if _, ok := schema.Get("bar1a"); !ok {
+	if _, ok := schema.Get("left_bar"); !ok {
 		t.Fatal("fetched schema lost its index")
 	}
 
@@ -84,7 +84,7 @@ func TestSchemaCacheSuccessLoadsWithoutAnotherRequest(t *testing.T) { //nolint:p
 		t.Fatalf("successful cache did not round trip: calls=%d, log=%s", *calls, logs)
 	}
 
-	if _, ok := second.Get("bar1a"); !ok {
+	if _, ok := second.Get("left_bar"); !ok {
 		t.Fatal("cached schema lost its index")
 	}
 

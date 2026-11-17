@@ -22,10 +22,10 @@ func TestStoreMCPContracts(t *testing.T) { //nolint:paralleltest // fixture repl
 		args             map[string]any
 		hash             string
 	}{
-		{name: "store list", tool: storeSearchTool, args: map[string]any{}, hash: "ddd37187afb8a35511d2eb3c0e2a203f43eddad32af5177b6991655ac5193cfe"},
-		{name: storeFilteredSearchCase, tool: storeSearchTool, args: map[string]any{"query": "face", "type": "watchface", "page": 2}, hash: "2b51d535beb13c3f62368f22982d6d1c5fe30ccebce682ead3be9606df6a83cc"},
-		{name: "detail", tool: "store_app", args: map[string]any{"id": testdump.StoreAppID}, hash: "56fa92cbc044d0918618b7e15c66816305ffda9f0e75875f4a58f538e30e1746"},
-		{name: "reviews unavailable", tool: "store_app", args: map[string]any{"id": testdump.StoreAppID}, fail: "/apps/" + testdump.StoreAppID + "/reviews", hash: "b7311223d680a08ad013fcf6d5f0c8e3303da0c74ccd211f003ce2ea04f763ef"},
+		{name: "store list", tool: storeSearchTool, args: map[string]any{}, hash: "5770d1aa4a061b9f329ab46d297a835cae74a0e8cf35d637498939ce80767a51"},
+		{name: storeFilteredSearchCase, tool: storeSearchTool, args: map[string]any{"query": "face", "type": "watchface", "page": 2}, hash: "ffe71bb08771c1aabcc736f84b8e04be31f43de449390d55e2f7e835b9841fbd"},
+		{name: "detail", tool: "store_app", args: map[string]any{"id": testdump.StoreAppID}, hash: "3beea8eeac47f58044e7d0c05754ea481f81f2ddd6ac802c743c6b44817fa3ca"},
+		{name: "reviews unavailable", tool: "store_app", args: map[string]any{"id": testdump.StoreAppID}, fail: "/apps/" + testdump.StoreAppID + "/reviews", hash: "59e813b0a468fe4f336f2b02d8a9a9366e02fd04b9e6be5b485facdb5acfa4a5"},
 		{name: "browse unavailable", tool: storeSearchTool, args: map[string]any{}, fail: "/apps", hash: "6cf494fd0dd408531010d070fa218f0f8f2cff98073b3b1c9ba902ef4027a843"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

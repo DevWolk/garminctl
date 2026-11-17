@@ -75,9 +75,9 @@ type watchMCPContractCase struct {
 
 func watchMCPContractCases() []watchMCPContractCase {
 	return []watchMCPContractCase{
-		{name: "info", tool: watchInfoTool, args: map[string]any{}, memoryHash: "9266cea06781c02f0d205e5d3106cb25ac8489095608ffa9e6db76703e5522fa", httpHash: "ebbbccfa42e8967881446a0cf8b77b3d6eb9ad55fa67fa88eaac355b1be03315"},
-		{name: "files", tool: watchFilesTool, args: map[string]any{watchPathKey: "GARMIN"}, memoryHash: "346166290d61d4f4aa3ceccd82be012cee41a0493d21556cff69a85f63526048", httpHash: "73e01a5e57a9bc8677967d25b7d0563f618684191123f72f228f908d4a05653d"},
-		{name: "decode", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/Settings/Settings.fit"}, memoryHash: "836b19afe1fead561d8faa9a45f3ecd36139ab069c21a3ef77aaeb78cb8b33b0", httpHash: "22f35b9200cf7185279193baec78540046beb0fa092ab60368758f30887c50bf"},
+		{name: "info", tool: watchInfoTool, args: map[string]any{}, memoryHash: "4f4f48b07062e1915a75ed6fde5168fba14c99b726e8320a31ae70c30c311149", httpHash: "8317debeeee34c67d5782ea847815accf94abda5eccfe28494257108bbaf1a3d"},
+		{name: "files", tool: watchFilesTool, args: map[string]any{watchPathKey: "GARMIN"}, memoryHash: "91efc85b74ebfbbf45fc6dd2b62c496eb96d29a74afa05ca7935fb76baf45ce5", httpHash: "c9de54e985d57a6c9772c76a3acfda3f2c5b7b6025a4ce992ee518e733077289"},
+		{name: "decode", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/Settings/Settings.fit"}, memoryHash: "41a3c1c09be2b100042e74bd38bb9469fe7a13ea2669da1967efacb6fba33754", httpHash: "5c86f4938286cc44de644451f20d9159025c3d6ccbde30885cb5f49af09bbc58"},
 		{name: "delete", tool: watchDeleteTool, args: map[string]any{watchPathKey: "GARMIN/notes.txt"}, memoryHash: "ca5544f6a3d4139b6eaa2efb7382c8c952f4fcb19fe2a1b89e55a8805bb73424", httpHash: "d610c5b2576af8a72b93457af29d9549b76bb14491e383fb54856e55b643e564"},
 		{name: "missing file", tool: watchDecodeTool, args: map[string]any{watchPathKey: "GARMIN/missing"}, memoryHash: "b3c26b29f4b96e21d66b751f35f25a7c3f81e5a93247f7042fe5745bc0ab333a", httpHash: "0a845689ef8475140179d09e209e053f52d896405d214bf35c27cde33de04c4c"},
 	}

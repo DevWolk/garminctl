@@ -84,7 +84,7 @@ func TestDescribeSettings(t *testing.T) {
 	}
 
 	h, _ := up.FieldByName("height")
-	if h.Value != 1.70 {
+	if h.Value != 1.7 {
 		t.Fatalf("height = %v", h.Value)
 	}
 

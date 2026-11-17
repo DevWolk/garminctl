@@ -18,7 +18,7 @@ func TestMusicHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isola
 		status             int
 		hash               string
 	}{
-		{name: "music list", method: http.MethodGet, path: "/api/music", status: http.StatusOK, hash: "9ae6f398410f94cff3778d0126df3dabea9a64fab94b2a4fdbb202387b3e2258"},
+		{name: "music list", method: http.MethodGet, path: "/api/music", status: http.StatusOK, hash: "35ccd9b0daf083e1b1197209034a020c6c9ce9ff8fd7cc004ee3732bdb746883"},
 		{name: "add", method: http.MethodPost, path: "/api/music?folder=pODCASTS&name=Fixture.MP3", body: testdump.MusicPayload(), status: http.StatusOK, hash: "e83ca3b7b445bd892758856d6454c48c9a50ad3e42f846b3d4c98885a5647896"},
 		{name: "remove", method: http.MethodDelete, path: "/api/music?path=" + testdump.MusicTrack, status: http.StatusOK, hash: contractOKHash},
 		{name: "playlist", method: http.MethodPut, path: "/api/music/playlists/Mix", body: []byte(`{"tracks":["Music/Artist/Album/Local.mp3","Podcasts/episode.aac"]}`), status: http.StatusOK, hash: "072b09ff682df5a1995436f2712903a3cb7ae8f8d88875dd8b77e2347febee0b"},

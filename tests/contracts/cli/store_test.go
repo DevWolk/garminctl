@@ -20,13 +20,13 @@ func TestStoreCLIContracts(t *testing.T) { //nolint:paralleltest // fixture repl
 		fail string
 		hash string
 	}{
-		{name: "list text", args: []string{"list"}, hash: "11c8a4234943ac40bdc430bd78fad50fd9158231937378346dbcae68791c8f43"},
-		{name: "list JSON", args: []string{"list"}, json: true, hash: "9471fba5d0a829822300e62ba865694cee01db262783e34677fe6dda606150e2"},
-		{name: "search text", args: []string{"search", "world", "face", "-page", "2"}, hash: "1fcb6ebd77c7e80cda7da6770d2b5555d11a4e35af66e66fe5a512af6eea86e4"},
-		{name: "filtered search JSON", args: []string{"search", "face", "-type", "watchface", "-page", "2"}, json: true, hash: "c31f825c3fa176bf66a6cd24fe32de4bb1e29cf57191ec46e8bc561b3ea21e24"},
-		{name: "info text", args: []string{infoCommand, testdump.StoreAppID}, hash: "b315bde6361af9b927f0b02e4b8fe9e55f858390e519751f2d04525ab9d687a1"},
-		{name: "info JSON", args: []string{infoCommand, testdump.StoreAppID}, json: true, hash: "9cd5231e8736c18c99a2f9f4811ad2bf9123b854c2eee0824372c4d2fc681366"},
-		{name: "reviews unavailable", args: []string{infoCommand, testdump.StoreAppID}, json: true, fail: "/apps/" + testdump.StoreAppID + "/reviews", hash: "09339850b2fe8c587a074d20d56fb3e5be1ebacabb0207ce875428341826a6b3"},
+		{name: "list text", args: []string{"list"}, hash: "4c6d0cd3339da318a4967e0296a81189dea76e2d931898a9e7bda2aa723c2dfc"},
+		{name: "list JSON", args: []string{"list"}, json: true, hash: "c251be60081287c65c9aa4ced047f73a86575900b769012daecca841f3273145"},
+		{name: "search text", args: []string{"search", "world", "face", "-page", "2"}, hash: "3098018aa21501eb8c611b22f0f34c5f19ff54bff545c8c57aca9347eb1f8da9"},
+		{name: "filtered search JSON", args: []string{"search", "face", "-type", "watchface", "-page", "2"}, json: true, hash: "08243b9512b86a106aa94c90fa09398263aa890a2ecd375d05930f0776061721"},
+		{name: "info text", args: []string{infoCommand, testdump.StoreAppID}, hash: "a912632ba504c057bd78c536621a7e633a551a0e6ebe91be307354e0322ae990"},
+		{name: "info JSON", args: []string{infoCommand, testdump.StoreAppID}, json: true, hash: "6f409d9ee4953331416db450f344af877770f0abb999031108b5dc000cb35b0d"},
+		{name: "reviews unavailable", args: []string{infoCommand, testdump.StoreAppID}, json: true, fail: "/apps/" + testdump.StoreAppID + "/reviews", hash: "748938747c5a7d3be4ee3a036646b699b3027a7e26840957084d2cdda0ffad10"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := testdump.StoreEnvironment(t, test.fail)

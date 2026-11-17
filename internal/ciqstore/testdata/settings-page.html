@@ -1,0 +1,207 @@
+<!doctype html>
+<!-- Synthetic settings form for the fixture watch face. It mirrors the structure
+     ciqstore.Parse reads: a label per control, dropdowns, switches, text and
+     number inputs, a text area, and controls that are not settings. -->
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>Fixture Face settings</title>
+</head>
+<body>
+<div class="container" id="pageContainer">
+    <form action="/en-US/appSettings2/5a000000-0000-4000-8000-0000000000d4/versions/24/devices/006-B4426-00/update?singlePage=true"
+          enctype="multipart/form-data" id="settingsForm" method="post">
+        <input type="hidden" name="singlePage" value="true"/>
+        <label>Fixture Face</label>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="layout">Layout</label>
+                <div class="col-sm-3">
+                    <select class="form-select" id="layout" name="layout">
+                        <option value="1" selected="selected">Classic</option>
+                        <option value="2">Split</option>
+                        <option value="3">Minimal</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="left_bar">Left progress bar</label>
+                <div class="col-sm-3">
+                    <select class="form-select" id="left_bar" name="left_bar">
+                        <option value="100">Off</option>
+                        <option value="101" selected="selected">Steps %</option>
+                        <option value="102">Battery %</option>
+                        <option value="103">Calories %</option>
+                        <option value="104">Distance %</option>
+                        <option value="105">Floors %</option>
+                        <option value="106">Active minutes %</option>
+                        <option value="107">Energy reserve %</option>
+                        <option value="108">Stress %</option>
+                        <option value="109">Sleep score %</option>
+                        <option value="110">Move bar</option>
+                        <option value="111">Weekly goal %</option>
+                    </select>
+                    <div id="left_barErrorMsg" class="alert-error" role="alert" style="display:none">
+                        <h6>Invalid value</h6>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="right_bar">Right progress bar</label>
+                <div class="col-sm-3">
+                    <select class="form-select" id="right_bar" name="right_bar">
+                        <option value="100">Off</option>
+                        <option value="101">Steps %</option>
+                        <option value="102" selected="selected">Battery %</option>
+                        <option value="103">Calories %</option>
+                        <option value="104">Distance %</option>
+                        <option value="105">Floors %</option>
+                        <option value="106">Active minutes %</option>
+                        <option value="107">Energy reserve %</option>
+                        <option value="108">Stress %</option>
+                        <option value="109">Sleep score %</option>
+                        <option value="110">Move bar</option>
+                        <option value="111">Weekly goal %</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="accent_color">Accent color</label>
+                <div class="col-sm-3">
+                    <select class="form-select" id="accent_color" name="accent_color">
+                        <option value="16711680" selected="selected">Red</option>
+                        <option value="65280">Green</option>
+                        <option value="255">Blue</option>
+                        <option value="16777215">White</option>
+                        <option value="-1">Custom color</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="background_color">Background color</label>
+                <div class="col-sm-3">
+                    <select class="form-select" id="background_color" name="background_color">
+                        <option value="0" selected="selected">Black</option>
+                        <option value="16777215">White</option>
+                        <option value="5592405">Dark gray</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="show_seconds">Show seconds</label>
+                <div class="col-sm-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="show_seconds" name="show_seconds"
+                               checked="checked"/>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="leading_zero">Leading zero for hours</label>
+                <div class="col-sm-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="leading_zero" name="leading_zero"/>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="second_screen">Enable second screen</label>
+                <div class="col-sm-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="second_screen" name="second_screen"
+                               checked="checked"/>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="custom_color">Custom color in hex format (RRGGBB)</label>
+                <div class="col-sm-3">
+                    <input id="custom_color" name="custom_color" type="text" value="FF0000" maxlength="6"/>
+                    <div id="custom_colorErrorMsg" class="alert-error" role="alert" style="display:none">
+                        <h6>Invalid value</h6>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="caption">Caption text</label>
+                <div class="col-sm-3">
+                    <input id="caption" name="caption" type="text" value=""/>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="api_key">Weather service key</label>
+                <div class="col-sm-3">
+                    <input id="api_key" name="api_key" value=""/>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="text_scale">Text size scale</label>
+                <div class="col-sm-3">
+                    <input id="text_scale" name="text_scale" type="number" value="1.0" min="0.6" max="1.7" step="any" required="required"/>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="refresh_minutes">Refresh interval (minutes)</label>
+                <div class="col-sm-3">
+                    <input id="refresh_minutes" name="refresh_minutes" type="number" value="60" min="15.0" max="240.0" step="any" required="required"/>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="utc_offset">Second time zone offset (hours)</label>
+                <div class="col-sm-3">
+                    <input id="utc_offset" name="utc_offset" type="number" value="5.0" step="any" required="required"/>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="row">
+                <label class="col-form-label settings-label" for="section_marker">====================</label>
+                <div class="col-sm-3">
+                    <input id="section_marker" name="section_marker" type="text" value="=== Second screen ===" readonly="readonly"/>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="units_note">
+                    Units are set on the watch
+                </label>
+                <div class="col-sm-3">
+                    <input id="units_note" name="units_note" type="text" value="Menu-&gt;System-&gt;Units" readonly="readonly"/>
+                </div>
+            </div>
+            <div class="row">
+                <label class="col-form-label settings-label" for="notes">Notes</label>
+                <div class="col-sm-3">
+                    <textarea id="notes" name="notes" readonly="readonly">
+                        Changes apply after sync.
+                    </textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls below are not settings: no name, or a button or hidden type. -->
+        <input id="filter" type="text" value="unnamed"/>
+        <select id="preset"><option value="0">Unnamed dropdown</option></select>
+        <textarea id="scratch">Unnamed text area</textarea>
+        <input type="button" name="back" value="Back"/>
+        <input type="submit" name="save" value="Save" id="hidden-submit" style="display:none"/>
+    </form>
+</div>
+</body>
+</html>

@@ -137,7 +137,7 @@ func TestGeneratedWorkoutFITPreservesExistingBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	testdump.CheckDigest(t, data, "5a39997cfb75ce656e78a2ea207c35ab8bb74407a572ca84c7fe2edc68a86d9f")
+	testdump.CheckDigest(t, data, "2397e036ecd217ea7ef2bb4bff3939a23268226684ef79e10af7f2869cd3c480")
 
 	if _, err := fit.Decode(data); err != nil {
 		t.Fatal(err)
