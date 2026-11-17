@@ -8,3 +8,4 @@ coverage.out
 .make/options.local.mk
 cmd/garmin-desktop/*.syso
 __pycache__/
+/expresswatch
