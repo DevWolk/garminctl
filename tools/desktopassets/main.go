@@ -51,7 +51,8 @@ func run() error {
 	}
 
 	rs := &winres.ResourceSet{}
-	if err := rs.SetIcon(winres.ID(1), icon); err != nil {
+	// Wails loads the window and taskbar icon from resource ID 3.
+	if err := rs.SetIcon(winres.ID(3), icon); err != nil {
 		return err
 	}
 
