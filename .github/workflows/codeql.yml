@@ -33,3 +33,7 @@ jobs:
 
       - name: Analyze
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          # One category for every calling workflow, so a pull request's scan
+          # is compared with the scan of main.
+          category: /language:go
