@@ -13,3 +13,6 @@ type CloudWorkout struct {
 	Duration int    `json:"estimatedSec"`
 	Updated  string `json:"updated,omitempty"`
 }
+
+// Written reports how many files reached the watch and the first delivery error.
+func Written(files []PulledFile) (int, string) { return connect.Written(files) }

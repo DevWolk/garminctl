@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 // Outcomes the installer helper records after an accepted handoff.
@@ -26,6 +28,15 @@ type InstallationOutcome struct {
 
 // Incomplete reports an installation the user still has to look at.
 func (o InstallationOutcome) Incomplete() bool { return o.Status != InstallationInstalled }
+
+// Superseded reports that the running version already is the target of the
+// record or a later one, for example after the user ran Setup by hand. An
+// unreadable version supersedes nothing.
+func (o InstallationOutcome) Superseded(running string) bool {
+	target, current := semanticVersion(o.Tag), semanticVersion(running)
+
+	return target != "" && current != "" && semver.Compare(current, target) >= 0
+}
 
 // Summary states the outcome in one sentence for the Application tab and the CLI.
 func (o InstallationOutcome) Summary() string {

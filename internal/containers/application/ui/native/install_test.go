@@ -353,17 +353,28 @@ func TestNativeIdleStatusShowsLastIncompleteInstallation(t *testing.T) {
 		outcome *application.InstallationOutcome
 		err     error
 		shown   bool
+		running string
 	}{
-		{"failed", failed, nil, true},
-		{"unknown", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationUnknown}, nil, true},
-		{"installed", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationInstalled}, nil, false},
-		{"none", nil, nil, false},
-		{"unreadable", nil, errors.New("record is damaged"), false},
+		{"failed", failed, nil, true, ""},
+		// Setup run by hand installed the target or a later version since.
+		{"target running", failed, nil, false, installTestTag},
+		{"later running", failed, nil, false, "v4.6.0"},
+		{"older running", failed, nil, true, "v4.5.5"},
+		{"unknown", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationUnknown}, nil, true, ""},
+		{"installed", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationInstalled}, nil, false, ""},
+		{"none", nil, nil, false, ""},
+		{"unreadable", nil, errors.New("record is damaged"), false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			r := &installRecordsReader{outcome: tc.outcome, err: tc.err}
+			if tc.running != "" {
+				r.info = func(context.Context) (*application.InventoryResult, error) {
+					return &application.InventoryResult{Desktop: application.BinaryVersion{Version: tc.running}}, nil
+				}
+			}
+
 			w := &installWindow{current: t.Context, owned: true, exited: make(chan struct{})}
 			s := applicationnative.NewService(w, func(string, bool) (applicationnative.Reader, error) { return r, nil })
 

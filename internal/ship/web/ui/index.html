@@ -244,7 +244,7 @@
       </header>
       <div class="toolbar">
         <label class="btn primary file-btn">Add audio files<input type="file" id="music-files" accept=".mp3,.m4a,.aac,.adts,.wav,.flac,audio/*" multiple hidden></label>
-        <select id="music-folder"><option>Music</option><option>Podcasts</option><option>Audiobooks</option></select>
+        <select id="music-folder" aria-label="Folder for added files"><option>Music</option><option>Podcasts</option><option>Audiobooks</option></select>
         <button class="btn" id="music-playlist" disabled>Create playlist</button>
         <button class="btn danger" id="music-delete" disabled>Delete selected</button>
         <input id="music-q" type="search" placeholder="Filter tracks" aria-label="Filter tracks" style="width:180px">
@@ -450,8 +450,10 @@
       </section>
     </section>
     <section class="tab" id="tab-ai">
-      <div class="page-head"><h1>AI &amp; MCP</h1><button class="btn" id="mcp-refresh">Refresh</button></div>
-      <p class="lede">Connect an AI assistant to your watch. Keep garminctl running during use.</p>
+      <header class="page-head">
+        <div><h1>AI &amp; MCP</h1><p class="lede">Connect an AI assistant to your watch. Keep garminctl running during use.</p></div>
+        <button class="btn" type="button" id="mcp-refresh">Refresh</button>
+      </header>
       <p id="mcp-status" role="status" class="muted">Loading connection details…</p>
       <section class="panel">
         <h2>Connect an assistant</h2>

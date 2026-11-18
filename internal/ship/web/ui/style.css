@@ -155,6 +155,10 @@ th.sortable.desc::after { content: " ▼"; font-size: 9px; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .panel-gap { margin-top: 16px; }
+/* Empty status lines would still take a gap of the column; buttons keep their own width. */
+.panel > p:empty { display: none; }
+.panel > .btn { align-self: flex-start; }
+.panel > label:has(+ select) { margin-bottom: -6px; font-weight: 600; }
 .panel > h2 { display: flex; align-items: center; gap: 8px; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 7px 18px; margin: 0; }
 .facts dt { color: var(--muted); }
@@ -166,7 +170,7 @@ th.sortable.desc::after { content: " ▼"; font-size: 9px; }
 .pending li:first-child { border-top: 0; }
 .pending .what { font-weight: 600; }
 .pending .meta { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
-.pending .side-btns { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.pending .side-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .self-start { align-self: flex-start; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
@@ -293,8 +297,8 @@ table.files td.chk { width: 28px; }
 .mcp-copy { display: flex; gap: 10px; margin: 8px 0 18px; }
 .mcp-copy input, .mcp-copy textarea { min-width: 0; flex: 1; font-family: var(--mono); }
 .mcp-copy textarea { resize: none; white-space: pre; overflow-x: auto; }
-.mcp-copy button { align-self: flex-start; }
-.mcp-copy button { flex-shrink: 0; }
+.mcp-copy button { align-self: center; flex-shrink: 0; }
+#mcp-status { margin-bottom: 16px; }
 .mcp-recent { margin-top: 18px; }
 .mcp-recent summary { cursor: pointer; }
 .crumbs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 14px; }
@@ -323,7 +327,7 @@ table.files td.chk { width: 28px; }
 .act-detail table { font-size: 12.5px; }
 
 /* ---------- workouts, music, store, updates, cloud ---------- */
-#wk-spec { width: 100%; font-family: var(--mono); font-size: 12.5px; resize: vertical; line-height: 1.45; }
+#wk-spec { width: 100%; font-family: var(--mono); font-size: 12.5px; resize: vertical; line-height: 1.45; white-space: pre; overflow-x: auto; }
 #wk-preview { margin-top: 8px; }
 #tab-music .grid-2 { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
 #store-q { min-width: 240px; }
@@ -408,7 +412,12 @@ table.files td.chk { width: 28px; }
 /* Application metadata stays readable even with long release notes or paths. */
 #application-inventory dd { overflow-wrap: anywhere; }
 #application-native { min-inline-size: 0; }
-#application-release { display: block; max-inline-size: 100%; margin-block: 8px 16px; }
+#application-release, #application-install-package, #application-install-rollback-package { display: block; inline-size: 100%; }
+#application-browser { margin-bottom: 16px; }
+#application-install-rollback-section { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+#application-install-rollback-section > label { display: flex; align-items: center; gap: 8px; }
+#application-install-rollback-section > .btn { align-self: flex-start; }
+#application-install-rollback-section > p:empty { display: none; }
 .application-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 28rem; overflow: auto; }
 .application-notes:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 

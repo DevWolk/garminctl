@@ -39,10 +39,32 @@ type historyBuild struct {
 
 	mu     sync.Mutex
 	byDate map[string]*DailyHealth
-	errs   []string
-	failed []historyFailure // windows with a failed fetch; their rows are incomplete
-	cached map[string]bool  // days copied from the cache; only complete days are cached
+	// reported names the fields a range endpoint returned a value for, per day;
+	// the other fetched fields of that day are listed in Unavailable.
+	reported map[string]map[string]bool
+	errs     []string
+	failed   []historyFailure // windows with a failed fetch; their rows are incomplete
+	cached   map[string]bool  // days copied from the cache; only complete days are cached
 }
+
+// report records that an endpoint returned a value for field on date. The
+// caller holds mu.
+func (h *historyBuild) report(date string, fields ...string) {
+	if h.reported == nil {
+		h.reported = map[string]map[string]bool{}
+	}
+
+	if h.reported[date] == nil {
+		h.reported[date] = map[string]bool{}
+	}
+
+	for _, f := range fields {
+		h.reported[date][f] = true
+	}
+}
+
+// historyFields are the fields the range endpoints fill.
+var historyFields = []string{"steps", "distanceM", "stepGoal", "restingHr", "avgStress", "bodyBatteryLow", "bodyBatteryHigh", "sleepSec"}
 
 // row returns the row for date, creating it. The caller holds mu.
 func (h *historyBuild) row(date string) *DailyHealth {
@@ -119,11 +141,20 @@ func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, 
 			row = *r
 		}
 
-		row.Unavailable = slices.Clone(historyUnavailable)
-
 		message, fields := h.failure(date)
-		if h.cached[date] {
+
+		switch {
+		case h.cached[date]:
+			// A cached day keeps the list it was cached with.
 			message, fields = "", nil
+		default:
+			row.Unavailable = slices.Clone(historyUnavailable)
+
+			for _, f := range historyFields {
+				if !h.reported[date][f] && !slices.Contains(fields, f) {
+					row.Unavailable = append(row.Unavailable, f)
+				}
+			}
 		}
 
 		switch {
@@ -248,6 +279,14 @@ func (c *accountReader) fetchSteps(ctx context.Context, h *historyBuild, from, t
 	for _, d := range steps {
 		r := h.row(d.CalendarDate)
 		r.Steps, r.DistanceM, r.StepGoal = d.TotalSteps, d.TotalDistance, d.StepGoal
+		// Connect lists a day it has no data for yet with zero steps.
+		if d.TotalSteps > 0 {
+			h.report(d.CalendarDate, "steps", "distanceM")
+		}
+
+		if d.StepGoal > 0 {
+			h.report(d.CalendarDate, "stepGoal")
+		}
 	}
 
 	return nil
@@ -271,6 +310,9 @@ func (c *accountReader) fetchRestingHR(ctx context.Context, h *historyBuild, fro
 
 	for _, d := range rhr.AllMetrics.MetricsMap["WELLNESS_RESTING_HEART_RATE"] {
 		h.row(d.CalendarDate).RestingHR = int(d.Value)
+		if d.Value > 0 {
+			h.report(d.CalendarDate, "restingHr")
+		}
 	}
 
 	return nil
@@ -292,6 +334,10 @@ func (c *accountReader) fetchStress(ctx context.Context, h *historyBuild, from, 
 
 	for _, d := range stress {
 		h.row(d.CalendarDate).AvgStress = d.Values.OverallStressLevel
+		// Connect marks a day without stress data with a negative level.
+		if d.Values.OverallStressLevel > 0 {
+			h.report(d.CalendarDate, "avgStress")
+		}
 	}
 
 	return nil
@@ -312,6 +358,10 @@ func (c *accountReader) fetchBodyBattery(ctx context.Context, h *historyBuild, f
 	for _, d := range bb {
 		r := h.row(d.Date)
 		r.BodyBatteryLow, r.BodyBatteryHigh = bodyBatteryRange(d.Values)
+
+		if r.BodyBatteryHigh > 0 {
+			h.report(d.Date, "bodyBatteryLow", "bodyBatteryHigh")
+		}
 	}
 
 	return nil
@@ -359,6 +409,9 @@ func (c *accountReader) fetchSleep(ctx context.Context, h *historyBuild, from, t
 
 	for _, d := range sl.IndividualStats {
 		h.row(d.CalendarDate).SleepSec = d.Values.TotalSleepTimeInSeconds
+		if d.Values.TotalSleepTimeInSeconds > 0 {
+			h.report(d.CalendarDate, "sleepSec")
+		}
 	}
 
 	return nil
