@@ -124,7 +124,7 @@ func (s *Stager) run(ctx context.Context, target MatchRequest, release ResolvedR
 
 		return cmd
 	})
-	if err := errors.Join(runErr, output.err, ctx.Err()); err != nil {
+	if err := errors.Join(explainHelperStart(runErr), output.err, ctx.Err()); err != nil {
 		return nil, fmt.Errorf("application staging failed (%s): %w", diagnostics.String(), err)
 	}
 

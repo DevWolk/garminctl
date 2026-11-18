@@ -127,6 +127,37 @@ func waitNativeInstaller(ctx context.Context, command *exec.Cmd) error {
 	}
 }
 
+// installedVersionWait bounds the first start of a program the installer has
+// just written. Windows scans a new executable before it runs, which can take
+// well over the fraction of a second the command itself needs.
+const installedVersionWait = 30 * time.Second
+
+// installedVersion asks the installed CLI for its version.
+func installedVersion(ctx context.Context, cli string) (string, error) {
+	bound, cancel := context.WithTimeout(ctx, installedVersionWait)
+	defer cancel()
+
+	command := exec.CommandContext(bound, cli, "version")
+
+	var output stageDiagnostics
+
+	command.Stdout = &output
+	command.Stderr = &output
+	command.WaitDelay = time.Second
+	hostexec.HideConsole(command)
+
+	if err := command.Run(); err != nil {
+		return "", errors.Join(err, bound.Err())
+	}
+
+	value, ok := strings.CutPrefix(strings.TrimSpace(output.String()), "garminctl ")
+	if !ok {
+		return "", errors.New("unexpected version output")
+	}
+
+	return value, nil
+}
+
 func restartInstalledDesktop(ctx context.Context, options InstallOptions, tag, directory string, probe func(context.Context, string, string) error) error {
 	for _, path := range []string{options.CLI, options.Desktop} {
 		info, err := os.Lstat(path)
@@ -139,24 +170,12 @@ func restartInstalledDesktop(ctx context.Context, options InstallOptions, tag, d
 		}
 	}
 
-	bound, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	command := exec.CommandContext(bound, options.CLI, "version") //nolint:gosec // Observed native CLI path, validated basename and regular file; only the fixed version argument.
-
-	var output stageDiagnostics
-
-	command.Stdout = &output
-	command.Stderr = &output
-	command.WaitDelay = time.Second
-	hostexec.HideConsole(command)
-
-	if err := command.Run(); err != nil {
-		return errors.Join(err, bound.Err())
+	value, err := installedVersion(ctx, options.CLI)
+	if err != nil {
+		return fmt.Errorf("the installed CLI did not report its version: %w", err)
 	}
 
-	value, ok := strings.CutPrefix(strings.TrimSpace(output.String()), "garminctl ")
-	if !ok || value != tag {
+	if value != tag {
 		return errors.New("installed CLI version does not match the selected release; use the retained package to repair")
 	}
 

@@ -178,7 +178,7 @@ func startInstallProcess(ctx context.Context, cli, directory string, request ins
 
 		cancel()
 
-		return nil, err
+		return nil, explainHelperStart(err)
 	}
 
 	p.mu.Lock()
