@@ -72,7 +72,6 @@ jobs:
           WINDOWS_SIGNING_MODE: ${{ inputs.signing_mode }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
-          WINDOWS_TIMESTAMP_URL: ${{ inputs.signing_mode == 'certificate' && 'http://timestamp.digicert.com' || '' }}
           PREVIOUS_VERSION: ${{ inputs.previous_version }}
         run: |
           if [[ -n "$PREVIOUS_VERSION" ]]; then
@@ -93,7 +92,6 @@ jobs:
           WINDOWS_SIGNING_MODE: ${{ inputs.signing_mode }}
           WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
           WINDOWS_SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
-          WINDOWS_TIMESTAMP_URL: ${{ inputs.signing_mode == 'certificate' && 'http://timestamp.digicert.com' || '' }}
       - name: Assemble final assets
         run: |
           mkdir -p dist/assets
