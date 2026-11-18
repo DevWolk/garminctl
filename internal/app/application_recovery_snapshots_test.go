@@ -164,10 +164,11 @@ func TestApplicationRecoverySnapshotsListBackupsBesideOneFromALaterBuild(t *test
 	}
 }
 
-func TestApplicationBackupRetentionKeepsTheNewestAndSparesBackupsDuringRollback(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.
+func TestApplicationBackupRetentionWaitsForAnAcceptedUpdate(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.
 	f := newRecoverySnapshotFixture(t)
 	update := application.PreflightInfo{Current: f.current, Update: f.update}
 
+	// Refused or cancelled attempts each leave a backup and remove none.
 	for range application.RetainedBackups + 2 {
 		if _, err := (applicationDataSnapshots{}).Create(t.Context(), update); err != nil {
 			t.Fatal(err)
@@ -175,25 +176,21 @@ func TestApplicationBackupRetentionKeepsTheNewestAndSparesBackupsDuringRollback(
 	}
 
 	rows, err := f.action.List(t.Context())
+	if err != nil || len(rows) != application.RetainedBackups+3 {
+		t.Fatalf("after attempts: %d backups error=%v", len(rows), err)
+	}
+
+	pruneApplicationBackups(t.Context())
+
+	rows, err = f.action.List(t.Context())
 	if err != nil || len(rows) != application.RetainedBackups {
-		t.Fatalf("after updates: %d backups error=%v", len(rows), err)
+		t.Fatalf("after an accepted update: %d backups error=%v", len(rows), err)
 	}
 
 	for _, row := range rows {
 		if row.ID == f.snapshot.ID {
 			t.Fatal("the oldest backup outlived the retention count")
 		}
-	}
-
-	// A rollback has already selected one of the retained backups, possibly the oldest.
-	safety, err := (applicationDataSnapshots{}).Create(t.Context(), application.PreflightInfo{Current: f.update, Update: f.current})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	after, err := f.action.List(t.Context())
-	if err != nil || len(after) != application.RetainedBackups+1 || after[0].ID != safety.ID || after[len(after)-1].ID != rows[len(rows)-1].ID {
-		t.Fatalf("after rollback preparation: %d backups error=%v", len(after), err)
 	}
 }
 

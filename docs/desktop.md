@@ -204,9 +204,10 @@ directory from the [table above](#data-updates-and-uninstall).
 | `<cache>/application-installing/` | The package, a copy of the CLI and the log of an installation. | Removed when an installation is canceled. After a handoff to the system installer, the operation with the latest recorded result. |
 | `<cache>/application-history/` | The release list of the last successful check. | Replaced by the next successful check. |
 
-The counts are fixed. An update that saves a new backup deletes the backups
-beyond the newest 10; preparing a rollback deletes none, so the backup selected
-for it stays. A download that saves a new package deletes the packages beyond
+The counts are fixed. Once the installer accepts an update, the backups beyond
+the newest 10 are deleted; an update that is refused or canceled and a rollback
+delete none, so a retry does not push out older backups and the backup selected
+for a rollback stays. A download that saves a new package deletes the packages beyond
 the limit, and of two saved copies of one release it keeps the later one. A
 working copy left by an interrupted operation is deleted by the next download,
 update or installation once it has been unchanged for a day.

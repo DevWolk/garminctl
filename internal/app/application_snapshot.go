@@ -33,6 +33,21 @@ func ForgetApplicationSessionCopies(ctx context.Context) error {
 	return hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups)).Forget(ctx, applicationStateConfig, name, name+".mfa")
 }
 
+// pruneApplicationBackups keeps the newest backups once a forward update was
+// handed to the installer. Pruning earlier would let each refused or cancelled
+// attempt evict a backup that an older version's rollback needs. A leftover that
+// cannot be removed now must not fail the update.
+func pruneApplicationBackups(ctx context.Context) {
+	account := gc.DefaultStorePath()
+	if account == "" {
+		return
+	}
+
+	if err := hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups)).Prune(ctx, application.RetainedBackups); err != nil {
+		slog.Warn("application backup retention left files behind", "error", err)
+	}
+}
+
 type applicationBackupMetadata struct {
 	Current, Update application.PackageRecord
 	Formats         *application.StateFormats `json:",omitempty"`
@@ -65,15 +80,6 @@ func (s applicationDataSnapshots) Create(ctx context.Context, info application.P
 	result, err := store.Create(ctx, metadata)
 	if err != nil {
 		return nil, err
-	}
-
-	// A rollback restores an older backup chosen before this safety copy was
-	// made, so only a forward update may remove old backups. The new backup is
-	// published; a leftover that cannot be removed now must not fail the update.
-	if !info.Downgrade() {
-		if err := hostfile.NewSnapshotReader(backups).Prune(ctx, application.RetainedBackups); err != nil {
-			slog.Warn("application backup retention left files behind", "error", err)
-		}
 	}
 
 	var bytes int64

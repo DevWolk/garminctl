@@ -46,5 +46,12 @@ func (r *applicationNativeReader) Install(ctx context.Context, request applicati
 
 	phase("handoff")
 
-	return r.Handoff(ctx, prepared, consent)
+	result, err = r.Handoff(ctx, prepared, consent)
+	// A rollback restores an older backup chosen before its safety copy was
+	// made, so only an accepted forward update removes old backups.
+	if err == nil && !prepared.Info().Downgrade() {
+		pruneApplicationBackups(ctx)
+	}
+
+	return result, err
 }
