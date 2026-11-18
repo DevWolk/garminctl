@@ -26,7 +26,9 @@ async function api(method, url, body, raw) {
 }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function fmt(v) { if (v === null || v === undefined) return ''; if (Array.isArray(v)) return v.map((x) => x === null ? '–' : fmt(x)).join(', '); return String(v); }
-const acronyms = new Set(['utc', 'hr', 'ble', 'gps', 'id', 'bpm', 'ant', 'lte', 'wifi', 'ohr', 'hrv', 'ftp', 'aod', 'am', 'pm']);
+const acronyms = new Set(['utc', 'hr', 'ble', 'gps', 'id', 'bpm', 'ant', 'lte', 'wifi', 'ohr', 'hrv', 'ftp', 'aod', 'am', 'pm', 'iq', 'dnd', 'db']);
+// Enum values whose generated label reads badly; the rest go through humanize.
+const enumLabels = { hour12: '12-hour', hour24: '24-hour', hour12WithSeconds: '12-hour with seconds', hour24WithSeconds: '24-hour with seconds' };
 function humanize(s) {
   if (!s) return '';
   const words = String(s).replace(/^unknown(\d+)$/, 'Field $1').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').split(/[\s_]+/).filter(Boolean)
@@ -35,8 +37,10 @@ function humanize(s) {
   words[0] = words[0][0].toUpperCase() + words[0].slice(1);
   return words.join(' ');
 }
-function humanizeEnum(s) { return typeof s === 'string' ? humanize(s) : fmt(s); }
+function humanizeEnum(s) { return typeof s === 'string' ? enumLabels[s] || humanize(s) : fmt(s); }
 function hex6(n) { return (Number(n) >>> 0 & 0xFFFFFF).toString(16).padStart(6, '0').toUpperCase(); }
+// A failed delivery is listed with an error and no path; only the rest reached the watch.
+function writtenCount(files) { return (files || []).filter((f) => !f.error && f.path).length; }
 function el(html) { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; }
 
 function toast(msg, kind) {
@@ -275,10 +279,11 @@ async function loadToday() {
     const tile = (k, v, unit, sub, pct, teal) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ''}</div>${pct !== undefined ? `<div class="bar"><i class="${teal ? 'teal' : ''}" style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : ''}<div class="s">${sub}</div></div>`;
     // A value Connect has not reported yet is shown as missing, not as zero.
     const has = (...keys) => !keys.some((k) => lacks(d, k));
-    box.innerHTML = tile('Steps today', has('steps') ? d.steps.toLocaleString() : '–', '', has('stepGoal') ? `goal ${d.stepGoal.toLocaleString()}` : '', has('steps', 'stepGoal') ? d.steps / Math.max(1, d.stepGoal) * 100 : 0)
-      + tile('Resting heart rate', d.restingHr || '–', 'bpm', y.restingHr ? `yesterday ${y.restingHr}` : '')
+    // A bar is drawn only for a reported value; an empty bar would read as zero.
+    box.innerHTML = tile('Steps today', has('steps') ? d.steps.toLocaleString() : '–', '', has('stepGoal') ? `goal ${d.stepGoal.toLocaleString()}` : '', has('steps', 'stepGoal') ? d.steps / Math.max(1, d.stepGoal) * 100 : undefined)
+      + tile('Resting heart rate', d.restingHr || '–', d.restingHr ? 'bpm' : '',y.restingHr ? `yesterday ${y.restingHr}` : '')
       + tile('Sleep', d.sleepSec ? fmtHM(d.sleepSec) : '–', '', y.sleepSec ? `night before ${fmtHM(y.sleepSec)}` : '')
-      + tile('Body battery', has('bodyBatteryLow', 'bodyBatteryHigh') ? `${d.bodyBatteryLow}–${d.bodyBatteryHigh}` : '–', '', has('avgStress') ? `stress avg ${d.avgStress}` : '', has('bodyBatteryHigh') ? d.bodyBatteryHigh : 0, true)
+      + tile('Body battery', has('bodyBatteryLow', 'bodyBatteryHigh') ? `${d.bodyBatteryLow}–${d.bodyBatteryHigh}` : '–', '', has('avgStress') ? `stress avg ${d.avgStress}` : '', has('bodyBatteryHigh') ? d.bodyBatteryHigh : undefined, true)
       + tile('Calories', has('calories') ? d.calories.toLocaleString() : '–', has('calories') ? 'kcal' : '', has('activeCalories') ? `${d.activeCalories.toLocaleString()} active` : '');
   } catch (e) {
     box.innerHTML = `<div class="tile prompt"><div class="k">${/signed in/.test(e.message) ? 'Sign in to Garmin Connect to view daily health.' : esc(e.message)}</div></div>`;
@@ -419,10 +424,16 @@ function settingRow(r, repeated) {
   else if (r.confidence) tags.push(`<span class="tag guess">${esc(r.confidence)}</span>`);
   const meta = [r.units, r.note].filter(Boolean).join(' · ');
   let control;
+  const isBool = isEditable(r) && r.type === 'bool';
   if (isEditable(r) && r.options && r.options.length) {
     const cur = fmt(r.value);
-    const opts = r.options.includes(cur) ? r.options : [cur, ...r.options];
-    control = `<select data-key="${esc(key)}">${opts.map((o) => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(humanizeEnum(o))}</option>`).join('')}</select>`;
+    // A value outside the named options (for example a bit mask) stays selectable as a number.
+    const named = r.options.includes(cur);
+    const opts = named ? r.options : [cur, ...r.options];
+    control = `<select data-key="${esc(key)}">${opts.map((o) => `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(!named && o === cur ? `${o} (unnamed value)` : humanizeEnum(o))}</option>`).join('')}</select>`;
+  } else if (isBool) {
+    // WebView2 lacks the switch attribute; role="switch" carries the same semantics and the class draws it.
+    control = `<input type="checkbox" class="switch" switch role="switch" data-key="${esc(key)}" aria-label="${esc(label)}" ${Number(r.raw) ? 'checked' : ''}>`;
   } else if (isEditable(r)) {
     control = `<input type="number" step="any" data-key="${esc(key)}" value="${esc(fmt(r.value))}">`;
   } else {
@@ -431,13 +442,20 @@ function settingRow(r, repeated) {
   const row = el(`<div class="row ${isEditable(r) ? '' : 'readonly'}"><div><div class="label">${esc(label)}${tags.join('')}</div><div class="key">${esc(r.mesg)}.${esc(r.field)}</div></div><div class="control">${control}</div><div class="meta">${esc(meta)}</div></div>`);
   const ctl = row.querySelector('[data-key]');
   if (ctl) {
-    if (state.pending.has(key)) { ctl.value = state.pending.get(key).value; ctl.classList.add('changed'); }
+    // Switches submit 1 or 0, which the settings encoder accepts for bool fields.
+    const read = () => (isBool ? (ctl.checked ? '1' : '0') : ctl.value);
+    const shown = (v) => (isBool ? (v === '1' ? 'On' : 'Off') : ctl.tagName === 'SELECT' ? humanizeEnum(v) : v);
+    if (state.pending.has(key)) {
+      const v = state.pending.get(key).value;
+      if (isBool) ctl.checked = v === '1'; else ctl.value = v;
+      ctl.classList.add('changed');
+    }
     ctl.addEventListener('change', () => {
-      const orig = fmt(r.value);
-      if (ctl.value === orig) { state.pending.delete(key); ctl.classList.remove('changed'); }
+      const orig = isBool ? (Number(r.raw) ? '1' : '0') : fmt(r.value);
+      const value = read();
+      if (value === orig) { state.pending.delete(key); ctl.classList.remove('changed'); }
       else {
-        const to = ctl.tagName === 'SELECT' ? humanizeEnum(ctl.value) : ctl.value;
-        state.pending.set(key, { mesg: String(r.mesgNum), index: r.index, field: String(r.fieldNum), value: ctl.value, label: `${groupTitles[r.mesg] || humanize(r.mesg)} · ${label}`, from: ctl.tagName === 'SELECT' ? humanizeEnum(orig) : orig, to });
+        state.pending.set(key, { mesg: String(r.mesgNum), index: r.index, field: String(r.fieldNum), value, label: `${groupTitles[r.mesg] || humanize(r.mesg)} · ${label}`, from: shown(orig), to: shown(value) });
         ctl.classList.add('changed');
       }
       updateActionBar();
@@ -938,7 +956,7 @@ function renderUpdates() {
   for (const a of u.apps || []) {
     const tag = a.error ? `<span class="tag">${esc(a.error)}</span>` : a.updateAvailable ? '<span class="tag new">Update available</span>' : '<span class="tag ok">Up to date</span>';
     const ver = a.updateAvailable ? `v${a.installedVersion} → v${a.latestVersion}${a.latestName ? ' (' + esc(a.latestName) + ')' : ''}` : `v${a.installedVersion}`;
-    al.appendChild(el(`<li><div><div class="what"><b>${esc(a.app.name)}</b><span class="ver">${ver}</span>${tag}</div><div class="meta">${esc(a.app.typeName)}</div></div>
+    al.appendChild(el(`<li><div><div class="what"><b>${esc(a.app.name)}</b><span class="ver">${ver}</span>${tag}</div><div class="meta">${esc(kindLabel[a.app.typeName] || humanize(a.app.typeName))}</div></div>
       <div class="side-btns"><a class="btn small" href="${esc(a.storeUrl)}" target="_blank" rel="noopener">Store ↗</a></div></li>`));
   }
 
@@ -1048,16 +1066,23 @@ async function loadHealth() {
 function renderDaily() {
   const rows = state.health.daily.filter((r) => !r.error);
   if (!rows.length) { $('#health-charts').innerHTML = '<p class="muted">No health data available for these days.</p>'; return; }
-  const goal = rows[rows.length - 1].stepGoal;
   const last = rows[rows.length - 1];
-  const latest = (keys, text) => keys.some((k) => lacks(last, k)) ? 'no data' : text;
+  const goal = last.stepGoal;
+  // Each title shows the newest day Connect reported for that chart, named by its date
+  // unless it is the last day of the range.
+  const latest = (keys, text) => {
+    const r = rows.findLast((x) => !keys.some((k) => lacks(x, k)));
+    if (!r) return 'no data';
+    const when = r === last ? '' : `${new Date(r.date + 'T00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}: `;
+    return when + text(r, r === last);
+  };
   $('#health-charts').innerHTML = `
-    <div class="chart"><h3>Steps · ${latest(['steps'], `today ${last.steps.toLocaleString()} of ${goal.toLocaleString()}`)}</h3>${barChart(rows, 'steps', { goal, max: goal })}</div>
-    <div class="chart"><h3>Resting heart rate · ${latest(['restingHr'], `${last.restingHr} bpm`)}</h3>${lineChart(rows, ['restingHr'], { unit: '' })}</div>
-    <div class="chart"><h3>Sleep · ${latest(['sleepSec'], `${fmtDur(last.sleepSec)} last night`)}</h3>${barChart(rows.map((r) => ({ date: r.date, h: Math.round(r.sleepSec / 360) / 10, unavailable: lacks(r, 'sleepSec') ? ['h'] : [] })), 'h', { unit: 'h', max: 9 })}</div>
-    <div class="chart"><h3>Stress (avg) · ${latest(['avgStress'], last.avgStress)}</h3>${barChart(rows, 'avgStress', { max: 100 })}</div>
-    <div class="chart"><h3>Body battery · ${latest(['bodyBatteryLow', 'bodyBatteryHigh'], `${last.bodyBatteryLow}–${last.bodyBatteryHigh}`)}</h3>${lineChart(rows, ['bodyBatteryHigh', 'bodyBatteryLow'], { zero: true })}</div>
-    ${rows.some((r) => r.calories) ? `<div class="chart"><h3>Calories · ${last.calories} kcal</h3>${barChart(rows, 'calories', {})}</div>` : ''}`;
+    <div class="chart"><h3>Steps · ${latest(['steps'], (r, today) => `${today ? 'today ' : ''}${r.steps.toLocaleString()}${r.stepGoal ? ` of ${r.stepGoal.toLocaleString()}` : ''}`)}</h3>${barChart(rows, 'steps', { goal, max: goal })}</div>
+    <div class="chart"><h3>Resting heart rate · ${latest(['restingHr'], (r) => `${r.restingHr} bpm`)}</h3>${lineChart(rows, ['restingHr'], { unit: '' })}</div>
+    <div class="chart"><h3>Sleep · ${latest(['sleepSec'], (r, today) => `${fmtHM(r.sleepSec)}${today ? ' last night' : ''}`)}</h3>${barChart(rows.map((r) => ({ date: r.date, h: Math.round(r.sleepSec / 360) / 10, unavailable: lacks(r, 'sleepSec') ? ['h'] : [] })), 'h', { unit: 'h', max: 9 })}</div>
+    <div class="chart"><h3>Stress (avg) · ${latest(['avgStress'], (r) => r.avgStress)}</h3>${barChart(rows, 'avgStress', { max: 100 })}</div>
+    <div class="chart"><h3>Body battery · ${latest(['bodyBatteryLow', 'bodyBatteryHigh'], (r) => `${r.bodyBatteryLow}–${r.bodyBatteryHigh}`)}</h3>${lineChart(rows, ['bodyBatteryHigh', 'bodyBatteryLow'], { zero: true })}</div>
+    ${rows.some((r) => r.calories) ? `<div class="chart"><h3>Calories · ${latest(['calories'], (r) => `${r.calories.toLocaleString()} kcal`)}</h3>${barChart(rows, 'calories', {})}</div>` : ''}`;
   document.querySelectorAll('#health-charts .bar').forEach((b) => { b.onclick = () => showDay(b.dataset.date); });
 }
 async function loadExtras() {
@@ -1071,7 +1096,7 @@ function renderExtras() {
   const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
   $('#extras-tiles').innerHTML = (x.vo2max ? tile('VO2 max', x.vo2max.toFixed(1), `as of ${esc(x.vo2maxDate)}`) : '')
     + (x.fitnessAge ? tile('Fitness age', Math.round(x.fitnessAge), `you are ${x.chronologicalAge}`) : '')
-    + (x.hrv ? tile('HRV last night', `${x.hrv.lastNight}<small>ms</small>`, `weekly ${x.hrv.weeklyAvg} ms · ${esc(humanize(x.hrv.status.toLowerCase()))}`) : '')
+    + (x.hrv ? tile('HRV last night', x.hrv.lastNight ? `${x.hrv.lastNight}<small>ms</small>` : '–', [x.hrv.weeklyAvg ? `weekly ${x.hrv.weeklyAvg} ms` : '', x.hrv.status ? esc(humanize(x.hrv.status.toLowerCase())) : ''].filter(Boolean).join(' · ')) : '')
     + (x.badges.length ? tile('Badges', x.badges.length, `${x.badges.reduce((a, b) => a + b.points, 0)} points`) : '');
   const tb = $('#records-table tbody'); tb.replaceChildren();
   for (const r of x.records) {
@@ -1220,9 +1245,9 @@ async function loadWorkouts() {
     const list = await api('GET', '/api/workouts');
     ul.innerHTML = list.length ? '' : '<li class="muted">No workouts in Garmin Connect yet.</li>';
     for (const w of list) {
-      const li = el(`<li><div><div class="what">${esc(w.name)}</div><div class="meta">${esc(w.sport)} · ${fmtDur(w.estimatedSec)}${w.updated ? ' · ' + esc(w.updated) : ''}</div></div><div class="side-btns"><button class="btn small primary">Send to watch</button><button class="btn small danger">Delete</button></div></li>`);
+      const li = el(`<li><div><div class="what">${esc(w.name)}</div><div class="meta">${esc(humanize(w.sport))} · ${fmtDur(w.estimatedSec)}${w.updated ? ' · ' + esc(w.updated) : ''}</div></div><div class="side-btns"><button class="btn small">Send to watch</button><button class="btn small danger">Delete</button></div></li>`);
       const [send, del] = li.querySelectorAll('button');
-      send.onclick = async () => { send.disabled = true; try { const r = await api('POST', `/api/workouts/${w.id}/send?name=${encodeURIComponent(w.name)}`); toast(r.pulled && r.pulled.length ? 'Written to the watch; unplug it to see the workout' : 'Queued for the watch; sync later', r.pulled && r.pulled.length ? '' : 'warn'); loadNewFiles(); } catch (e) { toast(e.message, 'bad'); } finally { send.disabled = false; } };
+      send.onclick = async () => { send.disabled = true; try { const r = await api('POST', `/api/workouts/${w.id}/send?name=${encodeURIComponent(w.name)}`); const failed = (r.pulled || []).find((f) => f.error); toast(writtenCount(r.pulled) ? 'Written to the watch; unplug it to see the workout' : failed ? 'Not written to the watch: ' + failed.error : 'Queued for the watch; sync later', writtenCount(r.pulled) ? '' : failed ? 'bad' : 'warn'); loadNewFiles(); } catch (e) { toast(e.message, 'bad'); } finally { send.disabled = false; } };
       del.onclick = async () => { if (!await confirmDialog({ title: `Delete “${w.name}” from Garmin Connect?`, body: '<p>The workout stays on the watch if it was sent already.</p>', ok: 'Delete' })) return; try { await api('DELETE', '/api/workouts/' + w.id); loadWorkouts(); } catch (e) { toast(e.message, 'bad'); } };
       ul.appendChild(li);
     }
@@ -1464,7 +1489,7 @@ function renderStore() {
     const card = el(`<button class="store-card${state.store.selected === a.id ? ' active' : ''}" data-id="${esc(a.id)}">
       ${a.iconUrl ? `<img src="${esc(a.iconUrl)}" alt="" loading="lazy">` : '<span class="app-ico">?</span>'}
       <span class="body"><span class="name">${esc(a.name)}</span><span class="dev">${esc(a.developer)}</span>
-      <span class="meta"><b>${stars(a.rating)}</b> (${a.reviewCount}) · ${fmtCount(a.downloads)} downloads</span>
+      <span class="meta"><b>${stars(a.rating)}</b> (${Number(a.reviewCount || 0).toLocaleString()}) · ${fmtCount(a.downloads)} downloads</span>
       <span class="meta">${esc(a.price || 'Free')}${a.trialMode ? ' · trial' : ''} ${badge}</span></span></button>`);
     card.onclick = () => showStoreApp(a.id);
     grid.appendChild(card);
@@ -1487,13 +1512,13 @@ async function showStoreApp(id) {
       <div class="head">${d.iconUrl ? `<img class="icon" src="${esc(d.iconUrl)}" alt="">` : ''}<div><h2>${esc(d.name)}</h2><div class="hint">${esc(d.developer)} · ${esc(d.type)}</div></div></div>
       <div>${status}</div>
       <dl class="facts">
-        <dt>Rating</dt><dd>${stars(d.rating)} from ${d.reviewCount} reviews</dd>
+        <dt>Rating</dt><dd>${stars(d.rating)} from ${Number(d.reviewCount || 0).toLocaleString()} reviews</dd>
         <dt>Downloads</dt><dd>${fmtCount(d.downloads)}</dd>
         <dt>Version</dt><dd>${esc(d.version)}${d.updated ? ' · ' + esc(d.updated) : ''}</dd>
         <dt>Price</dt><dd>${esc(d.price || 'Free')}${d.trialMode ? ' (trial available)' : ''}</dd>
         ${d.sizeBytes ? `<dt>Size</dt><dd>${fmtSize(d.sizeBytes)}${state.connected ? ' on this watch' : ''}${state.connected && state.summary && state.summary.storage ? ` · ${fmtSize(state.summary.storage.freeBytes)} free` : ''}</dd>` : ''}
         ${d.hasSettings !== undefined && d.hasSettings !== null ? `<dt>Settings</dt><dd>${d.hasSettings ? 'editable here once installed' : 'none'}</dd>` : ''}
-        ${d.permissions && d.permissions.length ? `<dt>Permissions</dt><dd>${esc(d.permissions.join(', '))}</dd>` : ''}
+        ${d.permissions && d.permissions.length ? `<dt>Permissions</dt><dd>${esc(d.permissions.map(humanize).join(', '))}</dd>` : ''}
       </dl>
       <div class="btns"><a class="btn primary" href="${esc(d.storeUrl)}" target="garmin-store" rel="noopener">Open in store ↗</a>${d.installed && d.hasSettings ? '<button class="btn" id="store-edit">Edit settings</button>' : ''}</div>
       <p class="hint">${d.installed && !d.updateAvailable ? 'No update found.' : 'Queue the install or update in the Connect IQ phone app, then sync on the Garmin Connect tab.'}</p>
@@ -1563,7 +1588,7 @@ function renderCloudSettings() {
     } else {
       ctl = el(`<input type="text" value="${esc(cur)}">`);
     }
-    const row = el(`<div class="row cloud-row${pending !== undefined ? ' changed' : ''}"><div><div class="label">${esc(humanize(it.key))}<span class="tag connect">Connect</span></div><div class="key">${esc(it.key)}</div>${it.hint ? `<div class="meta">${esc(it.hint)}</div>` : ''}</div><div class="control"></div></div>`);
+    const row = el(`<div class="row cloud-row${pending !== undefined ? ' changed' : ''}"><div><div class="label">${esc(humanize(it.key))}</div><div class="key">${esc(it.key)}</div>${it.hint ? `<div class="meta">${esc(it.hint)}</div>` : ''}</div><div class="control"></div></div>`);
     row.querySelector('.control').appendChild(ctl);
     ctl.addEventListener('change', () => {
       let v;
@@ -1587,7 +1612,7 @@ async function applyCloudChanges() {
   try {
     const res = await api('PUT', '/api/cloud/settings', { changes: Object.fromEntries(list) });
     state.cloudPending.clear(); updateActionBar();
-    toast(res.note, res.pulled && res.pulled.length ? '' : 'warn');
+    toast(res.note, writtenCount(res.pulled) ? '' : 'warn');
     loadCloudSettings(); loadCloudMessages(); loadNewFiles();
   } catch (e) { toast(e.message, 'bad'); }
 }
@@ -1642,7 +1667,7 @@ async function pollSync() {
     const u = j.result.upload;
     const parts = [];
     if (u) parts.push(`uploaded ${u.uploaded}, already in Connect ${u.duplicate}, failed ${u.failed}, unchanged ${u.skipped}`);
-    const pulled = (j.result.pulled || []).length;
+    const pulled = writtenCount(j.result.pulled);
     parts.push(`${pulled} item${pulled === 1 ? '' : 's'} written to the watch`);
     $('#sync-status').textContent = `Done ${new Date(j.endedAt).toLocaleTimeString()}: ${parts.join('; ')}`;
     if (!state.cloud.syncSeen || state.cloud.syncSeen !== j.endedAt) { state.cloud.syncSeen = j.endedAt; loadCloudMessages(); loadNewFiles(); if ((j.result.pulled || []).length) { state.apps = []; } }
