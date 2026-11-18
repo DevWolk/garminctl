@@ -46,3 +46,23 @@ func TestInstallationOutcomeSummaryNamesReleaseReasonAndLogs(t *testing.T) {
 		})
 	}
 }
+
+func TestInstallationOutcomeIsSupersededByTheSameOrALaterVersion(t *testing.T) {
+	t.Parallel()
+
+	failed := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed}
+	for _, tt := range []struct {
+		running    string
+		superseded bool
+	}{
+		{"0.6.2", true},
+		{"v0.6.3", true},
+		{"0.6.1", false},
+		{"dev", false},
+		{"", false},
+	} {
+		if got := failed.Superseded(tt.running); got != tt.superseded {
+			t.Errorf("Superseded(%q) = %t, want %t", tt.running, got, tt.superseded)
+		}
+	}
+}
