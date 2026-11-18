@@ -40,9 +40,14 @@ func connectRunner(runtime *process.Runtime, account *gc.Client) func(watchsessi
 }
 
 // autoSyncNotes runs or joins the plug-in sync of epoch and describes its outcome.
-// ok is false when ctx ended before the sync finished.
-func autoSyncNotes(coordinator *connect.SyncCoordinator, runner func(watchsession.ConnectionEpoch, bool, bool) connect.SyncRunner) func(context.Context, watchsession.ConnectionEpoch) ([]string, bool) {
+// Without a signed-in account it has nothing to do and starts no sync. ok is
+// false when ctx ended before the sync finished.
+func autoSyncNotes(signedIn func() bool, coordinator *connect.SyncCoordinator, runner func(watchsession.ConnectionEpoch, bool, bool) connect.SyncRunner) func(context.Context, watchsession.ConnectionEpoch) ([]string, bool) {
 	return func(ctx context.Context, epoch watchsession.ConnectionEpoch) ([]string, bool) {
+		if !signedIn() {
+			return nil, true
+		}
+
 		job, _, err := coordinator.JoinOrStart(ctx, connect.SyncOptions{Upload: true, Download: true, Epoch: epoch}, runner(epoch, true, true))
 		if err != nil {
 			return []string{"sync failed: " + err.Error()}, true

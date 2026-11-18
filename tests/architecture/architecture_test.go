@@ -43,23 +43,26 @@ var architectureFeatureEdges = map[string][]string{
 	"workouts": {"connect"}, // returns the pulled workout file
 }
 
-// architectureOwner lists constructors of process-wide owners and the packages,
-// beside the defining one, that may call them. Any other caller would create a
-// second owner of the watch, its jobs or the account store.
+// architectureOwner lists constructors of process-wide owners and the exact
+// packages, beside the defining one, that may call them. Any other caller would
+// create a second owner of the watch, its jobs or the account store.
 type architectureOwner struct {
 	pkg     string
 	names   []string
 	callers []string
 }
 
-const ownerApp = "internal/app"
+const (
+	ownerApp     = "internal/app"
+	ownerProcess = ownerApp + "/process"
+)
 
 var architectureOwners = []architectureOwner{
-	{pkg: ownerApp + "/process", names: []string{"New"}, callers: []string{ownerApp}},
-	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerApp}},
-	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerApp}},
-	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerApp}},
-	{pkg: "internal/ship/gc", names: []string{"New"}, callers: []string{"cmd", ownerApp, "internal/ship/testdump"}},
+	{pkg: ownerProcess, names: []string{"New"}, callers: []string{ownerApp}},
+	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerProcess}},
+	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerProcess}},
+	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerProcess}},
+	{pkg: "internal/ship/gc", names: []string{"New"}, callers: []string{ownerApp, ownerApp + "/cli", "internal/ship/testdump"}},
 }
 
 // architectureRoot finds the module above the working directory, which go test
@@ -173,6 +176,10 @@ func checkArchitecturePackage(t *testing.T, pkg *packages.Package, typed bool) {
 
 	var violations []string
 
+	if reason := architectureForbiddenPackage(pkg.PkgPath); reason != "" {
+		violations = append(violations, pkg.PkgPath+": "+reason)
+	}
+
 	for imported := range pkg.Imports {
 		if reason := architectureImportViolation(pkg.PkgPath, imported); reason != "" {
 			violations = append(violations, pkg.PkgPath+" -> "+imported+": "+reason)
@@ -215,8 +222,9 @@ func checkArchitectureTestPackage(t *testing.T, pkg *packages.Package) {
 }
 
 // architectureTestImportViolation keeps feature tests inside the production
-// feature boundaries. Shell tests assemble their own fixture composition and
-// are not checked here.
+// feature boundaries. Shell and infrastructure tests are not checked: they may
+// drive the production composition (desktop runs app.ServeListener) or the
+// transport helper app injects into them (updatetransport probes through mcpx).
 func architectureTestImportViolation(from, to string) string {
 	feature := architectureFeature(strings.TrimSuffix(from, "_test"))
 	if feature == "" {
@@ -229,6 +237,18 @@ func architectureTestImportViolation(from, to string) string {
 
 	if other := architectureFeature(to); other != "" && other != feature && !architectureFeatureEdge(feature, other) {
 		return "feature tests may import another feature only through a declared edge"
+	}
+
+	return ""
+}
+
+// architectureForbiddenPackage names packages that must not exist. The
+// application feature has no HTTP or MCP adapter, so neither transport can
+// reach installation or maintenance.
+func architectureForbiddenPackage(path string) string {
+	rel := architectureInternal(path)
+	if architectureWithin(rel, "containers/application/ui/http") || architectureWithin(rel, "containers/application/ui/mcp") {
+		return "the application feature has no HTTP or MCP adapter"
 	}
 
 	return ""
@@ -291,6 +311,10 @@ func architectureImportViolation(from, to string) string {
 		return "only entry points and app wiring may import app"
 	}
 
+	if reason := architectureRestrictedImport(from, to); reason != "" {
+		return reason
+	}
+
 	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureShell(to)) {
 		return "infrastructure cannot depend on features or server/native shells"
 	}
@@ -310,11 +334,38 @@ func architectureImportViolation(from, to string) string {
 	return ""
 }
 
-// architectureShellImportViolation keeps features behind the registrars app
-// supplies. The native shell reaches the server through its local backend.
+// architectureRestrictedImport covers packages that must not exist and
+// packages only some importers may reach.
+func architectureRestrictedImport(from, to string) string {
+	for _, path := range []string{from, to} {
+		if reason := architectureForbiddenPackage(path); reason != "" {
+			return reason
+		}
+	}
+
+	// The fixtures import testing; the views checked here load no test files,
+	// so any import they see comes from production code.
+	if architectureWithin(architectureInternal(to), "ship/testdump") && !architectureWithin(architectureInternal(from), "ship/testdump") {
+		return "only tests may import the dump fixtures"
+	}
+
+	if architectureFeature(from) == "application" && (architectureWithin(architectureInternal(to), "ship/watchsession") || architectureWithin(architectureInternal(to), "ship/device")) {
+		return "the application feature owns no watch session or device"
+	}
+
+	return ""
+}
+
+// architectureShellImportViolation keeps features and the account client
+// behind the registrars app supplies. The native shell reaches the server
+// through its local backend.
 func architectureShellImportViolation(from, to string) string {
 	if architectureFeature(to) != "" {
 		return "shells receive feature registrations from app"
+	}
+
+	if architectureWithin(architectureInternal(to), "ship/gc") {
+		return "shells reach the account only through app's feature registrations"
 	}
 
 	if architectureWithin(architectureInternal(from), "ship/desktop") && architectureShell(to) && !architectureWithin(architectureInternal(to), "ship/desktop") {
@@ -362,13 +413,16 @@ func architectureApprovedLibrary(from, to string) bool {
 	if architectureInternal(from) == "ship/hostinfo" && to == architectureRegistry {
 		return true
 	}
+	// File protection and console hiding call this exact package, not registry.
+	switch architectureInternal(from) {
+	case "ship/hostfile", "ship/hostexec":
+		return to == architectureWindows
+	}
 
 	allow := map[string][]string{
 		"ship/device/mtp":        {"github.com/google/gousb"},
 		"ship/ciqstore":          {"golang.org/x/net/html"},
 		"ship/gc":                {"golang.org/x/net/publicsuffix"},
-		"ship/hostfile":          {architectureWindows},
-		"ship/hostexec":          {architectureWindows},
 		"containers/application": {"golang.org/x/mod/semver"}, // pinned SemVer policy without the Wails runtime
 	}
 	for owner, libraries := range allow {
@@ -408,7 +462,7 @@ func architectureOwnerViolation(caller, pkg, name string) string {
 		}
 
 		for _, allowed := range owner.callers {
-			if architectureWithin(caller, architectureModule+"/"+allowed) {
+			if caller == architectureModule+"/"+allowed {
 				return ""
 			}
 		}

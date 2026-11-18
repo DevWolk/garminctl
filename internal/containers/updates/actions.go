@@ -133,9 +133,9 @@ func NewCheckAppsAction(installed InstalledApps) *CheckAppsAction {
 	return &CheckAppsAction{installed: installed}
 }
 
-// Run preserves per-app errors and case-sensitive registry deduplication.
+// Run preserves per-app errors and deduplicates registry ids without regard to case.
 func (a *CheckAppsAction) Run(ctx context.Context) ([]AppUpdate, error) {
-	apps, err := a.installed(ctx)
+	entries, err := a.installed(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +144,13 @@ func (a *CheckAppsAction) Run(ctx context.Context) ([]AppUpdate, error) {
 
 	var out []AppUpdate
 
-	for _, a := range apps {
-		if a.FileName == "" || a.ID == "" || seen[a.ID] {
+	for _, a := range entries {
+		key := apps.IDKey(a.ID)
+		if a.FileName == "" || a.ID == "" || seen[key] {
 			continue
 		}
 
-		seen[a.ID] = true
+		seen[key] = true
 		au := AppUpdate{App: a, InstalledVersion: a.Version, StoreURL: "https://apps.garmin.com/apps/" + a.ID}
 
 		info, err := ciqstore.AppInfo(ctx, a.ID)
@@ -157,7 +158,7 @@ func (a *CheckAppsAction) Run(ctx context.Context) ([]AppUpdate, error) {
 			au.Error = err.Error()
 		} else {
 			au.LatestVersion, au.LatestName = info.LatestInternalVersion, info.LatestExternalVersion
-			au.UpdateAvailable = info.LatestInternalVersion > a.Version
+			au.UpdateAvailable = a.UpdateAvailable(info.LatestInternalVersion)
 		}
 
 		out = append(out, au)

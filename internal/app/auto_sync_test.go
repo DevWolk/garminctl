@@ -11,6 +11,25 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
+func signedIn() bool { return true }
+
+func TestAutoSyncNotesHaveNothingToDoWhenSignedOut(t *testing.T) {
+	t.Parallel()
+
+	coordinator := connect.NewSyncCoordinator(t.Context(), new(lifecycle.Gate))
+	t.Cleanup(func() { _ = coordinator.Close(context.WithoutCancel(t.Context())) })
+
+	runner := func(watchsession.ConnectionEpoch, bool, bool) connect.SyncRunner {
+		t.Error("signed-out plug-in started a sync")
+
+		return func(context.Context, connect.Progress) (*connect.SyncResult, error) { return nil, nil }
+	}
+
+	if notes, ok := autoSyncNotes(func() bool { return false }, coordinator, runner)(t.Context(), 3); !ok || notes != nil {
+		t.Fatalf("notes=%q ok=%t", notes, ok)
+	}
+}
+
 func TestAutoSyncNotesDescribeFinishedJob(t *testing.T) {
 	t.Parallel()
 
@@ -45,7 +64,7 @@ func TestAutoSyncNotesDescribeFinishedJob(t *testing.T) {
 				return func(context.Context, connect.Progress) (*connect.SyncResult, error) { return tt.result, tt.err }
 			}
 
-			notes, ok := autoSyncNotes(coordinator, runner)(t.Context(), 7)
+			notes, ok := autoSyncNotes(signedIn, coordinator, runner)(t.Context(), 7)
 			if !ok || !slices.Equal(notes, tt.want) || len(got) != 1 || got[0] != (connect.SyncOptions{Upload: true, Download: true, Epoch: 7}) {
 				t.Fatalf("notes=%q ok=%t runner calls=%+v", notes, ok, got)
 			}
@@ -70,7 +89,7 @@ func TestAutoSyncNotesReportStartFailureAndCancellation(t *testing.T) {
 		}
 	}
 
-	if notes, ok := autoSyncNotes(stopped, runner)(t.Context(), 1); !ok || len(notes) != 1 || notes[0][:len("sync failed: ")] != "sync failed: " {
+	if notes, ok := autoSyncNotes(signedIn, stopped, runner)(t.Context(), 1); !ok || len(notes) != 1 || notes[0][:len("sync failed: ")] != "sync failed: " {
 		t.Fatalf("start failure notes=%q ok=%t", notes, ok)
 	}
 
@@ -83,7 +102,7 @@ func TestAutoSyncNotesReportStartFailureAndCancellation(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		if notes, ok := autoSyncNotes(coordinator, runner)(ctx, 1); ok || notes != nil {
+		if notes, ok := autoSyncNotes(signedIn, coordinator, runner)(ctx, 1); ok || notes != nil {
 			t.Errorf("cancelled wait notes=%q ok=%t", notes, ok)
 		}
 	}()

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/mcpserver"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
@@ -47,7 +46,8 @@ type Features struct {
 	// Refresh drops the cached device state of the leased watch.
 	Refresh func(*watchsession.Session)
 	// AutoSync runs or joins the sync for a newly plugged watch and describes
-	// its outcome. ok is false when ctx ended before the sync finished.
+	// its outcome; without a signed-in account it returns no notes and ok.
+	// ok is false when ctx ended before the sync finished.
 	AutoSync func(ctx context.Context, epoch watchsession.ConnectionEpoch) (notes []string, ok bool)
 }
 
@@ -64,7 +64,6 @@ type Runtime interface {
 type Server struct {
 	features   Features
 	manager    *watchsession.Manager
-	cloud      *gc.Client
 	runtime    Runtime
 	watchDone  <-chan struct{}
 	auto       autoState
@@ -85,11 +84,11 @@ type statusResponse struct {
 
 // ServeRuntime serves an already-bound listener with owners supplied by the
 // composition root. It owns the listener and closes the runtime on every exit.
-func ServeRuntime(listener net.Listener, runtime Runtime, account *gc.Client, autoSync bool, version string, features Features) error {
+func ServeRuntime(listener net.Listener, runtime Runtime, autoSync bool, version string, features Features) error {
 	ctx, cancel := context.WithCancel(runtime.Context())
 	defer cancel()
 
-	s := serverWithRuntime(runtime, account, autoSync, features)
+	s := serverWithRuntime(runtime, autoSync, features)
 
 	s.version = version
 	addr := listener.Addr().String()
@@ -162,8 +161,8 @@ func ServeRuntime(listener net.Listener, runtime Runtime, account *gc.Client, au
 	return shutdownErr
 }
 
-func serverWithRuntime(runtime Runtime, account *gc.Client, autoSync bool, features Features) *Server {
-	s := &Server{features: features, manager: runtime.Manager(), runtime: runtime, cloud: account, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
+func serverWithRuntime(runtime Runtime, autoSync bool, features Features) *Server {
+	s := &Server{features: features, manager: runtime.Manager(), runtime: runtime, probeQuiet: watchTick, watchEvery: watchTick, notify: notify.Send}
 	s.auto.Enabled = autoSync
 
 	return s

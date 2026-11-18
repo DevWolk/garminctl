@@ -189,7 +189,7 @@ func validateRecoverySnapshot(value RecoverySnapshot) error {
 
 	missing := make(map[string]bool, len(value.MissingSources))
 	for _, area := range value.MissingSources {
-		if (area != "config" && area != "cache") || missing[area] {
+		if (area != StateAreaConfig && area != StateAreaCache) || missing[area] {
 			return errors.New("snapshot has an unknown or duplicate missing source")
 		}
 

@@ -11,6 +11,13 @@ var (
 	stateRecovery = regexp.MustCompile(`^(.+)\-([0-9]{8})-([0-9]{6})-([A-Za-z0-9]+)$`)
 )
 
+// State areas name the roots a data backup copies: the config directory that
+// holds the account store and the cache directory.
+const (
+	StateAreaConfig = "config"
+	StateAreaCache  = "cache"
+)
+
 // StatePathKind describes an explicitly selected local state path.
 type StatePathKind int
 
@@ -27,7 +34,7 @@ func StatePath(area, relative string) StatePathKind {
 		return StateIgnore
 	}
 
-	if area == "config" {
+	if area == StateAreaConfig {
 		if relative == "garmin-connect.json" || relative == "garmin-connect.json.mfa" {
 			return StateFile
 		}
@@ -35,7 +42,7 @@ func StatePath(area, relative string) StatePathKind {
 		return StateIgnore
 	}
 
-	if area != "cache" {
+	if area != StateAreaCache {
 		return StateIgnore
 	}
 

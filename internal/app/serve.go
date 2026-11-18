@@ -77,7 +77,7 @@ func WatchSource(root, deviceID string) string {
 func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, source string, autoSync bool, version string) error {
 	account := gc.New(gc.DefaultStorePath())
 
-	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{
+	return web.ServeRuntime(listener, runtime, autoSync, version, web.Features{
 		HTTP: []httpx.RouteRegistrar{
 			&connecthttp.Handler{Manager: runtime.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: ConnectFor(runtime, account), ForgetSessionCopies: ForgetApplicationSessionCopies, JobFor: func(epoch watchsession.ConnectionEpoch) *connect.Cloud {
 				return JobConnect(runtime, account, epoch)
@@ -97,7 +97,7 @@ func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, sourc
 		WatchModel:      WatchModel,
 		SoftwareUpdates: SoftwareUpdateNames,
 		Refresh:         refreshWith(runtime.AppSchemaCacheFor),
-		AutoSync:        autoSyncNotes(runtime.Sync, connectRunner(runtime, account)),
+		AutoSync:        autoSyncNotes(account.LoggedIn, runtime.Sync, connectRunner(runtime, account)),
 	})
 }
 

@@ -1,7 +1,11 @@
 // Package apps owns the installed application registry and app operations.
 package apps
 
-import "github.com/DevWolk/garminctl/internal/ship/ciq"
+import (
+	"strings"
+
+	"github.com/DevWolk/garminctl/internal/ship/ciq"
+)
 
 // App is an installed application listed in GARMIN/Apps/OUT.BIN.
 type App struct {
@@ -16,6 +20,14 @@ type App struct {
 	NativeID int    `json:"nativeId,omitempty"` // built-in apps only
 	Native   bool   `json:"native"`
 }
+
+// IDKey is the form of an app id that store records and installed apps are
+// matched on: ids compare without regard to case.
+func IDKey(id string) string { return strings.ToLower(id) }
+
+// UpdateAvailable reports whether the store's internal version latest is newer
+// than the installed build.
+func (a App) UpdateAvailable(latest int) bool { return latest > a.Version }
 
 // AppChange is one difference between the registry and the pending IN.BIN.
 type AppChange struct {
