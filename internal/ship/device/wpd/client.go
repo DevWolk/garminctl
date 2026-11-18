@@ -239,20 +239,35 @@ func (b *Bridge) call(ctx context.Context, req map[string]any) (*response, error
 
 	b.startWorkers()
 	// Admission arms cancellation for blocked pipe writes as well as reads.
-	// abort does not take mu, which is held throughout this exchange.
-	stop := context.AfterFunc(ctx, b.abort)
+	// abort does not take mu, which is held throughout this exchange. Once the
+	// reply has arrived the operation is complete and cancellation no longer
+	// aborts the bridge.
+	const (
+		running = iota
+		replied
+		aborted
+	)
+
+	var state atomic.Int32
+
+	stop := context.AfterFunc(ctx, func() {
+		if state.CompareAndSwap(running, aborted) {
+			b.abort()
+		}
+	})
 	defer func() {
-		if !stop() {
+		if !stop() && state.Load() != replied {
 			// Finish an already scheduled abort before releasing the call lock.
 			b.abort()
 		}
 	}()
 
-	return b.exchange(ctx, append(data, '\n'))
+	return b.exchange(ctx, append(data, '\n'), func() { state.CompareAndSwap(running, replied) })
 }
 
-// exchange runs with mu held and the caller's cancellation hook armed.
-func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
+// exchange runs with mu held and the caller's cancellation hook armed. It calls
+// settle once the bridge has answered this request.
+func (b *Bridge) exchange(ctx context.Context, data []byte, settle func()) (*response, error) {
 	n, err := b.stdin.Write(data)
 	if err == nil && n != len(data) {
 		err = io.ErrShortWrite
@@ -271,9 +286,9 @@ func (b *Bridge) exchange(ctx context.Context, data []byte) (*response, error) {
 		return nil, b.fail(errors.Join(ctx.Err(), errors.New("bridge response ID does not match request")))
 	}
 
-	if err := ctx.Err(); err != nil {
-		return nil, b.fail(err)
-	}
+	// The reply settles the outcome even if ctx ends now: reporting a completed
+	// write as failed would make a retry duplicate it.
+	settle()
 
 	if !resp.OK {
 		err := remoteError(resp)
@@ -609,10 +624,21 @@ func (d *Device) Read(ctx context.Context, path string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(resp.B64)
 }
 
-// Write implements device.Device.
+// Write implements device.Device. The bridge deletes an existing file before
+// it creates the new one inside this single request, so once admitted the
+// request runs without the caller's cancellation, bounded by its own timeout.
+// Abort still interrupts it.
 func (d *Device) Write(ctx context.Context, path string, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	req := pathReq("write", path)
 	req["b64"] = base64.StdEncoding.EncodeToString(data)
+
+	ctx, cancel := device.Detached(ctx, len(data))
+	defer cancel()
+
 	_, err := d.call(ctx, req)
 
 	return err

@@ -11,7 +11,11 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
-func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+// psQuotes doubles every character PowerShell treats as a single quote:
+// ASCII ' and U+2018, U+2019, U+201A, U+201B.
+var psQuotes = strings.NewReplacer("'", "''", "\u2018", "\u2018\u2018", "\u2019", "\u2019\u2019", "\u201a", "\u201a\u201a", "\u201b", "\u201b\u201b")
+
+func psQuote(s string) string { return "'" + psQuotes.Replace(s) + "'" }
 
 // Send shows a balloon notification through PowerShell and waits for its child.
 // The caller owns its worker. Ending ctx removes the balloon and joins the child;

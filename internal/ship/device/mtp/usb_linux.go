@@ -46,6 +46,21 @@ func (u *usbWire) Close() error {
 	return errors.Join(err, u.context.Close())
 }
 
+// newUSBContext turns the panic gousb raises when libusb_init fails into an error.
+func newUSBContext(newContext func() *gousb.Context) (usb *gousb.Context, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if cause, ok := r.(error); ok {
+				err = fmt.Errorf("initialize libusb: %w", cause)
+			} else {
+				err = fmt.Errorf("initialize libusb: %v", r)
+			}
+		}
+	}()
+
+	return newContext(), nil
+}
+
 func usbInfo(d *gousb.DeviceDesc) device.Info {
 	return device.Info{ID: fmt.Sprintf("usb:%03d:%03d", d.Bus, d.Address), Name: fmt.Sprintf("Garmin USB %04x", uint16(d.Product)), Manufacturer: "Garmin"}
 }
@@ -75,12 +90,15 @@ func Devices(ctx context.Context) ([]device.Info, error) {
 		return nil, err
 	}
 
-	usb := gousb.NewContext()
+	usb, err := newUSBContext(gousb.NewContext)
+	if err != nil {
+		return nil, err
+	}
 	defer usb.Close() //nolint:errcheck // no devices are opened during enumeration.
 
 	var result []device.Info
 
-	_, err := usb.OpenDevices(func(desc *gousb.DeviceDesc) bool {
+	_, err = usb.OpenDevices(func(desc *gousb.DeviceDesc) bool {
 		if desc.Vendor == 0x091e {
 			result = append(result, usbInfo(desc))
 		}
@@ -103,7 +121,12 @@ func Open(ctx context.Context, id string) (*Device, error) {
 		return nil, err
 	}
 
-	u := &usbWire{context: gousb.NewContext()}
+	usb, err := newUSBContext(gousb.NewContext)
+	if err != nil {
+		return nil, err
+	}
+
+	u := &usbWire{context: usb}
 
 	devices, err := u.context.OpenDevices(func(desc *gousb.DeviceDesc) bool {
 		return desc.Vendor == 0x091e && usbInfo(desc).ID == selected.ID
