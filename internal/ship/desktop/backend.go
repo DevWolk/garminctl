@@ -27,9 +27,8 @@ type Backend struct {
 // StartBackend reserves the loopback port or reuses a running garminctl server.
 // It never takes over a port occupied by an unrelated program.
 func StartBackend(ctx context.Context, addr string, serve func(context.Context, net.Listener) error) (*Backend, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil || !net.ParseIP(host).IsLoopback() {
-		return nil, fmt.Errorf("desktop server address must be a loopback IP and port: %q", addr)
+	if _, err := loopbackHost(addr); err != nil {
+		return nil, err
 	}
 
 	var config net.ListenConfig
@@ -39,6 +38,41 @@ func StartBackend(ctx context.Context, addr string, serve func(context.Context, 
 		return existingBackend(ctx, addr, err)
 	}
 
+	return ownedBackend(ctx, listener, serve)
+}
+
+// StartPrivateBackend always starts a server of its own. A server already at
+// addr may serve another watch or directory, so when addr is taken it listens
+// on a free port of the same loopback IP instead of reusing that server.
+func StartPrivateBackend(ctx context.Context, addr string, serve func(context.Context, net.Listener) error) (*Backend, error) {
+	host, err := loopbackHost(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	var config net.ListenConfig
+
+	listener, err := config.Listen(ctx, "tcp", addr)
+	if err != nil {
+		listener, err = config.Listen(ctx, "tcp", net.JoinHostPort(host, "0"))
+		if err != nil {
+			return nil, fmt.Errorf("cannot start the desktop server: %w", err)
+		}
+	}
+
+	return ownedBackend(ctx, listener, serve)
+}
+
+func loopbackHost(addr string) (string, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || !net.ParseIP(host).IsLoopback() {
+		return "", fmt.Errorf("desktop server address must be a loopback IP and port: %q", addr)
+	}
+
+	return host, nil
+}
+
+func ownedBackend(ctx context.Context, listener net.Listener, serve func(context.Context, net.Listener) error) (*Backend, error) {
 	if serve == nil {
 		return nil, errors.Join(errors.New("desktop backend runner is required"), listener.Close())
 	}

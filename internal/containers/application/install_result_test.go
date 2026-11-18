@@ -50,8 +50,10 @@ func TestInstallationOutcomeSummaryNamesReleaseReasonAndLogs(t *testing.T) {
 func TestInstallationOutcomeIsResolvedOnlyWhenTheProgramsChanged(t *testing.T) {
 	t.Parallel()
 
-	update := application.InstallationOutcome{Tag: "v0.6.4", Status: application.InstallationFailed, From: "0.6.3"}
-	rollback := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed, From: "0.6.3"}
+	const running, older = "0.6.3", "0.6.2"
+
+	update := application.InstallationOutcome{Tag: "v0.6.4", Status: application.InstallationFailed, From: running}
+	rollback := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed, From: running}
 	legacy := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed}
 
 	for _, tt := range []struct {
@@ -61,13 +63,13 @@ func TestInstallationOutcomeIsResolvedOnlyWhenTheProgramsChanged(t *testing.T) {
 		resolved     bool
 	}{
 		{"update installed", update, "0.6.4", "0.6.4", true},
-		{"update not installed", update, "0.6.3", "0.6.3", false},
-		{"desktop replaced, CLI not", update, "0.6.4", "0.6.3", false},
+		{"update not installed", update, running, running, false},
+		{"desktop replaced, CLI not", update, "0.6.4", running, false},
 		{"later Setup by hand", update, "0.6.5", "0.6.5", true},
-		{"rollback failed", rollback, "0.6.3", "0.6.3", false},
-		{"rollback installed", rollback, "0.6.2", "0.6.2", true},
-		{"older record, target running", legacy, "0.6.2", "0.6.2", true},
-		{"older record, later running", legacy, "v0.6.3", "0.6.3", true},
+		{"rollback failed", rollback, running, running, false},
+		{"rollback installed", rollback, older, older, true},
+		{"older record, target running", legacy, older, older, true},
+		{"older record, later running", legacy, "v0.6.3", running, true},
 		{"older record, older running", legacy, "0.6.1", "0.6.1", false},
 		{"development build", update, "dev", "dev", false},
 	} {

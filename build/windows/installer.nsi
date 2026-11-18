@@ -63,6 +63,15 @@ Section "garminctl"
   File "../../bin/garmin-desktop.exe"
   File "../../bin/garminctl.exe"
   File "../../LICENSE"
+  ; "garminctl autostart on" starts its own CLI copy at sign-in; keep it at this
+  ; version. A copy in use by a running server is skipped instead of failing Setup.
+  ${If} ${FileExists} "$LOCALAPPDATA\garminctl\garminctl.exe"
+    SetOverwrite try
+    SetOutPath "$LOCALAPPDATA\garminctl"
+    File "../../bin/garminctl.exe"
+    SetOverwrite on
+    SetOutPath "$INSTDIR"
+  ${EndIf}
   WriteUninstaller "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "Software\garminctl" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\garminctl-desktop" "DisplayName" "garminctl Desktop"
