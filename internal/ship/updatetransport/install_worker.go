@@ -336,7 +336,7 @@ func writeInstallResult(root *os.Root, directory string, r installRequest, outco
 		message = message[:4096]
 	}
 
-	data, err := json.Marshal(installResultRecord{r.Operation, r.Target.ReleaseTag, status, message})
+	data, err := json.Marshal(installResultRecord{Operation: r.Operation, Tag: r.Target.ReleaseTag, Status: status, Error: message, From: r.BuildVersion})
 	if err != nil {
 		return err
 	}

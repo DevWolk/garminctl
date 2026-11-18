@@ -47,22 +47,32 @@ func TestInstallationOutcomeSummaryNamesReleaseReasonAndLogs(t *testing.T) {
 	}
 }
 
-func TestInstallationOutcomeIsSupersededByTheSameOrALaterVersion(t *testing.T) {
+func TestInstallationOutcomeIsResolvedOnlyWhenTheProgramsChanged(t *testing.T) {
 	t.Parallel()
 
-	failed := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed}
+	update := application.InstallationOutcome{Tag: "v0.6.4", Status: application.InstallationFailed, From: "0.6.3"}
+	rollback := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed, From: "0.6.3"}
+	legacy := application.InstallationOutcome{Tag: "v0.6.2", Status: application.InstallationFailed}
+
 	for _, tt := range []struct {
-		running    string
-		superseded bool
+		name         string
+		outcome      application.InstallationOutcome
+		desktop, cli string
+		resolved     bool
 	}{
-		{"0.6.2", true},
-		{"v0.6.3", true},
-		{"0.6.1", false},
-		{"dev", false},
-		{"", false},
+		{"update installed", update, "0.6.4", "0.6.4", true},
+		{"update not installed", update, "0.6.3", "0.6.3", false},
+		{"desktop replaced, CLI not", update, "0.6.4", "0.6.3", false},
+		{"later Setup by hand", update, "0.6.5", "0.6.5", true},
+		{"rollback failed", rollback, "0.6.3", "0.6.3", false},
+		{"rollback installed", rollback, "0.6.2", "0.6.2", true},
+		{"older record, target running", legacy, "0.6.2", "0.6.2", true},
+		{"older record, later running", legacy, "v0.6.3", "0.6.3", true},
+		{"older record, older running", legacy, "0.6.1", "0.6.1", false},
+		{"development build", update, "dev", "dev", false},
 	} {
-		if got := failed.Superseded(tt.running); got != tt.superseded {
-			t.Errorf("Superseded(%q) = %t, want %t", tt.running, got, tt.superseded)
+		if got := tt.outcome.Resolved(tt.desktop, tt.cli); got != tt.resolved {
+			t.Errorf("%s: Resolved(%q, %q) = %t, want %t", tt.name, tt.desktop, tt.cli, got, tt.resolved)
 		}
 	}
 }

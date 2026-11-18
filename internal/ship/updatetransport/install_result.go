@@ -27,13 +27,15 @@ type installResultRecord struct {
 	Tag       string `json:"tag"`
 	Status    string `json:"status"`
 	Error     string `json:"error,omitempty"`
+	// From is the build that handed the installation over.
+	From string `json:"from,omitempty"`
 }
 
 // InstallResult is what the helper recorded for one committed installation.
 // Directory holds its logs; Finished is when the record was written.
 type InstallResult struct {
-	Tag, Status, Error, Directory string
-	Finished                      time.Time
+	Tag, Status, Error, Directory, From string
+	Finished                            time.Time
 }
 
 // LastInstallResult returns the most recent record under the installer cache,
@@ -133,5 +135,5 @@ func readInstallResult(root *os.Root, operation string) (*InstallResult, error) 
 		return nil, errors.New("invalid installation result record")
 	}
 
-	return &InstallResult{Tag: record.Tag, Status: record.Status, Error: record.Error, Finished: info.ModTime()}, nil
+	return &InstallResult{Tag: record.Tag, Status: record.Status, Error: record.Error, From: record.From, Finished: info.ModTime()}, nil
 }

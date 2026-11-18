@@ -24,18 +24,32 @@ type InstallationOutcome struct {
 	Error     string    `json:"error,omitempty"`
 	Finished  time.Time `json:"finished"`
 	Directory string    `json:"directory"`
+	// From is the build that handed the installation over; older records lack it.
+	From string `json:"from,omitempty"`
 }
 
 // Incomplete reports an installation the user still has to look at.
 func (o InstallationOutcome) Incomplete() bool { return o.Status != InstallationInstalled }
 
-// Superseded reports that the running version already is the target of the
-// record or a later one, for example after the user ran Setup by hand. An
-// unreadable version supersedes nothing.
-func (o InstallationOutcome) Superseded(running string) bool {
-	target, current := semanticVersion(o.Tag), semanticVersion(running)
+// Resolved reports that the record no longer describes the installed
+// programs: desktop and CLI agree, and their version changed since the build
+// that handed the installation over, for example because the helper replaced
+// both or the user ran Setup by hand. A failed rollback leaves the handing-over
+// build running and stays reported. A record without its source build counts
+// as resolved once the programs reach its target or a later version.
+func (o InstallationOutcome) Resolved(desktop, cli string) bool {
+	running := semanticVersion(desktop)
+	if running == "" || running != semanticVersion(cli) {
+		return false
+	}
 
-	return target != "" && current != "" && semver.Compare(current, target) >= 0
+	if from := semanticVersion(o.From); from != "" {
+		return running != from
+	}
+
+	target := semanticVersion(o.Tag)
+
+	return target != "" && semver.Compare(running, target) >= 0
 }
 
 // Summary states the outcome in one sentence for the Application tab and the CLI.

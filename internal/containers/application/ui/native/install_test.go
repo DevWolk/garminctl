@@ -360,6 +360,8 @@ func TestNativeIdleStatusShowsLastIncompleteInstallation(t *testing.T) {
 		{"target running", failed, nil, false, installTestTag},
 		{"later running", failed, nil, false, "v4.6.0"},
 		{"older running", failed, nil, true, "v4.5.5"},
+		// A rollback from v4.6.0 that failed leaves v4.6.0 running.
+		{"rollback failed", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationFailed, From: "v4.6.0"}, nil, true, "v4.6.0"},
 		{"unknown", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationUnknown}, nil, true, ""},
 		{"installed", &application.InstallationOutcome{Tag: installTestTag, Status: application.InstallationInstalled}, nil, false, ""},
 		{"none", nil, nil, false, ""},
@@ -371,7 +373,7 @@ func TestNativeIdleStatusShowsLastIncompleteInstallation(t *testing.T) {
 			r := &installRecordsReader{outcome: tc.outcome, err: tc.err}
 			if tc.running != "" {
 				r.info = func(context.Context) (*application.InventoryResult, error) {
-					return &application.InventoryResult{Desktop: application.BinaryVersion{Version: tc.running}}, nil
+					return &application.InventoryResult{Desktop: application.BinaryVersion{Version: tc.running}, CLI: application.BinaryVersion{Version: tc.running}}, nil
 				}
 			}
 
