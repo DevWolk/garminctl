@@ -12,11 +12,7 @@ import (
 // still runs. Whether an authorization agent is registered is not visible
 // without a session-bus client, so a missing agent is still reported only by
 // the recorded installation result.
-func preflightNativeInstall(r installRequest, directory string) error {
-	if err := checkPrivateAncestry(directory); err != nil {
-		return err
-	}
-
+func preflightNativeInstall(r installRequest) error {
 	tools := []string{privilegeTool, rpmInstaller, rpmMetadataTool}
 	if r.Target.Installation == InstallDEB {
 		tools = []string{privilegeTool, debInstaller, debMetadataTool, debQueryTool, debCompareTool}

@@ -22,11 +22,6 @@ func prepareStage(ctx context.Context, cache, source string) (directory, executa
 		return "", "", err
 	}
 
-	// The cached CLI is executed from here and its package goes to the installer.
-	if err := checkPrivateAncestry(cache); err != nil {
-		return "", "", err
-	}
-
 	directory, err = os.MkdirTemp(cache, "stage-")
 	if err != nil {
 		return "", "", err
