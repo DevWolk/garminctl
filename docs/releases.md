@@ -83,6 +83,16 @@ before archiving. Each signing operation verifies the result with
 the private PFX and password are excluded. Signature verification in the
 builder does not establish acceptance by another Windows host's policy.
 
+## Configure the Garmin Connect key
+
+Garmin Connect sign-in signs its OAuth requests with the Connect app's public
+consumer key and secret. Set the Actions variables `GARMIN_OAUTH_CONSUMER_KEY`
+and `GARMIN_OAUTH_CONSUMER_SECRET` to build them into the binaries. Builds
+without them, including local builds by default, download the pair at run time
+from the bucket the deprecated garth project published. If Garmin changes the
+pair, sign-in fails with HTTP 401 until the variables are updated and a new
+release is built.
+
 ## Publish a tag
 
 Merge and validate the release commit on `main`, then create and push an

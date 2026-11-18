@@ -31,6 +31,10 @@ jobs:
   build:
     name: Build and check packages
     runs-on: ubuntu-latest
+    env:
+      # Public values of the Connect app; read by Make and GoReleaser.
+      GARMIN_OAUTH_CONSUMER_KEY: ${{ vars.GARMIN_OAUTH_CONSUMER_KEY }}
+      GARMIN_OAUTH_CONSUMER_SECRET: ${{ vars.GARMIN_OAUTH_CONSUMER_SECRET }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

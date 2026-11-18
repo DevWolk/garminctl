@@ -70,6 +70,22 @@ type consumer struct {
 	Secret string `json:"consumer_secret"`
 }
 
+// The Connect app's OAuth consumer, set at build time with -ldflags -X.
+// Builds without it download the key from consumerURL.
+var (
+	buildConsumerKey    string
+	buildConsumerSecret string
+)
+
+// builtConsumer returns the build-time consumer, or nil when the build has none.
+func builtConsumer(key, secret string) *consumer {
+	if key == "" || secret == "" {
+		return nil
+	}
+
+	return &consumer{Key: key, Secret: secret}
+}
+
 // Client is a Garmin Connect session. Safe for concurrent use.
 type Client struct {
 	Domain string
@@ -103,6 +119,7 @@ func DefaultStorePath() string {
 // New creates a client and loads a saved session from store, if any.
 func New(store string) *Client {
 	c := &Client{Domain: DefaultDomain, HTTP: &http.Client{Timeout: 5 * time.Minute}, store: store, now: time.Now}
+	c.consumer = builtConsumer(buildConsumerKey, buildConsumerSecret)
 
 	c.sess, c.storeErr = loadSession(store)
 	if c.sess.OAuth1 != nil && c.sess.OAuth1.Domain != "" {
