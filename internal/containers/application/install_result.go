@@ -2,6 +2,7 @@ package application
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -36,11 +37,13 @@ func (o InstallationOutcome) Summary() string {
 	case InstallationUnknown:
 		return fmt.Sprintf("The last update to %s was still installing when its monitoring ended on %s; check the installed version before trying again. Logs: %s", o.Tag, when, o.Directory)
 	default:
-		reason := o.Error
+		// The helper joins several causes with line breaks.
+		reason := strings.Join(strings.FieldsFunc(o.Error, func(r rune) bool { return r == '\n' || r == '\r' }), "; ")
 		if reason == "" {
 			reason = "no reason was recorded"
 		}
 
-		return fmt.Sprintf("The last update to %s on %s did not complete: %s. Logs: %s", o.Tag, when, reason, o.Directory)
+		// A step after the installer can fail, so the programs may already be replaced.
+		return fmt.Sprintf("The last update to %s on %s did not complete: %s. The programs may already be replaced; check the installed versions before trying again. Logs: %s", o.Tag, when, reason, o.Directory)
 	}
 }

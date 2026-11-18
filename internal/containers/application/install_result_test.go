@@ -26,6 +26,7 @@ func TestInstallationOutcomeSummaryNamesReleaseReasonAndLogs(t *testing.T) {
 	}{
 		{"installed", application.InstallationOutcome{Tag: tag, Status: application.InstallationInstalled, Finished: finished, Directory: logs}, false, []string{"installed " + tag, "2026-03-04 05:06"}},
 		{"failed", application.InstallationOutcome{Tag: tag, Status: application.InstallationFailed, Error: "exit status 126", Finished: finished, Directory: logs}, true, []string{tag, "did not complete: exit status 126", logs}},
+		{"a failure after the programs were replaced", application.InstallationOutcome{Tag: tag, Status: application.InstallationFailed, Error: "exit status 1\ncontext deadline exceeded", Finished: finished, Directory: logs}, true, []string{"did not complete: exit status 1; context deadline exceeded.", "check the installed versions", logs}},
 		{"failed without a reason", application.InstallationOutcome{Tag: tag, Status: application.InstallationFailed, Finished: finished}, true, []string{"no reason was recorded"}},
 		{"still running", application.InstallationOutcome{Tag: tag, Status: application.InstallationUnknown, Finished: finished, Directory: logs}, true, []string{"still installing", "check the installed version", logs}},
 	} {
