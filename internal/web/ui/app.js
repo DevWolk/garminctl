@@ -324,7 +324,7 @@ async function loadNewFiles() {
     $('#badge-pending').hidden = total === 0;
     $('#badge-pending').textContent = total;
     if (!total) { ul.innerHTML = '<li class="muted">No pending changes.</li>'; return; }
-    ul.innerHTML = '';
+    ul.replaceChildren();
     if (changes.length) {
       const li = el(`<li><div><div class="what">App list: ${changes.length} change${changes.length === 1 ? '' : 's'}</div><div class="meta">${esc(changes.map((c) => `${c.name} → ${c.hidden ? 'hidden' : 'shown'}`).join(', '))} · <span class="mono">GARMIN/Apps/IN.BIN</span></div></div><button class="btn small danger">Cancel</button></li>`);
       li.querySelector('button').onclick = async () => {
@@ -379,7 +379,7 @@ function renderSettings() {
   const root = $('#settings-groups');
   const q = $('#settings-filter').value.trim().toLowerCase();
   const showUnknown = $('#settings-unknown').checked;
-  root.innerHTML = '';
+  root.replaceChildren();
   const counts = {};
   for (const r of state.rows) counts[r.mesg] = Math.max(counts[r.mesg] || 0, r.index + 1);
   const groups = new Map();
@@ -396,7 +396,7 @@ function renderSettings() {
     const ia = groupOrder.indexOf(a), ib = groupOrder.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
   });
-  const jump = $('#settings-jump'); jump.innerHTML = ''; jump.hidden = names.length < 2;
+  const jump = $('#settings-jump'); jump.replaceChildren(); jump.hidden = names.length < 2;
   if (!names.length) { root.innerHTML = '<p class="muted">No settings match.</p>'; return; }
   for (const name of names) {
     const rows = groups.get(name);
@@ -494,7 +494,7 @@ async function loadApps() {
   root.innerHTML = '<p class="muted">Reading installed apps…</p>';
   try {
     await fetchApps();
-    root.innerHTML = '';
+    root.replaceChildren();
     const seen = new Set();
     for (const a of state.apps) {
       if (!a.fileName || seen.has(a.fileName)) continue;
@@ -574,7 +574,7 @@ async function loadAppSettings(app) {
       notice.hidden = false;
       notice.textContent = `No settings file found for ${app.name}.`;
       $('#app-hint').textContent = humanize(app.typeName);
-      $('#app-groups').innerHTML = '';
+      $('#app-groups').replaceChildren();
       setupPreview(app);
     } else $('#app-groups').innerHTML = `<p class="muted">${esc(e.message)}</p>`;
   }
@@ -595,7 +595,7 @@ function schemaFor(key) { return state.appSchema ? state.appSchema.settings.find
 function renderAppSettings() {
   const root = $('#app-groups');
   const q = $('#app-filter').value.trim().toLowerCase();
-  root.innerHTML = '';
+  root.replaceChildren();
   const order = state.appSchema ? state.appSchema.settings.map((s) => s.key).filter((k) => k in state.appValues) : state.appItems.map((i) => i.key);
   const groups = new Map();
   let scope = '';
@@ -910,7 +910,7 @@ function renderUpdates() {
   $('#badge-updates').hidden = n === 0; $('#badge-updates').textContent = n;
   $('#updates-status').textContent = `Checked ${u.checkedAt.toLocaleTimeString()} · ` + (n ? `${n} update${n > 1 ? 's' : ''} available` : u.softwareError || u.appsError ? 'some checks failed' : 'no updates found');
 
-  const sw = $('#sw-list'); sw.innerHTML = '';
+  const sw = $('#sw-list'); sw.replaceChildren();
   if (u.softwareError) sw.innerHTML = `<li class="muted">Could not reach Garmin: ${esc(u.softwareError)}</li>`;
   else if (!u.software.length) sw.innerHTML = '<li class="muted">No software updates found.</li>';
   for (const x of u.software || []) {
@@ -932,7 +932,7 @@ function renderUpdates() {
     sw.appendChild(li);
   }
 
-  const al = $('#app-updates'); al.innerHTML = '';
+  const al = $('#app-updates'); al.replaceChildren();
   if (u.appsError) al.innerHTML = `<li class="muted">${esc(u.appsError)}</li>`;
   else if (!(u.apps || []).length) al.innerHTML = '<li class="muted">No store apps installed.</li>';
   for (const a of u.apps || []) {
@@ -1064,7 +1064,7 @@ async function loadExtras() {
   if (state.health.extras) return;
   $('#extras-status').textContent = 'Loading from Garmin Connect…';
   try { state.health.extras = await api('GET', '/api/health/extras'); $('#extras-status').textContent = ''; renderExtras(); }
-  catch (e) { $('#extras-status').textContent = e.message; $('#extras-tiles').innerHTML = ''; }
+  catch (e) { $('#extras-status').textContent = e.message; $('#extras-tiles').replaceChildren(); }
 }
 function renderExtras() {
   const x = state.health.extras;
@@ -1073,7 +1073,7 @@ function renderExtras() {
     + (x.fitnessAge ? tile('Fitness age', Math.round(x.fitnessAge), `you are ${x.chronologicalAge}`) : '')
     + (x.hrv ? tile('HRV last night', `${x.hrv.lastNight}<small>ms</small>`, `weekly ${x.hrv.weeklyAvg} ms · ${esc(humanize(x.hrv.status.toLowerCase()))}`) : '')
     + (x.badges.length ? tile('Badges', x.badges.length, `${x.badges.reduce((a, b) => a + b.points, 0)} points`) : '');
-  const tb = $('#records-table tbody'); tb.innerHTML = '';
+  const tb = $('#records-table tbody'); tb.replaceChildren();
   for (const r of x.records) {
     const tr = el(`<tr${r.activityId ? ' class="act"' : ''}><td>${esc(r.label)}</td><td class="num"><b>${esc(r.display)}</b></td><td>${esc(r.date)}</td></tr>`);
     if (r.activityId) tr.onclick = () => window.open(`https://connect.garmin.com/modern/activity/${r.activityId}`, 'garmin-connect');
@@ -1131,11 +1131,11 @@ function pace(spd) { if (!spd) return ''; const s = 1000 / spd; return `${Math.f
 state.health.actsShown = 40;
 state.health.sport = 'all'; state.health.actsSort = prefs.get('actsSort', 'date'); $('#acts-sort').value = state.health.actsSort;
 function renderActivities() {
-  const tb = $('#acts-table tbody'); tb.innerHTML = '';
+  const tb = $('#acts-table tbody'); tb.replaceChildren();
   const everything = state.health.acts.activities;
   const counts = {};
   for (const a of everything) counts[a.sport] = (counts[a.sport] || 0) + 1;
-  const chips = $('#acts-sports'); chips.innerHTML = '';
+  const chips = $('#acts-sports'); chips.replaceChildren();
   if (!counts[state.health.sport] && state.health.sport !== 'all') state.health.sport = 'all';
   for (const sp of ['all', ...Object.keys(counts).sort((a, b) => counts[b] - counts[a])]) {
     const c = el(`<button class="chip${state.health.sport === sp ? ' active' : ''}" type="button">${sp === 'all' ? 'All' : esc(humanize(sp))} <span class="muted">${sp === 'all' ? everything.length : counts[sp]}</span></button>`);
@@ -1267,7 +1267,7 @@ function renderInstalled() {
   const apps = state.apps, q = $('#inst-filter').value.trim().toLowerCase();
   const counts = {};
   for (const a of apps) counts[a.typeName] = (counts[a.typeName] || 0) + 1;
-  const chips = $('#inst-types'); chips.innerHTML = '';
+  const chips = $('#inst-types'); chips.replaceChildren();
   const kinds = ['all', ...kindOrder.filter((k) => counts[k])];
   if (!counts[state.installed.type] && state.installed.type !== 'all') state.installed.type = 'all';
   for (const k of kinds) {
@@ -1287,7 +1287,7 @@ function renderInstalled() {
   if (state.installed.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name) || byKind(a, b));
   else if (state.installed.sort === 'source') rows.sort((a, b) => Number(a.native) - Number(b.native) || byKind(a, b));
   else rows.sort(byKind); // stable: keeps the watch's own order within a kind
-  const tb = $('#inst-table tbody'); tb.innerHTML = '';
+  const tb = $('#inst-table tbody'); tb.replaceChildren();
   for (const a of rows) {
     const listed = ['activity', 'glance', 'app', 'widget', 'datafield'].includes(a.typeName);
     const pend = pending.get(a.id + '/' + a.typeName);
@@ -1341,7 +1341,7 @@ async function loadMusic() {
   catch (e) { $('#music-table tbody').innerHTML = `<tr><td colspan="5" class="muted">${esc(e.message)}</td></tr>`; }
 }
 function renderMusic() {
-  const lib = state.music.lib, tb = $('#music-table tbody'); tb.innerHTML = '';
+  const lib = state.music.lib, tb = $('#music-table tbody'); tb.replaceChildren();
   const mq = ($('#music-q').value || '').trim().toLowerCase();
   for (const t of lib.tracks.filter((t) => !mq || `${t.artist || ''} ${t.album || ''} ${t.title}`.toLowerCase().includes(mq))) {
     const tr = el(`<tr><td class="chk"><input type="checkbox" data-path="${esc(t.path)}"${state.music.sel.has(t.path) ? ' checked' : ''}></td><td>${esc(t.artist || '')}</td><td>${esc(t.album || '')}</td><td title="${esc(t.path)}">${esc(t.title)}${t.folder !== 'Music' ? ` <span class="tag">${esc(t.folder)}</span>` : ''}</td><td class="num">${fmtSize(t.size)}</td></tr>`);
@@ -1429,7 +1429,7 @@ async function loadStore(more) {
   finally { if (generation === st.generation) st.busy = false; }
 }
 function renderStoreControls(view) {
-  const types = $('#store-types'); types.innerHTML = '';
+  const types = $('#store-types'); types.replaceChildren();
   for (const t of view.types) {
     const b = el(`<button class="chip${t.key === state.store.type ? ' active' : ''}" data-type="${esc(t.key)}">${esc(t.label)}</button>`);
     b.onclick = () => { state.store.type = t.key; prefs.set('storeType', t.key); document.querySelectorAll('#store-types .chip').forEach((x) => x.classList.toggle('active', x.dataset.type === t.key)); loadStore(); };
@@ -1455,7 +1455,7 @@ function storeMatches(a, f) {
   return true;
 }
 function renderStore() {
-  const grid = $('#store-grid'); grid.innerHTML = '';
+  const grid = $('#store-grid'); grid.replaceChildren();
   const f = storeFilters();
   const shown = state.store.apps.filter((a) => storeMatches(a, f));
   $('#store-filtered').textContent = shown.length === state.store.apps.length ? '' : `${shown.length} of ${state.store.apps.length} loaded apps match`;
@@ -1545,7 +1545,7 @@ async function loadCloudSettings() {
   catch (e) { root.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
 }
 function renderCloudSettings() {
-  const root = $('#cloud-settings'); root.innerHTML = '';
+  const root = $('#cloud-settings'); root.replaceChildren();
   for (const it of state.cloud.settings) {
     const pending = state.cloudPending.get(it.key);
     const cur = pending !== undefined ? pending : it.value;
@@ -1614,7 +1614,7 @@ $('#btn-logout').onclick = async () => {
 $('#btn-sync').onclick = async () => {
   try {
     await api('POST', '/api/cloud/sync', { upload: $('#sync-upload').checked, download: $('#sync-download').checked });
-    $('#sync-log').innerHTML = '';
+    $('#sync-log').replaceChildren();
     delete $('#sync-log').dataset.lines;
     pollSync();
   } catch (e) { toast(e.message, 'bad'); }
