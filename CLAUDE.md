@@ -20,6 +20,9 @@ Garmin watch manager with a native desktop app, CLI, web UI and MCP server.
 - For Go work load the `cc-skills-golang:golang-how-to` skill first; it
   routes to the lint, testing, security and concurrency guidance this
   project follows.
+- Publish a release only as `docs/releases.md` ("Publish a tag") says: an
+  annotated tag on the validated `main` commit,
+  `git tag -a vX.Y.Z -m "Release vX.Y.Z"`, never a lightweight one.
 - Keep documentation and UI text concise, current and device-neutral.
   Document supported behavior and constraints; keep local test reports out of
   user guides.
