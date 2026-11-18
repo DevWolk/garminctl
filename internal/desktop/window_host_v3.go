@@ -140,8 +140,17 @@ func (h *v3WindowHost) menu(service *App) {
 	help.Add("Application updates…").OnClick(func(_ *application.Context) { service.emit("application") })
 	h.app.Menu.Set(menu)
 }
-func (h *v3WindowHost) Emit(action string)            { h.app.Event.Emit("desktop:action", action) }
-func (h *v3WindowHost) Quit()                         { h.app.Quit() }
+func (h *v3WindowHost) Emit(action string) { h.app.Event.Emit("desktop:action", action) }
+func (h *v3WindowHost) Quit()              { h.app.Quit() }
+
+// Reveal shows the main window when its page has loaded but the window is not
+// on screen. Windows ignores a program's first show request when its starter
+// asked for a hidden window, as the updater of v0.6.0 did on restart.
+func (h *v3WindowHost) Reveal() {
+	if window := h.window.Load(); window != nil && !window.IsVisible() {
+		window.Show()
+	}
+}
 func (h *v3WindowHost) OpenExternal(raw string) error { return h.app.Browser.OpenURL(raw) }
 func (h *v3WindowHost) SaveFile(ctx context.Context, name string) (string, error) {
 	if err := ctx.Err(); err != nil {

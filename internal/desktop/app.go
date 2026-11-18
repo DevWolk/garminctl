@@ -113,6 +113,7 @@ func (a *App) releaseClose() {
 func (a *App) Ready() {
 	a.ready.Store(true)
 	slog.Info("desktop window ready")
+	a.host.Reveal()
 
 	if a.onReady != nil {
 		a.readyNotice.Do(func() {
