@@ -518,7 +518,7 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oauth2 exchange answered %s", resp.Status)
+		return nil, fmt.Errorf("oauth2 exchange: %w", &HTTPError{Status: resp.StatusCode, Body: string(b), URL: req.URL.Redacted()})
 	}
 
 	var t OAuth2Token
@@ -553,7 +553,10 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 
 	n2, err := c.exchange(ctx, o1, false)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
+		// Only Garmin's 401 to the exchange means the saved token is no longer
+		// valid. A network error or a 403 from a firewall in front of Garmin is
+		// temporary and must not delete the session.
+		if rejected := (*HTTPError)(nil); errors.As(err, &rejected) && rejected.Status == http.StatusUnauthorized {
 			return "", errors.Join(fmt.Errorf("%w: the saved session was rejected, sign in again", ErrNotLoggedIn), c.logout(o1))
 		}
 

@@ -382,3 +382,45 @@ func TestMFACancellationAndEmptyCodeDoNotConsumeChallenge(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Only Garmin's 401 to the token exchange deletes the saved session; a 403
+// from a firewall in front of Garmin is temporary.
+func TestTokenRefreshKeepsSessionOnForbidden(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		status int
+		kept   bool
+	}{{http.StatusForbidden, true}, {http.StatusBadGateway, true}, {http.StatusUnauthorized, false}} {
+		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "session.json")
+			if err := New(path).saveSession(testSession(oldTestEmail)); err != nil {
+				t.Fatal(err)
+			}
+
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/oauth-service/oauth/exchange/user/2.0" {
+					http.Error(w, "refused", tt.status)
+					return
+				}
+
+				(&fakeSSO{}).ServeHTTP(w, r)
+			})
+
+			_, err := fakeSSOClient(t, path, handler)().bearer(t.Context())
+			if err == nil {
+				t.Fatal("refresh succeeded")
+			}
+
+			if kept := New(path).LoggedIn(); kept != tt.kept {
+				t.Fatalf("session kept = %t after HTTP %d: %v", kept, tt.status, err)
+			}
+
+			if errors.Is(err, ErrNotLoggedIn) == tt.kept {
+				t.Fatalf("HTTP %d error = %v", tt.status, err)
+			}
+		})
+	}
+}
