@@ -103,7 +103,7 @@ func serveContractRoot(t *testing.T, open watchsession.Opener) *contractServer {
 	go func() {
 		defer close(done)
 
-		serveErr = app.ServeListener(ctx, listener, open, false, contractVersion)
+		serveErr = app.ServeListener(ctx, listener, open, "", false, contractVersion)
 	}()
 
 	client := &http.Client{Transport: new(http.Transport), Timeout: 10 * time.Second}

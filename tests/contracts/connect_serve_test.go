@@ -160,7 +160,7 @@ func serveConnectRoot(t *testing.T, root string, opens, closes *atomic.Int32) (s
 			dev, err := device.NewDirFS(root)
 
 			return trackedRootDevice{Device: dev, closes: closes, settingsReads: new(atomic.Int32)}, err
-		}, false, "connect-root-test")
+		}, "", false, "connect-root-test")
 	}()
 
 	stop := sync.OnceFunc(func() {

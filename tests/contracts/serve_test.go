@@ -128,7 +128,7 @@ func TestServeListenerKeepsOneLazyWatchAcrossHTTPAndMCP(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		serveErr = app.ServeListener(ctx, listener, open, false, "root-test")
+		serveErr = app.ServeListener(ctx, listener, open, "", false, "root-test")
 	}()
 
 	stop := sync.OnceFunc(func() {

@@ -19,10 +19,10 @@ func TestStartBackend(t *testing.T) {
 	root := testdump.Root(t)
 	open := func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }
 	serve := func(ctx context.Context, listener net.Listener) error {
-		return app.ServeListener(ctx, listener, open, false, "test-version")
+		return app.ServeListener(ctx, listener, open, "", false, "test-version")
 	}
 
-	backend, err := StartBackend(t.Context(), "127.0.0.1:0", serve)
+	backend, err := StartBackend(t.Context(), "127.0.0.1:0", "", serve)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestStartBackend(t *testing.T) {
 		}
 	})
 
-	other, err := StartBackend(t.Context(), backend.URL.Host, serve)
+	other, err := StartBackend(t.Context(), backend.URL.Host, "", serve)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestStartBackendRefusesUnrelatedServer(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	_, err := StartBackend(t.Context(), strings.TrimPrefix(server.URL, "http://"), nil)
+	_, err := StartBackend(t.Context(), strings.TrimPrefix(server.URL, "http://"), "", nil)
 	if err == nil {
 		t.Fatal("accepted an unrelated service as garminctl")
 	}
@@ -88,24 +88,27 @@ func TestStartBackendRejectsNonLoopback(t *testing.T) {
 		t.Run(address, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := StartBackend(t.Context(), address, nil); err == nil {
+			if _, err := StartBackend(t.Context(), address, "", nil); err == nil {
 				t.Fatal("accepted a non-loopback address")
 			}
 		})
 	}
 }
 
-func TestStartPrivateBackendNeverReusesARunningServer(t *testing.T) {
+// A window for another watch or directory never reuses the server on the
+// port; one for the same source does.
+func TestStartBackendReusesOnlyAServerForTheSameSource(t *testing.T) {
 	t.Parallel()
+
 	root := testdump.Root(t)
 	open := func(_ context.Context) (device.Device, error) { return device.NewDirFS(root) }
-	serveAs := func(version string) func(context.Context, net.Listener) error {
+	serveAs := func(source, version string) func(context.Context, net.Listener) error {
 		return func(ctx context.Context, listener net.Listener) error {
-			return app.ServeListener(ctx, listener, open, false, version)
+			return app.ServeListener(ctx, listener, open, source, false, version)
 		}
 	}
 
-	running, err := StartBackend(t.Context(), "127.0.0.1:0", serveAs("autostart"))
+	running, err := StartBackend(t.Context(), "127.0.0.1:0", "", serveAs("", "autostart"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +119,9 @@ func TestStartPrivateBackendNeverReusesARunningServer(t *testing.T) {
 		}
 	})
 
-	private, err := StartPrivateBackend(t.Context(), running.URL.Host, serveAs("dump"))
+	dump := app.WatchSource(root, "")
+
+	private, err := StartBackend(t.Context(), running.URL.Host, dump, serveAs(dump, "dump"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +132,15 @@ func TestStartPrivateBackendNeverReusesARunningServer(t *testing.T) {
 
 	if version := serverVersion(t, private.URL.String()); version != "dump" {
 		t.Fatalf("window would talk to the %q server", version)
+	}
+
+	same, err := StartBackend(t.Context(), private.URL.Host, dump, serveAs(dump, "second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if same.URL.Host != private.URL.Host {
+		t.Fatalf("a window for the same directory started another server at %s", same.URL.Host)
 	}
 
 	if err := private.Close(); err != nil {

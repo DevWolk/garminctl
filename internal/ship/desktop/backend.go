@@ -24,27 +24,11 @@ type Backend struct {
 	closeErr  error
 }
 
-// StartBackend reserves the loopback port or reuses a running garminctl server.
-// It never takes over a port occupied by an unrelated program.
-func StartBackend(ctx context.Context, addr string, serve func(context.Context, net.Listener) error) (*Backend, error) {
-	if _, err := loopbackHost(addr); err != nil {
-		return nil, err
-	}
-
-	var config net.ListenConfig
-
-	listener, err := config.Listen(ctx, "tcp", addr)
-	if err != nil {
-		return existingBackend(ctx, addr, err)
-	}
-
-	return ownedBackend(ctx, listener, serve)
-}
-
-// StartPrivateBackend always starts a server of its own. A server already at
-// addr may serve another watch or directory, so when addr is taken it listens
-// on a free port of the same loopback IP instead of reusing that server.
-func StartPrivateBackend(ctx context.Context, addr string, serve func(context.Context, net.Listener) error) (*Backend, error) {
+// StartBackend reserves the loopback port or reuses a running garminctl server
+// that reads the same source (see app.WatchSource). When the server at addr
+// reads another watch or directory, it starts its own on a free port of the
+// same loopback IP. It never takes over a port occupied by an unrelated program.
+func StartBackend(ctx context.Context, addr, source string, serve func(context.Context, net.Listener) error) (*Backend, error) {
 	host, err := loopbackHost(addr)
 	if err != nil {
 		return nil, err
@@ -53,11 +37,22 @@ func StartPrivateBackend(ctx context.Context, addr string, serve func(context.Co
 	var config net.ListenConfig
 
 	listener, err := config.Listen(ctx, "tcp", addr)
+	if err == nil {
+		return ownedBackend(ctx, listener, serve)
+	}
+
+	running, err := existingBackend(ctx, addr, err)
 	if err != nil {
-		listener, err = config.Listen(ctx, "tcp", net.JoinHostPort(host, "0"))
-		if err != nil {
-			return nil, fmt.Errorf("cannot start the desktop server: %w", err)
-		}
+		return nil, err
+	}
+
+	if running.source == source {
+		return &Backend{URL: running.url}, nil
+	}
+
+	listener, err = config.Listen(ctx, "tcp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		return nil, fmt.Errorf("cannot start the desktop server: %w", err)
 	}
 
 	return ownedBackend(ctx, listener, serve)
@@ -87,7 +82,13 @@ func ownedBackend(ctx context.Context, listener net.Listener, serve func(context
 	return &Backend{URL: &url.URL{Scheme: "http", Host: listener.Addr().String()}, cancel: cancel, done: done}, nil
 }
 
-func existingBackend(ctx context.Context, addr string, listenErr error) (*Backend, error) {
+// runningServer is a garminctl server found at the requested address.
+type runningServer struct {
+	url    *url.URL
+	source string
+}
+
+func existingBackend(ctx context.Context, addr string, listenErr error) (*runningServer, error) {
 	u := &url.URL{Scheme: "http", Host: addr}
 
 	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -109,12 +110,13 @@ func existingBackend(ctx context.Context, addr string, listenErr error) (*Backen
 	var info struct {
 		Application string `json:"application"`
 		DesktopAPI  string `json:"desktopAPI"`
+		Source      string `json:"source"`
 	}
 	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&info) != nil || info.Application != applicationName || info.DesktopAPI != "1" {
 		return nil, fmt.Errorf("%s is occupied by another program or an older garminctl; stop it before opening the desktop app: %w", addr, listenErr)
 	}
 
-	return &Backend{URL: u}, nil
+	return &runningServer{url: u, source: info.Source}, nil
 }
 
 // Close shuts down only a server started by this application. A server that

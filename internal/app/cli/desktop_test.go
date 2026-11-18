@@ -34,7 +34,7 @@ func TestDesktopPassesRootAndDeviceToTheApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.HasPrefix(args[1], `\\wsl.localhost\Ubuntu\`) {
+	if !strings.HasPrefix(args[1], `\\wsl.localhost\Ubuntu`) {
 		t.Fatalf("root was not converted for Windows: %q", args[1])
 	}
 

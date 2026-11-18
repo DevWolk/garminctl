@@ -53,9 +53,9 @@ storage, and pending changes. The [tab guide](web-ui.md) covers available action
 [Garmin Connect](cloud-sync.md) describes automatic sync.
 
 The app starts a server on `127.0.0.1:8787` or reuses a compatible garminctl
-server already at that address. An unrelated or incompatible server causes a
-startup error. With `-root` or `-device` the app always starts its own server,
-on a free port when the address is taken. When the window exits, a server it
+server already at that address that reads the same watch or directory
+(`-root`, `-device`). A garminctl server for other data makes the app start its
+own on a free port; an unrelated or incompatible server causes a startup error. When the window exits, a server it
 started and its background sync stop; a reused server continues running.
 
 Launching the app again focuses its existing window. The View menu provides

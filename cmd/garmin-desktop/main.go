@@ -51,18 +51,12 @@ func run() error {
 	}
 
 	backend := new(app.ApplicationBackend)
+	source := app.WatchSource(*root, *deviceID)
 	serve := func(ctx context.Context, listener net.Listener) error {
-		return backend.ServeListener(ctx, listener, open, *root == "", version)
+		return backend.ServeListener(ctx, listener, open, source, *root == "", version)
 	}
 
-	// A server already running may serve another watch or directory, so a
-	// window opened for a chosen one starts its own.
-	start := desktop.StartBackend
-	if *root != "" || *deviceID != "" {
-		start = desktop.StartPrivateBackend
-	}
-
-	return desktop.Run(func() (*desktop.Backend, error) { return start(ctx, *addr, serve) }, func(ctx context.Context, scope desktop.Scope) {
+	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, source, serve) }, func(ctx context.Context, scope desktop.Scope) {
 		if startup == nil {
 			return
 		}
