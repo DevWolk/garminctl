@@ -9,3 +9,8 @@ coverage.out
 cmd/garmin-desktop/*.syso
 __pycache__/
 /expresswatch
+
+# Agent skills installed locally
+.agents/
+.claude/skills/
+skills-lock.json
