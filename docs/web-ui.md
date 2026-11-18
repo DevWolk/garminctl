@@ -11,7 +11,9 @@ API login. Host/port checks reject unexpected hostnames; Origin and browser
 fetch checks reject cross-origin API calls. Local clients can access the API.
 
 The server detects the USB watch automatically. **Connect watch** opens it
-manually, and **Reload** rereads device data. See [sync](cloud-sync.md) for
+manually, and **Reload** rereads device data. Reload asks before it drops
+unsaved watch and app settings changes and keeps them if the watch cannot be
+reread; unplugging the watch drops them. See [sync](cloud-sync.md) for
 automatic cloud actions and [CLI options](cli.md#servers) for directory mode.
 
 ## Tabs
