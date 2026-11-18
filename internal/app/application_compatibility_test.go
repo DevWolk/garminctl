@@ -145,10 +145,10 @@ func TestApplicationDataInspectionNamesTheFileAndTheReaderReason(t *testing.T) {
 	for _, tc := range []struct {
 		name, area, path, data, reason string
 	}{
-		{name: "account", area: applicationStateConfig, path: "garmin-connect.json", data: `{"laterField":1}`, reason: `unknown field "laterField"`},
-		{name: "pending verification", area: applicationStateConfig, path: "garmin-connect.json.mfa", data: `{"version":1}`, reason: "no creation time"},
+		{name: "account", area: application.StateAreaConfig, path: "garmin-connect.json", data: `{"laterField":1}`, reason: `unknown field "laterField"`},
+		{name: "pending verification", area: application.StateAreaConfig, path: "garmin-connect.json.mfa", data: `{"version":1}`, reason: "no creation time"},
 		{name: "upload ledger", area: "cache", path: "uploaded-123.json", data: `null`, reason: "must be a JSON object"},
-		{name: "readable account", area: applicationStateConfig, path: "garmin-connect.json", data: `{"email":"reader@example.invalid"}`},
+		{name: "readable account", area: application.StateAreaConfig, path: "garmin-connect.json", data: `{"email":"reader@example.invalid"}`},
 		{name: "opaque watch recovery copy", area: "cache", path: "OUT.BIN-20261101-100000-abc/OUT.BIN", data: "not JSON"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

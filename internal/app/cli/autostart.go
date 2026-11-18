@@ -11,14 +11,13 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/ship/clix"
-	"github.com/DevWolk/garminctl/internal/ship/device/wpd"
 	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 // autostart manages a Startup shortcut for the hidden Windows server.
 // Its binary copy in %LOCALAPPDATA%\garminctl does not depend on this checkout.
 func (c *cli) autostart(ctx context.Context, args []string) error {
-	ps := wpd.PowerShellPath()
+	ps := hostexec.PowerShellPath()
 	if ps == "" {
 		return errors.New("autostart needs Windows (or WSL with powershell.exe reachable)")
 	}

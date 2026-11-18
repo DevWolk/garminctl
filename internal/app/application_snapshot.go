@@ -11,11 +11,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
-	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
-
-// applicationBackups names the data backup directory beside the account store.
-const applicationBackups = "application-backups"
 
 type applicationDataSnapshots struct{ build string }
 
@@ -23,14 +19,14 @@ type applicationDataSnapshots struct{ build string }
 // verification state from every application data backup, so that signing out
 // leaves no copy a later restore could bring back. The backups stay usable.
 func ForgetApplicationSessionCopies(ctx context.Context) error {
-	account := gc.DefaultStorePath()
-	if account == "" {
+	_, backups, ok := applicationDataRoot()
+	if !ok {
 		return errors.New("application data directory is unavailable")
 	}
 
-	name := filepath.Base(account)
+	name := filepath.Base(gc.DefaultStorePath())
 
-	return hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups)).Forget(ctx, applicationStateConfig, name, name+".mfa")
+	return hostfile.NewSnapshotReader(backups).Forget(ctx, application.StateAreaConfig, name, name+".mfa")
 }
 
 // pruneApplicationBackups keeps the newest backups once a forward update was
@@ -38,12 +34,12 @@ func ForgetApplicationSessionCopies(ctx context.Context) error {
 // attempt evict a backup that an older version's rollback needs. A leftover that
 // cannot be removed now must not fail the update.
 func pruneApplicationBackups(ctx context.Context) {
-	account := gc.DefaultStorePath()
-	if account == "" {
+	_, backups, ok := applicationDataRoot()
+	if !ok {
 		return
 	}
 
-	if err := hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups)).Prune(ctx, application.RetainedBackups); err != nil {
+	if err := hostfile.NewSnapshotReader(backups).Prune(ctx, application.RetainedBackups); err != nil {
 		slog.Warn("application backup retention left files behind", "error", err)
 	}
 }
@@ -54,12 +50,10 @@ type applicationBackupMetadata struct {
 }
 
 func (s applicationDataSnapshots) Create(ctx context.Context, info application.PreflightInfo) (*application.DataSnapshot, error) {
-	account := gc.DefaultStorePath()
-	if account == "" {
+	config, backups, ok := applicationDataRoot()
+	if !ok {
 		return nil, errors.New("application data directory is unavailable")
 	}
-
-	config := filepath.Dir(account)
 
 	value := applicationBackupMetadata{Current: info.Current, Update: info.Update}
 	if s.build != "" && s.build == info.Current.Tag && s.build == info.Inventory.CLI.Version {
@@ -72,10 +66,7 @@ func (s applicationDataSnapshots) Create(ctx context.Context, info application.P
 		return nil, err
 	}
 
-	backups := filepath.Join(config, applicationBackups)
-	store := hostfile.NewSnapshotStore(backups, []hostfile.SnapshotSource{
-		{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()},
-	}, applicationSnapshotPath)
+	store := hostfile.NewSnapshotStore(backups, applicationSnapshotSources(config), applicationSnapshotPath)
 
 	result, err := store.Create(ctx, metadata)
 	if err != nil {

@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"net"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/ship/device"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 func TestServeRuntimeClosesUnreadConnections(t *testing.T) {
@@ -32,7 +30,6 @@ func TestServeRuntimeClosesUnreadConnections(t *testing.T) {
 		t.Error("unread HTTP connection opened a watch")
 		return nil, errors.New("unexpected watch open")
 	})
-	account := gc.New(filepath.Join(t.TempDir(), "account.json"))
 	done := make(chan struct{})
 
 	var serveErr error
@@ -40,7 +37,7 @@ func TestServeRuntimeClosesUnreadConnections(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		serveErr = ServeRuntime(&headerReadListener{Listener: listener, started: sync.OnceFunc(func() { close(reading) })}, watch, account, false, "test", Features{})
+		serveErr = ServeRuntime(&headerReadListener{Listener: listener, started: sync.OnceFunc(func() { close(reading) })}, watch, false, "test", Features{})
 	}()
 
 	t.Cleanup(func() {

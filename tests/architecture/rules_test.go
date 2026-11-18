@@ -12,9 +12,16 @@ import (
 )
 
 const (
-	architectureSettings = architectureModule + "/internal/containers/settings"
-	architectureApps     = architectureModule + "/internal/containers/apps"
-	architectureProcess  = architectureModule + "/internal/app/process"
+	architectureSettings    = architectureModule + "/internal/containers/settings"
+	architectureApps        = architectureModule + "/internal/containers/apps"
+	architectureApplication = architectureModule + "/internal/containers/application"
+	architectureProcess     = architectureModule + "/internal/app/process"
+	architectureGC          = architectureModule + "/internal/ship/gc"
+	architectureTestdump    = architectureModule + "/internal/ship/testdump"
+	architectureHostfile    = architectureModule + "/internal/ship/hostfile"
+	architectureHostexec    = architectureModule + "/internal/ship/hostexec"
+
+	architectureBuildsAccount = `import "github.com/DevWolk/garminctl/internal/ship/gc"; var _ = gc.New`
 )
 
 func TestArchitectureImportRules(t *testing.T) {
@@ -72,6 +79,24 @@ func TestArchitectureImportRules(t *testing.T) {
 		{name: "declared feature edge", from: architectureModule + "/internal/containers/workouts", to: architectureModule + "/internal/containers/connect"},
 		{name: "undeclared feature edge", from: architectureModule + "/internal/containers/music", to: architectureModule + "/internal/containers/health", forbidden: true},
 		{name: "declared edge is one-way", from: architectureApps, to: architectureModule + "/internal/containers/connect", forbidden: true},
+		{name: "host files may protect through Windows", from: architectureHostfile, to: architectureWindows},
+		{name: "host file allowance excludes registry", from: architectureHostfile, to: architectureRegistry, forbidden: true},
+		{name: "console hiding may use Windows", from: architectureHostexec, to: architectureWindows},
+		{name: "console hiding allowance excludes registry", from: architectureHostexec, to: architectureRegistry, forbidden: true},
+		{name: "application has no watch session", from: architectureApplication, to: architectureModule + "/internal/ship/watchsession", forbidden: true},
+		{name: "application has no device", from: architectureApplication, to: architectureModule + "/internal/ship/device", forbidden: true},
+		{name: "application UI has no device transport", from: architectureApplication + "/ui/native", to: architectureModule + "/internal/ship/device/wpd", forbidden: true},
+		{name: "application has no HTTP adapter", from: architectureApplication + "/ui/http", to: architectureApplication, forbidden: true},
+		{name: "application has no MCP adapter", from: architectureApplication + "/ui/mcp", to: architectureApplication, forbidden: true},
+		{name: "app cannot mount an application HTTP adapter", from: architectureModule + "/internal/app", to: architectureApplication + "/ui/http", forbidden: true},
+		{name: "native application adapter allowed", from: architectureApplication + "/ui/native", to: architectureApplication},
+		{name: "web shell has no account client", from: architectureModule + "/internal/ship/web", to: architectureGC, forbidden: true},
+		{name: "MCP shell has no account client", from: architectureModule + "/internal/ship/mcpserver", to: architectureGC, forbidden: true},
+		{name: "desktop shell has no account client", from: architectureModule + "/internal/ship/desktop", to: architectureGC, forbidden: true},
+		{name: "app wires the account client", from: architectureModule + "/internal/app", to: architectureGC},
+		{name: "feature cannot import dump fixtures", from: architectureSettings, to: architectureTestdump, forbidden: true},
+		{name: "app cannot import dump fixtures", from: architectureModule + "/internal/app/cli", to: architectureTestdump, forbidden: true},
+		{name: "dump fixtures build the account client", from: architectureTestdump, to: architectureGC},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -98,6 +123,8 @@ func TestArchitectureTestImportRules(t *testing.T) {
 		{name: "shell test assembles features", from: architectureModule + "/internal/ship/web", to: architectureSettings + "/ui/http"},
 		{name: "shell test builds the process runtime", from: architectureModule + "/internal/ship/web", to: architectureProcess},
 		{name: "feature test cannot import process runtime", from: architectureSettings + "_test", to: architectureProcess, forbidden: true},
+		{name: "shell test runs the production composition", from: architectureModule + "/internal/ship/desktop", to: architectureModule + "/internal/app"},
+		{name: "infrastructure test uses the probe app injects", from: architectureModule + "/internal/ship/updatetransport", to: architectureModule + "/internal/ship/mcpx"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -124,7 +151,7 @@ func TestArchitectureTypedRules(t *testing.T) {
 
 	imports := architectureFixtureImporter{}
 	for _, pkg := range loadArchitecture(t.Context(), t, architectureView{name: "typed fixtures"}, packages.LoadTypes, "net/http",
-		architectureProcess, architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/containers/connect", architectureModule+"/internal/ship/gc") {
+		architectureProcess, architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/containers/connect", architectureGC) {
 		imports[pkg.PkgPath] = pkg.Types
 	}
 
@@ -146,8 +173,15 @@ func TestArchitectureTypedRules(t *testing.T) {
 		{name: "watch owner outside app", owner: architectureModule + "/internal/ship/web", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManager`, forbidden: true},
 		{name: "process runtime owns watch manager", owner: architectureProcess, code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManagerWithGate`},
 		{name: "sync coordinator outside app", owner: architectureModule + "/internal/ship/mcpserver", code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`, forbidden: true},
-		{name: "account built by feature UI", owner: architectureSettings + "/ui/http", code: `import "github.com/DevWolk/garminctl/internal/ship/gc"; var _ = gc.New`, forbidden: true},
-		{name: "entry point builds account", owner: architectureModule + "/cmd/garminctl", code: `import "github.com/DevWolk/garminctl/internal/ship/gc"; var _ = gc.New`},
+		{name: "account built by feature UI", owner: architectureSettings + "/ui/http", code: architectureBuildsAccount, forbidden: true},
+		{name: "entry point does not build account", owner: architectureModule + "/cmd/garminctl", code: architectureBuildsAccount, forbidden: true},
+		{name: "app wiring builds account", owner: architectureModule + "/internal/app", code: architectureBuildsAccount},
+		{name: "app CLI builds account", owner: architectureModule + "/internal/app/cli", code: architectureBuildsAccount},
+		{name: "dump fixtures build account", owner: architectureTestdump, code: architectureBuildsAccount},
+		{name: "app CLI cannot build process runtime", owner: architectureModule + "/internal/app/cli", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`, forbidden: true},
+		{name: "app wiring cannot build watch manager", owner: architectureModule + "/internal/app", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManagerWithGate`, forbidden: true},
+		{name: "app wiring cannot build sync coordinator", owner: architectureModule + "/internal/app", code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`, forbidden: true},
+		{name: "process runtime builds sync coordinator", owner: architectureProcess, code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

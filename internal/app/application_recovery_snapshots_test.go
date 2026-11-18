@@ -131,7 +131,7 @@ func backupFromALaterBuild(t *testing.T, f recoverySnapshotFixture) *hostfile.Sn
 	}
 
 	backups := filepath.Dir(f.snapshot.Directory)
-	store := hostfile.NewSnapshotStore(backups, []hostfile.SnapshotSource{{Name: applicationStateConfig, Directory: filepath.Dir(backups)}}, applicationSnapshotPath)
+	store := hostfile.NewSnapshotStore(backups, []hostfile.SnapshotSource{{Name: application.StateAreaConfig, Directory: filepath.Dir(backups)}}, applicationSnapshotPath)
 
 	snapshot, err := store.Create(t.Context(), metadata)
 	if err != nil {

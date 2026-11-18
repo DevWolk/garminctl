@@ -11,7 +11,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/hostfile"
-	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 type applicationDataCompatibility struct {
@@ -19,8 +18,6 @@ type applicationDataCompatibility struct {
 	address string
 	owned   bool
 }
-
-const applicationStateConfig = "config"
 
 func (s applicationDataCompatibility) Verify(ctx context.Context, target, safety application.RecoverySnapshot, stopped bool) error {
 	if !application.KeepsCurrentData(target, safety) {
@@ -41,13 +38,11 @@ func (s applicationDataCompatibility) Verify(ctx context.Context, target, safety
 		ctx = bound
 	}
 
-	account := gc.DefaultStorePath()
-	if account == "" {
+	config, directory, ok := applicationDataRoot()
+	if !ok {
 		return errors.New("current data directory is unavailable")
 	}
 
-	config := filepath.Dir(account)
-	directory := filepath.Join(config, applicationBackups)
 	reader := hostfile.NewSnapshotReader(directory)
 	store := applicationDataRestorations{reader: reader}
 
@@ -56,14 +51,14 @@ func (s applicationDataCompatibility) Verify(ctx context.Context, target, safety
 		return err
 	}
 
-	inspector := hostfile.NewSnapshotRestorer(directory, []hostfile.SnapshotSource{{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()}}, applicationSnapshotPath)
+	inspector := hostfile.NewSnapshotRestorer(directory, applicationSnapshotSources(config), applicationSnapshotPath)
 
 	return inspector.InspectCurrent(ctx, verified, inspectApplicationData)
 }
 
 func inspectApplicationData(file hostfile.SnapshotFileInfo, reader io.Reader) error {
 	var err error
-	if file.Area == applicationStateConfig {
+	if file.Area == application.StateAreaConfig {
 		err = gc.ValidateSavedState(reader, file.Path == "garmin-connect.json.mfa")
 	} else if application.StatePath(file.Area, file.Path) == application.StateFile && filepath.Ext(file.Path) == ".json" {
 		err = connect.ValidateSavedLedger(reader)

@@ -33,7 +33,7 @@ func NewApplicationPackageCache(cliPath, version, compiledKey string) (*updatetr
 		return nil, err
 	}
 
-	return updatetransport.NewPackageCache(filepath.Join(paths.Cache(), "application-packages"), stager)
+	return updatetransport.NewPackageCache(applicationPackageDirectory(), stager)
 }
 
 // NewApplicationStager binds a trusted local CLI/version and compiled key to the

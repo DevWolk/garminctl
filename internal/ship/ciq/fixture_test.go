@@ -13,8 +13,8 @@ import (
 // GARMINCTL_UPDATE_FIXTURES=1 go test ./internal/ship/ciq -run TestSettingsFixturesMatchGenerator.
 func settingsFixtures() map[string]ciq.Dict {
 	return map[string]ciq.Dict{
-		// The watch face of internal/ship/ciqstore/testdata/settings-page.html and
-		// internal/ship/prg/testdata/face.prg, in the watch's own key order.
+		// The watch face of internal/ship/ciqstore/testdata/settings-page.html,
+		// in the watch's own key order.
 		"FACE0001.SET": {
 			{Key: "accent_color", Value: int32(-1)},
 			{Key: "refresh_minutes", Value: int32(30)},

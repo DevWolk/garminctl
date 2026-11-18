@@ -175,7 +175,7 @@ func newServer(ctx context.Context, open watchsession.Opener, autoSync bool, cli
 		return connect.NewJobCloud(runtime.Manager(), epoch, account, config)
 	}
 
-	return serverWithRuntime(runtime, account, autoSync, Features{
+	return serverWithRuntime(runtime, autoSync, Features{
 		HTTP: []httpx.RouteRegistrar{
 			&connecthttp.Handler{Manager: runtime.Manager(), Client: account, Coordinator: runtime.Sync, CloudFor: cloudFor, JobFor: jobFor},
 			&healthhttp.Handler{Manager: runtime.Manager(), Profile: fit.MustProfile(), Activities: runtime.Activities, AccessFor: access},

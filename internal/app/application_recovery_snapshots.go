@@ -6,22 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 // NewApplicationRecoverySnapshots binds only the configured protected backup root.
 // It neither reads the account nor creates a backend, native host or watch owner.
 func NewApplicationRecoverySnapshots() (*application.RecoverySnapshotsAction, error) {
-	account := gc.DefaultStorePath()
-	if account == "" {
+	_, backups, ok := applicationDataRoot()
+	if !ok {
 		return nil, errors.New("application data directory is unavailable")
 	}
 
-	reader := hostfile.NewSnapshotReader(filepath.Join(filepath.Dir(account), applicationBackups))
+	reader := hostfile.NewSnapshotReader(backups)
 
 	return application.NewRecoverySnapshotsAction(applicationRecoverySnapshots{reader: reader}), nil
 }

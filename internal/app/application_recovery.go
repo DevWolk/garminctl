@@ -25,7 +25,7 @@ func NewApplicationRecovery(version, compiledKey string) (*application.RecoveryA
 
 	packages.cache, packages.unverified = NewApplicationPackageCache(cli, version, compiledKey)
 	if packages.unverified != nil {
-		packages.cache, err = updatetransport.NewPackageCatalog(filepath.Join(paths.Cache(), "application-packages"))
+		packages.cache, err = updatetransport.NewPackageCatalog(applicationPackageDirectory())
 		if err != nil {
 			return nil, err
 		}

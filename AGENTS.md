@@ -4,9 +4,11 @@ See CLAUDE.md for the working rules.
 
 `internal` has three directories: `app` wires the process and the commands,
 `containers/<feature>` holds one feature each with its `ui/` adapters, and
-`ship/<package>` holds everything features share, including the `web`,
-`mcpserver` and `desktop` shells. `tests/architecture` enforces who may import
-whom.
+`ship/<package>` holds shared infrastructure, transport helpers and the `web`,
+`mcpserver` and `desktop` shells. Some ship code has one consumer on purpose
+(`updatetransport`, `hostinfo`, hostfile's snapshots, `notify`, `devicehost`):
+it holds native handles, host processes or host files that features must not
+import. `tests/architecture` enforces who may import whom.
 
 Module map:
 

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/ship/clix"
-	"github.com/DevWolk/garminctl/internal/ship/device/wpd"
 	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
@@ -23,13 +22,13 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		return clix.UsageErrorf("usage: garminctl [-root DIR] [-device ID] desktop")
 	}
 
-	if ps := wpd.PowerShellPath(); ps != "" {
+	if ps := hostexec.PowerShellPath(); ps != "" {
 		appArgs, err := c.desktopArgs(ctx, windowsPath)
 		if err != nil {
 			return err
 		}
 
-		cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command", desktopLaunchScript(appArgs)) //nolint:gosec // fixed script with quoted arguments, PowerShell found by the existing WPD platform helper.
+		cmd := exec.CommandContext(ctx, ps, "-NoProfile", "-NonInteractive", "-Command", desktopLaunchScript(appArgs)) //nolint:gosec // fixed script with quoted arguments, PowerShell found by hostexec.
 		hostexec.HideConsole(cmd)
 		cmd.Stdout, cmd.Stderr = c.out, c.errOut
 

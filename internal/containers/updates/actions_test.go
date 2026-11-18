@@ -3,6 +3,7 @@ package updates
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
@@ -82,5 +83,19 @@ func TestAppRegistryFailureIsReturned(t *testing.T) {
 	_, err := NewCheckAppsAction(func(context.Context) ([]apps.App, error) { return nil, want }).Run(t.Context())
 	if !errors.Is(err, want) {
 		t.Fatalf("registry error=%v", err)
+	}
+}
+
+func TestCheckAppsMatchesRegistryIDsWithoutCase(t *testing.T) { //nolint:paralleltest // replaces the process store client
+	testdump.UpdateEnvironment(t, "")
+
+	installed := []apps.App{
+		{ID: testdump.StoreAppID, FileName: "FIRST", Version: 23},
+		{ID: strings.ToUpper(testdump.StoreAppID), FileName: "SECOND", Version: 24},
+	}
+
+	out, err := NewCheckAppsAction(func(context.Context) ([]apps.App, error) { return installed, nil }).Run(t.Context())
+	if err != nil || len(out) != 1 || out[0].App.FileName != "FIRST" || out[0].LatestVersion != 24 || !out[0].UpdateAvailable {
+		t.Fatalf("checked=%+v error=%v", out, err)
 	}
 }

@@ -6,13 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/ship/device"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 
@@ -36,7 +34,6 @@ func TestUploadBodyReservesAdmissionAndShutdownJoinsIt(t *testing.T) {
 		t.Error("body-only upload must not open a watch")
 		return nil, errors.New("unexpected watch open")
 	}, false)
-	s.cloud = gc.New(filepath.Join(t.TempDir(), "account.json"))
 
 	h, err := s.handler("127.0.0.1:8787")
 	if err != nil {
@@ -84,7 +81,6 @@ func TestUploadBodyReservesAdmissionAndShutdownJoinsIt(t *testing.T) {
 func TestActivitiesInitialOpenFailureRetainsStatusShape(t *testing.T) {
 	t.Parallel()
 	s := newServer(t.Context(), func(context.Context) (device.Device, error) { return nil, errors.New("synthetic missing watch") }, false)
-	s.cloud = gc.New(filepath.Join(t.TempDir(), "account.json"))
 	response := httptest.NewRecorder()
 
 	mux := http.NewServeMux()

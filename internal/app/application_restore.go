@@ -4,27 +4,22 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"reflect"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/hostfile"
-	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 // restoreDataAction is an internal capability, never a native/HTTP/MCP method.
 func (b *ApplicationBackend) restoreDataAction(address string, owned bool) (*application.RestoreDataAction, error) {
-	account := gc.DefaultStorePath()
-	if account == "" {
+	config, directory, ok := applicationDataRoot()
+	if !ok {
 		return nil, errors.New("application data directory is unavailable")
 	}
 
-	config := filepath.Dir(account)
-	directory := filepath.Join(config, "application-backups")
 	reader := hostfile.NewSnapshotReader(directory)
 	snapshots := application.NewRecoverySnapshotsAction(applicationRecoverySnapshots{reader: reader})
-	store := applicationDataRestorations{backend: b, address: address, owned: owned, reader: reader, restorer: hostfile.NewSnapshotRestorer(directory, []hostfile.SnapshotSource{{Name: applicationStateConfig, Directory: config}, {Name: "cache", Directory: paths.Cache()}}, applicationSnapshotPath)}
+	store := applicationDataRestorations{backend: b, address: address, owned: owned, reader: reader, restorer: hostfile.NewSnapshotRestorer(directory, applicationSnapshotSources(config), applicationSnapshotPath)}
 
 	return application.NewRestoreDataAction(snapshots, store, b.joinedFor(address, owned)), nil
 }

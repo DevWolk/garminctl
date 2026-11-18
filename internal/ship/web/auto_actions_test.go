@@ -3,11 +3,9 @@ package web
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ship/device"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -15,20 +13,19 @@ func TestAutoActionsNotifySyncAndUpdates(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name     string
-		signedIn bool
-		sync     []string
-		ok       bool
-		updates  []string
-		want     string
+		name    string
+		sync    []string
+		ok      bool
+		updates []string
+		want    string
 	}{
 		{
-			name: "sync and update", signedIn: true, sync: []string{"2 file(s) uploaded to Garmin Connect", "1 sync error(s)"}, ok: true, updates: []string{"Fixture 1.00"},
+			name: "sync and update", sync: []string{"2 file(s) uploaded to Garmin Connect", "1 sync error(s)"}, ok: true, updates: []string{"Fixture 1.00"},
 			want: "Fixture watch: 2 file(s) uploaded to Garmin Connect; 1 sync error(s); update available: Fixture 1.00",
 		},
-		{name: "signed out", updates: []string{"Fixture 1.00", "Maps 2.00"}, want: "Fixture watch: update available: Fixture 1.00, Maps 2.00"},
-		{name: "nothing new", signedIn: true, ok: true, want: "Fixture watch: synced, nothing new"},
-		{name: "cancelled sync", signedIn: true},
+		{name: "no sync to run", ok: true, updates: []string{"Fixture 1.00", "Maps 2.00"}, want: "Fixture watch: update available: Fixture 1.00, Maps 2.00"},
+		{name: "nothing new", ok: true, want: "Fixture watch: synced, nothing new"},
+		{name: "cancelled sync"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -49,10 +46,7 @@ func TestAutoActionsNotifySyncAndUpdates(t *testing.T) {
 
 			var notified []string
 
-			s := &Server{manager: manager, cloud: signedOutClient(t), notify: func(_ context.Context, _, text string) { notified = append(notified, text) }}
-			if tt.signedIn {
-				s.cloud, _ = signedInSyncClient(t)
-			}
+			s := &Server{manager: manager, notify: func(_ context.Context, _, text string) { notified = append(notified, text) }}
 
 			s.features.AutoSync = func(_ context.Context, got watchsession.ConnectionEpoch) ([]string, bool) {
 				if got != epoch {
@@ -112,10 +106,4 @@ func TestUpdateNotesDropOnlyDisconnectedWatch(t *testing.T) {
 			}
 		})
 	}
-}
-
-// signedOutClient has no saved Connect session.
-func signedOutClient(t *testing.T) *gc.Client {
-	t.Helper()
-	return gc.New(filepath.Join(t.TempDir(), "account.json"))
 }

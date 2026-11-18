@@ -180,15 +180,9 @@ func (s *Server) tryOpen(ctx context.Context, expected watchsession.ConnectionEp
 
 // autoActions starts sync and an update check after connection.
 func (s *Server) autoActions(ctx context.Context, epoch watchsession.ConnectionEpoch, name string) {
-	var parts []string
-
-	if s.cloud.LoggedIn() {
-		notes, ok := s.features.AutoSync(ctx, epoch)
-		if !ok {
-			return
-		}
-
-		parts = notes
+	parts, ok := s.features.AutoSync(ctx, epoch)
+	if !ok {
+		return
 	}
 
 	parts = append(parts, s.updateNotes(ctx, epoch)...)

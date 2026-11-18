@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/DevWolk/garminctl/internal/ship/device/wpd"
 	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
@@ -21,7 +20,7 @@ func psQuote(s string) string { return "'" + psQuotes.Replace(s) + "'" }
 // The caller owns its worker. Ending ctx removes the balloon and joins the child;
 // where PowerShell is unavailable, Send returns immediately.
 func Send(ctx context.Context, title, text string) {
-	ps := wpd.PowerShellPath()
+	ps := hostexec.PowerShellPath()
 	if ps == "" {
 		return
 	}

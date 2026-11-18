@@ -24,7 +24,6 @@ import (
 	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 	"github.com/DevWolk/garminctl/internal/ship/device"
 	"github.com/DevWolk/garminctl/internal/ship/fit"
-	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/web"
 )
@@ -379,12 +378,11 @@ func TestServeListenerClosesRuntimeOnListenerFailure(t *testing.T) {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Supply an explicit in-memory runtime/account to test the shell's transfer
-	// of ownership without consulting any default account store.
+	// Supply an explicit in-memory runtime to test the shell's transfer of
+	// ownership without consulting any default account store.
 	runtime := app.NewRuntime(ctx, nil)
 
-	account := gc.New(filepath.Join(t.TempDir(), "account.json"))
-	if err := web.ServeRuntime(listener, runtime, account, false, contractVersion, web.Features{}); !errors.Is(err, net.ErrClosed) {
+	if err := web.ServeRuntime(listener, runtime, false, contractVersion, web.Features{}); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("closed listener error=%v", err)
 	}
 

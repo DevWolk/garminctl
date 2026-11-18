@@ -71,31 +71,8 @@ type response struct {
 	Raw      json.RawMessage `json:"-"`
 }
 
-// PowerShellPath returns the path of powershell.exe, or "" when unavailable.
-func PowerShellPath() string {
-	if runtime.GOOS == "windows" {
-		if p, err := exec.LookPath("powershell.exe"); err == nil {
-			return p
-		}
-
-		return ""
-	}
-
-	candidates := []string{
-		"/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-		"/mnt/c/Windows/Sysnative/WindowsPowerShell/v1.0/powershell.exe",
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-
-	return ""
-}
-
 // Available reports whether the bridge can run on this host.
-func Available() bool { return PowerShellPath() != "" }
+func Available() bool { return hostexec.PowerShellPath() != "" }
 
 // scriptPath writes the bridge script where PowerShell can read it and
 // returns that path in Windows form. It lives in the user's own cache
@@ -140,7 +117,7 @@ func scriptPath(ctx context.Context) (string, error) {
 
 // Start launches the bridge process and waits for it to be ready.
 func Start(ctx context.Context) (*Bridge, error) {
-	ps := PowerShellPath()
+	ps := hostexec.PowerShellPath()
 	if ps == "" {
 		return nil, errors.New("powershell.exe not found; the MTP bridge needs Windows or WSL")
 	}
