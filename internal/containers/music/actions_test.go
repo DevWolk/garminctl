@@ -104,3 +104,31 @@ func TestInvalidAudioDoesNotInvalidateOrWrite(t *testing.T) {
 		t.Fatalf("error=%v generation=%d", err, gen)
 	}
 }
+
+func TestAddTrackRefusesToReplaceAnExistingFile(t *testing.T) {
+	t.Parallel()
+
+	dev, err := device.NewDirFS(testdump.MusicRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { _ = dev.Close() })
+
+	sess := watchsession.New(dev)
+
+	// Untagged audio is named after its file, so both adds share a target.
+	track, err := (AddTrackAction{}).Run(t.Context(), sess, "Music", "plain.mp3", []byte("first"))
+	if err != nil || track.Path != "Music/plain.mp3" {
+		t.Fatalf("track=%+v error=%v", track, err)
+	}
+
+	if _, err := (AddTrackAction{}).Run(t.Context(), sess, "Music", "plain.mp3", []byte("second")); err == nil || !strings.Contains(err.Error(), "already on the watch") {
+		t.Fatalf("second add with the same name = %v, want a refusal", err)
+	}
+
+	written, err := dev.Read(t.Context(), track.Path)
+	if err != nil || string(written) != "first" {
+		t.Fatalf("existing track = %q (%v), want it unchanged", written, err)
+	}
+}

@@ -157,9 +157,9 @@ func readVerificationCode(ctx context.Context, input io.ReadCloser) (string, err
 		return result.line, nil
 	case <-ctx.Done():
 		// Cancellation ends this CLI invocation, which owns its input handle.
+		// Closing a terminal does not interrupt a pending read, so the reader
+		// is left to end with the process.
 		_ = input.Close()
-
-		<-answers
 
 		return "", ctx.Err()
 	}
@@ -335,20 +335,38 @@ func (c *Command) cloudSync(ctx context.Context, args []string) error {
 	}
 
 	if c.JSON {
-		return clix.PrintJSON(c.Out, res)
+		return errors.Join(clix.PrintJSON(c.Out, res), syncFailure(res))
 	}
 
 	if res.Upload != nil {
 		c.Out.Printf("uploaded %d, already in Connect %d, failed %d, unchanged %d\n", res.Upload.Uploaded, res.Upload.Duplicate, res.Upload.Failed, res.Upload.Skipped)
 	}
 
-	c.Out.Printf("pulled %d item(s) from Connect\n", len(res.Pulled))
+	written, _ := connect.Written(res.Pulled)
+	c.Out.Printf("pulled %d item(s) from Connect\n", written)
 
-	for _, e := range res.Errors {
-		c.Out.Println("error:", e)
+	return syncFailure(res)
+}
+
+// syncFailure joins what a sync could not do, so the command exits non-zero.
+func syncFailure(res *connect.SyncResult) error {
+	var errs []error
+
+	if res.Upload != nil && res.Upload.Failed > 0 {
+		errs = append(errs, fmt.Errorf("%d upload(s) failed", res.Upload.Failed))
 	}
 
-	return nil
+	for _, p := range res.Pulled {
+		if p.Error != "" {
+			errs = append(errs, fmt.Errorf("%s (%s) not written: %s", p.Name, p.Type, p.Error))
+		}
+	}
+
+	for _, e := range res.Errors {
+		errs = append(errs, errors.New(e))
+	}
+
+	return errors.Join(errs...)
 }
 
 func (c *Command) cloudMessages(ctx context.Context, cloud *connect.Cloud) error {

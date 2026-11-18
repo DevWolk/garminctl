@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DevWolk/garminctl/internal/ship/device"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -39,7 +40,8 @@ func (ListAction) Run(ctx context.Context, sess *watchsession.Session) (*Library
 	return lib, nil
 }
 
-// AddTrackAction writes audio to its tag-derived media location.
+// AddTrackAction writes audio to its tag-derived media location. It refuses
+// a location that already holds a file.
 type AddTrackAction struct{}
 
 // Run validates the extension, resolves tags/folders and writes unchanged bytes.
@@ -73,6 +75,13 @@ func (AddTrackAction) Run(ctx context.Context, sess *watchsession.Session, folde
 		target = fmt.Sprintf("%s/%s/%s/%s%s", folder, safeName(tags.Artist, "Unknown Artist"), album, title, ext)
 	} else {
 		target = fmt.Sprintf("%s/%s%s", folder, title, ext)
+	}
+
+	switch _, err := sess.Stat(ctx, target); {
+	case err == nil:
+		return nil, fmt.Errorf("%s is already on the watch; remove it first to replace it", target)
+	case !errors.Is(err, device.ErrNotFound):
+		return nil, fmt.Errorf("check %s: %w", target, err)
 	}
 
 	if err := sess.EnsureDir(ctx, path.Dir(target)); err != nil {

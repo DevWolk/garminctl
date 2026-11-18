@@ -21,8 +21,12 @@ func TestAutoSyncNotesDescribeFinishedJob(t *testing.T) {
 		want   []string
 	}{
 		{
-			name: "work done", result: &connect.SyncResult{Upload: &connect.UploadResult{Uploaded: 2}, Pulled: []connect.PulledFile{{}}, Errors: []string{"one"}},
+			name: "work done", result: &connect.SyncResult{Upload: &connect.UploadResult{Uploaded: 2}, Pulled: []connect.PulledFile{{Path: "GARMIN/NewFiles/A.FIT"}}, Errors: []string{"one"}},
 			want: []string{"2 file(s) uploaded to Garmin Connect", "1 item(s) from Connect written to the watch", "1 sync error(s)"},
+		},
+		{
+			name: "failed transfers", result: &connect.SyncResult{Upload: &connect.UploadResult{Failed: 1}, Pulled: []connect.PulledFile{{Error: "watch full"}, {Error: "watch full"}}},
+			want: []string{"1 upload(s) failed", "2 item(s) from Connect not written: watch full"},
 		},
 		{name: "nothing new", result: &connect.SyncResult{Upload: &connect.UploadResult{}}},
 		{name: "failed", err: errors.New("synthetic failure"), want: []string{"sync failed: synthetic failure"}},

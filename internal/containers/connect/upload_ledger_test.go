@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 
@@ -225,5 +226,48 @@ func TestUploadLedgerRemembersAcceptedAndDuplicateFiles(t *testing.T) {
 				t.Fatalf("saved upload not skipped: result=%+v error=%v requests=%d", res, err, requests.Load())
 			}
 		})
+	}
+}
+
+// twoFileWatch lists two recorded activities.
+type twoFileWatch struct{ ledgerWatch }
+
+func (*twoFileWatch) List(_ context.Context, _ string) ([]device.Entry, error) {
+	return []device.Entry{
+		{Name: "a.fit", Size: 7, Modified: "synthetic-a"},
+		{Name: "b.fit", Size: 7, Modified: "synthetic-b"},
+	}, nil
+}
+
+func TestUploadRemembersAcceptedFilesWhenSessionEnds(t *testing.T) {
+	t.Parallel()
+
+	var client *gc.Client
+
+	requests := 0
+	client = syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		requests++
+		// The session is signed out after Garmin accepts the first file.
+		if err := client.Logout(); err != nil {
+			t.Error(err)
+		}
+
+		resp := syncResponse(req, []byte(`{}`))
+		resp.StatusCode = http.StatusCreated
+
+		return resp, nil
+	})
+
+	c := NewCloud(watchsession.New(&twoFileWatch{}), client)
+	c.cacheDir = t.TempDir()
+
+	up, err := c.Upload(t.Context(), nil)
+	if !errors.Is(err, gc.ErrNotLoggedIn) || up == nil || up.Uploaded != 1 || requests != 1 {
+		t.Fatalf("upload=%+v error=%v requests=%d", up, err, requests)
+	}
+
+	led, err := c.loadLedger(42)
+	if err != nil || led["GARMIN/Activity/a.fit"] != "7|synthetic-a" || len(led) != 1 {
+		t.Fatalf("ledger=%v error=%v, want the accepted file", led, err)
 	}
 }
