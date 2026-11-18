@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/ship/device"
@@ -98,9 +99,9 @@ func (a *RemoveAction) Run(ctx context.Context, sess *watchsession.Session, ref 
 
 	ref = strings.TrimSuffix(strings.TrimSuffix(ref, ".PRG"), ".prg")
 
-	app := installedApp(apps, ref)
-	if app == nil {
-		return nil, fmt.Errorf("%q is not an installed Connect IQ app", ref)
+	app, err := installedApp(apps, ref)
+	if err != nil {
+		return nil, err
 	}
 
 	if app.Native {
@@ -132,13 +133,41 @@ func (a *RemoveAction) Run(ctx context.Context, sess *watchsession.Session, ref 
 	return removed, nil
 }
 
-// installedApp finds a store app by file id, name or store id.
-func installedApp(apps []App, ref string) *App {
+// installedApp finds a store app by file id, name or store id. Registry
+// entries that share a file id are one app; a ref that matches entries of
+// different apps is refused.
+func installedApp(apps []App, ref string) (*App, error) {
+	var found []*App
+
 	for i := range apps {
-		a := &apps[i]
-		if a.FileName != "" && matchesApp(*a, ref) {
-			return a
+		if apps[i].FileName != "" && matchesApp(apps[i], ref) {
+			found = append(found, &apps[i])
 		}
+	}
+
+	if len(found) == 0 {
+		return nil, fmt.Errorf("%q is not an installed Connect IQ app", ref)
+	}
+
+	if err := oneApp(ref, found); err != nil {
+		return nil, err
+	}
+
+	return found[0], nil
+}
+
+// oneApp refuses matches that belong to more than one app file.
+func oneApp(ref string, found []*App) error {
+	var files []string
+
+	for _, a := range found {
+		if !slices.ContainsFunc(files, func(f string) bool { return strings.EqualFold(f, a.FileName) }) {
+			files = append(files, a.FileName)
+		}
+	}
+
+	if len(files) > 1 {
+		return fmt.Errorf("%q matches %d apps; use one file id: %s", ref, len(files), strings.Join(files, ", "))
 	}
 
 	return nil
@@ -173,7 +202,11 @@ func removeAppBinary(ctx context.Context, sess *watchsession.Session, prg string
 func removeAppSidecars(ctx context.Context, sess *watchsession.Session, fileName string, removed []string) ([]string, error) {
 	for _, p := range []string{"GARMIN/Apps/SETTINGS/" + fileName + ".SET", "GARMIN/Apps/DATA/" + fileName + ".DAT", "GARMIN/Apps/DATA/" + fileName + ".IDX", "GARMIN/Apps/DATA/" + fileName + ".IMT"} {
 		if _, err := sess.Stat(ctx, p); err != nil {
-			continue
+			if isNotFound(err) {
+				continue
+			}
+
+			return removed, fmt.Errorf("check %s: %w", p, err)
 		}
 
 		if err := sess.DeleteFile(ctx, p); err != nil {

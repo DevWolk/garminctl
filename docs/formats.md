@@ -38,7 +38,10 @@ and rejection of paths escaping the root.
 Both MTP implementations combine standard `GetObjectHandles` (`0x1007`)
 with Garmin `GetObjectIds` (`0x9002`) for hidden listings. File writes use
 `SendObjectInfo` (`0x100C`) followed by `SendObject` (`0x100D`), with object
-and thumbnail formats `0x3000`. Replacements delete the existing object first.
+and thumbnail formats `0x3000`. Replacements delete the existing object first;
+once the delete is sent, the replacement finishes even if the caller cancels,
+bounded by a timeout that grows with the file size. Native MTP applies its
+timeout to each USB transfer and reads files of at most 512 MiB.
 Hidden WPD writes and native Linux writes check the reported size after transfer.
 They do not compare the downloaded bytes with the uploaded bytes.
 See [WPD raw operations](../internal/ship/device/wpd/raw.go) and the
@@ -97,11 +100,14 @@ pending file.
 | 253 | `uint32` | FIT timestamp. |
 
 Resolution applies profile scaling and accepts numeric identifiers for
-undocumented messages and fields. String values cannot use this change format;
-integers must fit the signed-32-bit through unsigned-32-bit range.
+undocumented messages and fields; a value for an undocumented field is read as
+a number or `true`/`false`. String values cannot use this change format;
+integers must fit the signed-32-bit through unsigned-32-bit range and the
+target field's base type, taken from `Settings.fit` when the field is there and
+from the profile otherwise.
 Message/array indices must fit their unsigned 16-/8-bit slots. Nonfinite numbers
-and fractional raw integers are rejected; profile scaling retains its existing
-rounding before the range check.
+and fractional raw integers are rejected; scaled integer fields round half away
+from zero before the range checks.
 Both settings and workout builders propagate FIT construction errors before
 staging a file. Their `file_id` serial field deliberately stores the low 32 bits
 of the device's uint64 UnitID, preserving the existing protocol representation.
@@ -159,7 +165,9 @@ results. A missing schema does not imply a missing `.SET` file.
 
 [`VisibilityAction`](../internal/containers/apps/registry_write.go) uses pending
 `IN.BIN` as its base when present, otherwise `OUT.BIN`; a read error other than
-absence stops it. It refuses writes if identity re-encoding changes any bytes,
+absence stops it. It changes exactly one entry: a name, file name or ID may be
+prefixed with the entry's kind (`glance:<id>`), since the entries of one app
+share name and IDs, and a ref matching several entries is refused. It refuses writes if identity re-encoding changes any bytes,
 changes field 4 for the matched entry, writes and reads back a private backup
 of `OUT.BIN` and the pending `IN.BIN`, then writes `IN.BIN`. Backup failure
 prevents the device write. Finish the USB session before checking

@@ -41,7 +41,7 @@ type appSetIn struct {
 }
 
 type hideIn struct {
-	App    string `json:"app" jsonschema:"the entry's name, file id or store id from watch_apps"`
+	App    string `json:"app" jsonschema:"the entry's name, file id or store id from watch_apps; prefix the kind (glance:ID, app:ID, activity:NAME) when an app has several entries"`
 	Hidden bool   `json:"hidden" jsonschema:"true removes it from the watch's activity list / glance loop / apps, false puts it back"`
 }
 

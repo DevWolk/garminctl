@@ -128,10 +128,19 @@ func (p *Profile) applyProfile(fp *FieldProfile, raw any) any {
 
 // ParseValue converts a user supplied value (string, number, bool) for the
 // field into the raw integer or float the field stores. Enum names, scaled
-// values and plain numbers are accepted.
+// values and plain numbers are accepted. A nil fp is a field without a
+// profile entry: a textual number or true/false is parsed, other values pass
+// through unchanged. Scaled integer fields round half away from zero.
 func (p *Profile) ParseValue(fp *FieldProfile, v any) (any, error) {
 	if fp == nil {
-		return v, nil
+		s, ok := v.(string)
+		if !ok {
+			return v, nil
+		}
+
+		parsed, _, err := p.parseString(&FieldProfile{Name: "value", Scale: 1}, s)
+
+		return parsed, err
 	}
 
 	if s, ok := v.(string); ok {
@@ -154,7 +163,7 @@ func (p *Profile) ParseValue(fp *FieldProfile, v any) (any, error) {
 			return scaled, nil
 		}
 
-		rounded := scaled + 0.5
+		rounded := math.Round(scaled)
 		if math.IsNaN(rounded) || rounded < -0x1p63 || rounded >= 0x1p63 {
 			return nil, fmt.Errorf("%s: scaled value %v is outside int64 range", fp.Name, scaled)
 		}

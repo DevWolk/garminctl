@@ -125,10 +125,25 @@ func rewriteAppList(data []byte, edit appEdit) ([]byte, error) {
 	return pbEncode(kept), nil
 }
 
-// matchesApp reports whether ref names the app (name, file id or store id).
+// matchesApp reports whether ref names the entry: its name, file id or store
+// id, optionally prefixed with the entry's kind and a colon ("glance:Weather").
+// The app, glance and activity entries of one app share name and ids; the kind
+// tells them apart.
 func matchesApp(app App, ref string) bool {
+	if kind, rest, ok := strings.Cut(ref, ":"); ok && strings.EqualFold(kind, app.TypeName) && matchesEntry(app, rest) {
+		return true
+	}
+
+	return matchesEntry(app, ref)
+}
+
+func matchesEntry(app App, ref string) bool {
 	return strings.EqualFold(app.Name, ref) || strings.EqualFold(app.FileName, ref) || strings.EqualFold(app.ID, ref)
 }
+
+// entryRef is the ref that addresses exactly this registry entry: its kind
+// and store id.
+func entryRef(app App) string { return app.TypeName + ":" + app.ID }
 
 // setHiddenFlag writes field 4 of an app entry and reports whether it exists.
 func setHiddenFlag(f []pbField, hidden bool) bool {
@@ -153,7 +168,9 @@ func setHiddenFlag(f []pbField, hidden bool) bool {
 // IN.BIN is used as the base, so several changes can be queued before the
 // unplug that applies them. A private OUT.BIN backup in the cache directory must
 // be written and read back successfully before IN.BIN is changed.
-// ref matches the app's name, file id or store id.
+// ref matches the entry's name, file id or store id, optionally prefixed with
+// its kind ("glance:", "activity:"); a ref that matches several entries is
+// refused.
 type VisibilityAction struct{}
 
 // Run stages one visibility change using the caller's leased Session.
@@ -186,14 +203,14 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 		return "", errors.New("the app registry does not re-encode byte for byte; refusing to write one the watch might not recognise")
 	}
 
-	hits := 0
+	var hits []App
 
 	in, err := rewriteApps(base, func(app App, f []pbField) ([]pbField, error) {
 		if !matchesApp(app, ref) {
 			return f, nil
 		}
 
-		hits++
+		hits = append(hits, app)
 
 		if !setHiddenFlag(f, hidden) {
 			return nil, fmt.Errorf("%s has no flag field in the registry", app.Name)
@@ -205,12 +222,17 @@ func (VisibilityAction) Run(ctx context.Context, sess *watchsession.Session, ref
 		return "", err
 	}
 
-	if hits == 0 {
+	if len(hits) == 0 {
 		return "", fmt.Errorf("%q is not in the watch's app registry", ref)
 	}
 
-	if hits > 1 {
-		return "", fmt.Errorf("%q matches %d registry entries (a glance and an app share the name); use the store id", ref, hits)
+	if len(hits) > 1 {
+		refs := make([]string, len(hits))
+		for i, h := range hits {
+			refs[i] = entryRef(h)
+		}
+
+		return "", fmt.Errorf("%q matches %d registry entries; name one as kind:id: %s", ref, len(hits), strings.Join(refs, ", "))
 	}
 
 	backup, err = backupRegistry(out, pending)

@@ -57,7 +57,7 @@ func TestAppsMCPToolContracts(t *testing.T) { //nolint:paralleltest // the produ
 		appSettingsTool:          "9b5d1116937682b6ea685c283086aa68aacae023ebf2aa05c66a83687dccd04b",
 		appSchemaTool:            "7ff45b6a51cd5cc5bf2bceb4d5f0697f8c4e0ab5c69d27290c9ca3f59ce245b8",
 		"watch_set_app_settings": "539b315bcd9ed2d836153138d52219c4de9a7c7688bbec1adf9c1c60f1fa0b28",
-		"watch_set_app_hidden":   "8b413887f68619c1b29360009c14481905b8e5d13e569c2b5e1e97df97c0ce5a",
+		"watch_set_app_hidden":   "8150262ec1f40ecbe1292efb3a7aee1b7cf24128b599b862f4a93ab988e823de",
 		"watch_remove_app":       "865320785b06e7a9bf454f2e3bd1f93e8754c7b495ea6d8c210088577162c941",
 	}
 	seen := 0

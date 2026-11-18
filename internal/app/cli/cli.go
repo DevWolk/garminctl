@@ -48,7 +48,7 @@ Commands:
   app-settings set APP K=V [...]  change Connect IQ app settings (V may be an option label)
   app-schema APP [KEY]            show labels and dropdown options of an app's settings
   app-rm APP                      remove a Connect IQ app (finished when the watch is unplugged)
-  app-hide APP | app-show APP     hide or show an activity, glance or app on unplug
+  app-hide REF | app-show REF     hide or show an activity, glance or app on unplug (REF: name, file or id; kind:id for one entry)
   app-pending                     show pending app-list changes
   app-restore FILE                restore a saved app list on unplug
   autostart on|off|status         manage the background server at Windows sign-in
