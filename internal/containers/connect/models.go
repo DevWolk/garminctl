@@ -10,3 +10,18 @@ type PulledFile struct {
 	Bytes     int    `json:"bytes"`
 	Error     string `json:"error,omitempty"`
 }
+
+// Written reports how many files reached the watch and the first delivery
+// error. A failed delivery is listed with Error set and no Path.
+func Written(files []PulledFile) (count int, failure string) {
+	for _, f := range files {
+		switch {
+		case f.Error == "" && f.Path != "":
+			count++
+		case failure == "" && f.Error != "":
+			failure = f.Error
+		}
+	}
+
+	return count, failure
+}

@@ -121,10 +121,14 @@ func (c *Command) reportPulled(pulled []workouts.PulledFile, err error) error {
 	}
 
 	for _, p := range pulled {
-		c.Out.Println("written to the watch:", p.Path)
+		if p.Error != "" {
+			c.Out.Println("not written to the watch:", p.Error)
+		} else {
+			c.Out.Println("written to the watch:", p.Path)
+		}
 	}
 
-	if len(pulled) == 0 {
+	if written, _ := workouts.Written(pulled); written == 0 {
 		c.Out.Println("queued for the watch; sync later")
 	}
 

@@ -94,16 +94,20 @@ func (h *Handler) workoutsCreate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		res["pulled"] = pulled
-		res[noteKey] = sendNote(len(pulled))
+		res[noteKey] = sendNote(workouts.Written(pulled))
 
 		return res, nil
 	})
 }
 
 // sendNote describes what happened after Connect was asked to queue a workout.
-func sendNote(pulled int) string {
-	if pulled > 0 {
+func sendNote(written int, failure string) string {
+	if written > 0 {
 		return "Saved in Garmin Connect and written to the watch; unplug it to see the workout under Training > Workouts."
+	}
+
+	if failure != "" {
+		return "Saved in Garmin Connect, but the workout was not written to the watch: " + failure + ". Sync later to try again."
 	}
 
 	return "Saved in Garmin Connect and queued for the watch; Sync later or let the phone deliver it."

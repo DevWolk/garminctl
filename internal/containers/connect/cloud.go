@@ -393,12 +393,15 @@ func (c *Cloud) SetSettings(ctx context.Context, changes map[string]any) (*Cloud
 
 	pulled, delivering, err := c.pullQueued(ctx, "settings-change")
 	res.Pulled = pulled
+	written, failure := Written(pulled)
 
 	switch {
 	case err != nil:
 		res.Note = "Saved in Garmin Connect, but the settings file could not be fetched: " + err.Error()
-	case len(res.Pulled) > 0:
+	case written > 0:
 		res.Note = "Saved in Garmin Connect and written to GARMIN/NewFiles; unplug the watch to apply."
+	case failure != "":
+		res.Note = "Saved in Garmin Connect, but the settings file was not written to the watch: " + failure + ". Press Sync to try again."
 	case delivering:
 		res.Note = "Saved in Garmin Connect. A running sync is writing the settings file to the watch; unplug the watch when it finishes."
 	default:
