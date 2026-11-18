@@ -97,6 +97,8 @@ func TestApplicationBackupSelectsStateWrittenByItsOwners(t *testing.T) {
 
 	dev, _ := testdump.Apps(t)
 	sess := watchsession.New(dev)
+	// Windows cannot remove the fixture directory while its handle is open.
+	t.Cleanup(func() { _ = sess.Close() })
 
 	// The second change also copies the pending IN.BIN the first one queued.
 	for range 2 {
