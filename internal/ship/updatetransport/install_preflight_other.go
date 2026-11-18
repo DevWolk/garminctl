@@ -2,4 +2,4 @@
 
 package updatetransport
 
-func preflightNativeInstall(installRequest, string) error { return nil }
+func preflightNativeInstall(installRequest) error { return nil }

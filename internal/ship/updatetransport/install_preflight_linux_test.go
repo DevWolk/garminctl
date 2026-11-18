@@ -43,7 +43,7 @@ func TestPreflightNamesTheMissingLinuxTool(t *testing.T) {
 
 	_, request := installWorkerFixture(t)
 
-	err := preflightNativeInstall(request, t.TempDir())
+	err := preflightNativeInstall(request)
 	if err == nil || !strings.Contains(err.Error(), privilegeTool) {
 		t.Fatalf("preflight without %s: %v", privilegeTool, err)
 	}

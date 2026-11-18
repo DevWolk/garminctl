@@ -52,7 +52,7 @@ func RunInstallWorker(ctx context.Context, config InstallWorkerConfig, input io.
 		return errors.New("installer requires a bounded startup MCP probe")
 	}
 
-	preflight := preflightNativeInstall
+	preflight := func(r installRequest, _ string) error { return preflightNativeInstall(r) }
 	if config.HostCheck != nil {
 		preflight = func(r installRequest, directory string) error {
 			return config.HostCheck(r.Target.Installation, r.Install.CLI, directory)

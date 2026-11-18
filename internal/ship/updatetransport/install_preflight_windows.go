@@ -12,7 +12,7 @@ import (
 // preflightNativeInstall refuses while the installed CLI is in use: Setup
 // cannot replace a running executable and would leave a new desktop beside the
 // old CLI. The desktop itself is the owner the helper waits for.
-func preflightNativeInstall(r installRequest, _ string) error {
+func preflightNativeInstall(r installRequest) error {
 	if r.Target.Installation != InstallSetup {
 		return nil
 	}

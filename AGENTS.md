@@ -338,9 +338,7 @@ See CLAUDE.md for the working rules. Module map:
   verifies RSA again. Setup keeps the observed InstallDir; DEB/RPM use one
   `pkexec` prompt for the installed CLI's package step, which gives the fixed
   package-manager argv only a root-owned verified copy; no shell, no direct
-  writes to managed executables. Stage and install operations refuse a cache
-  with a foreign-owned or world-writable ancestor; a linked home or cache
-  directory is accepted. Committed OS transactions are not killed on monitoring
+  writes to managed executables. A linked home or cache directory is accepted. Committed OS transactions are not killed on monitoring
   timeout. Operation logs and a bounded result remain for diagnosis;
   LastInstallResult reads the newest result for the Application tab and
   `garminctl application status`. Prepare removes operations unchanged
