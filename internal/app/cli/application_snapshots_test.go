@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 func TestRecoverySnapshotDispatchUsesNoKeyWatchOrNativeHost(t *testing.T) {

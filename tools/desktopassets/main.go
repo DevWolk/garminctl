@@ -17,7 +17,7 @@ func main() {
 }
 
 func run() error {
-	file, err := os.Open("internal/desktop/icon.png")
+	file, err := os.Open("internal/ship/desktop/icon.png")
 	if err != nil {
 		return err
 	}

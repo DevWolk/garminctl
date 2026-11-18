@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/app"
-	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 const musicAddSubcommand = "add"

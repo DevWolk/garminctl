@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/ciq"
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/ciq"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 func appHintsJSON(t *testing.T, value *AppHints) string {

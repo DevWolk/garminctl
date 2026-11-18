@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/apps"
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 type updateDevice struct {

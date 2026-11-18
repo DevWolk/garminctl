@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostexec"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 // Installer prepares a separate cached CLI executor for a verified native package.

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 type cacheTestDevice struct {

@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
-const script = readFileSync(path.join(__dirname, '../internal/web/ui/application.js'), 'utf8');
-const downloadScript = readFileSync(path.join(__dirname, '../internal/web/ui/application-download.js'), 'utf8');
-const installScript = readFileSync(path.join(__dirname, '../internal/web/ui/application-install.js'), 'utf8');
+const script = readFileSync(path.join(__dirname, '../internal/ship/web/ui/application.js'), 'utf8');
+const downloadScript = readFileSync(path.join(__dirname, '../internal/ship/web/ui/application-download.js'), 'utf8');
+const installScript = readFileSync(path.join(__dirname, '../internal/ship/web/ui/application-install.js'), 'utf8');
 
 // A deliberately small DOM port: unsafe HTML writes fail instead of parsing it.
 class Element {
@@ -125,7 +125,7 @@ test('late browser response cannot replace native versions', async () => {
 });
 
 test('desktop bridge supplies typed reads and preparation methods and routes Help', async () => {
-  const source=readFileSync(path.join(__dirname,'../internal/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
+  const source=readFileSync(path.join(__dirname,'../internal/ship/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
   const calls=[];let bridge,event,navigation;
   const window={applicationPage:{attach:value=>{bridge=value;}}};
   const document={addEventListener:()=>{}};
@@ -281,7 +281,7 @@ test('an update that failed after the application closed is shown on the next st
 });
 
 test('desktop confirmation resolves unsaved edits and blocks reload while installation owns the window',async()=>{
-  const source=readFileSync(path.join(__dirname,'../internal/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
+  const source=readFileSync(path.join(__dirname,'../internal/ship/desktop/desktop.js'),'utf8').replace(/^import .*;\n/,'');
   let bridge,event;const prompts=[],calls=[],pending=new Map([['setting',1]]);let installing=false,answer=false,reloads=0;
   const window={applicationPage:{attach:value=>{bridge=value;},installing:()=>installing}};
   vm.runInNewContext(source,{window,document:{addEventListener:()=>{}},Call:{ByName:(...args)=>{calls.push(args);return Promise.resolve();}},Clipboard:{SetText:()=>{}},Events:{On:(_,fn)=>{event=fn;}},state:{pending,appPending:new Map(),cloudPending:new Map()},confirmDialog:async value=>{prompts.push(value);return answer;},location:{reload(){reloads++;}}});

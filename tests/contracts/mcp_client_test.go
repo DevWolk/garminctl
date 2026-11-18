@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/app"
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/testdump"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 // StagerConfig comes from local composition, never a JSON request.

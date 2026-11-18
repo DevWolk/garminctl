@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 

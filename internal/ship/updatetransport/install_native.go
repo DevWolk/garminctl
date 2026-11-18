@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostexec"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 var errInstallerOutcomeUnknown = errors.New("installer is still running; its result is unknown; do not retry automatically")

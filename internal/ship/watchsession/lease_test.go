@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 type deadlineDevice struct {

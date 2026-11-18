@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 const healthCommandName = "health"

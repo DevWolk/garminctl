@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/containers/connect"
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )

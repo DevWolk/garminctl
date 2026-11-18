@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestParseAppsConfig(t *testing.T) {

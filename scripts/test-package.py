@@ -25,7 +25,7 @@ def check_package(desktop, cli, repo, version, work, native_ui=False, state=None
         "fit/testdata/Settings.fit": "Settings/Settings.fit",
     }
     for source, target in fixtures.items():
-        (dump / "GARMIN" / target).write_bytes((repo / "internal" / source).read_bytes())
+        (dump / "GARMIN" / target).write_bytes((repo / "internal" / "ship" / source).read_bytes())
     model = ET.parse(dump / "GARMIN/GarminDevice.xml").findtext("{*}Model/{*}Description")
     cli_version = subprocess.check_output([str(cli), "version"], text=True, timeout=10).strip()
     assert cli_version == 'garminctl ' + version, cli_version

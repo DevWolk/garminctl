@@ -8,9 +8,9 @@ import (
 	"reflect"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/hostfile"
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 // restoreDataAction is an internal capability, never a native/HTTP/MCP method.

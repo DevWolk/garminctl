@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/health"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

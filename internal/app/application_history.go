@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
 )
 

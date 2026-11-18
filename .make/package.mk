@@ -1,7 +1,7 @@
 .PHONY: assets package package-linux package-windows
 
 assets: up ## Generate native application icons and Windows resources
-	$(DOCKER_EXEC) rsvg-convert -w 256 -h 256 -o internal/desktop/icon.png internal/web/ui/icon.svg
+	$(DOCKER_EXEC) rsvg-convert -w 256 -h 256 -o internal/ship/desktop/icon.png internal/ship/web/ui/icon.svg
 	$(GO) run ./tools/desktopassets
 
 package: package-linux package-windows ## Build the Windows installer and Linux DEB/RPM packages

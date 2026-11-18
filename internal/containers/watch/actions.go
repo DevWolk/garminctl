@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

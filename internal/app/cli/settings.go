@@ -4,7 +4,7 @@ import (
 	"context"
 
 	settingscli "github.com/DevWolk/garminctl/internal/containers/settings/ui/cli"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

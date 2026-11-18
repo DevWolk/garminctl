@@ -1,7 +1,7 @@
 // Package watch provides watch summaries, file interpretation and workflows.
 package watch
 
-import "github.com/DevWolk/garminctl/internal/device"
+import "github.com/DevWolk/garminctl/internal/ship/device"
 
 // Summary describes the connected watch.
 type Summary struct {

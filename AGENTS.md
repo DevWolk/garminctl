@@ -1,6 +1,14 @@
 # Agent notes
 
-See CLAUDE.md for the working rules. Module map:
+See CLAUDE.md for the working rules.
+
+`internal` has three directories: `app` wires the process and the commands,
+`containers/<feature>` holds one feature each with its `ui/` adapters, and
+`ship/<package>` holds everything features share, including the `web`,
+`mcpserver` and `desktop` shells. `tests/architecture` enforces who may import
+whom.
+
+Module map:
 
 - `cmd/garminctl`: `main.go` holds the build version (`-X main.version`) and
   dispatches the private `_application-stage` worker before ordinary commands.
@@ -40,7 +48,7 @@ See CLAUDE.md for the working rules. Module map:
   One file per command group: `files.go`, `settings.go`, `updates.go`,
   `cloud.go`, `health.go`, `workouts.go`, `music.go`, `store.go`,
   `serve.go`, `autostart.go`; extracted app CLI wrappers live in `apps_cli.go`.
-- `cmd/garmin-desktop`, `internal/desktop`: pinned Wails v3 native window (build tag
+- `cmd/garmin-desktop`, `internal/ship/desktop`: pinned Wails v3 native window (build tag
   `desktop`), owned/reused loopback backend, private-origin proxy, native Save
   dialog and lifecycle/edit protection. A failed page navigation disarms the edit
   guard; held confirmed work postpones close. A private windowHost isolates bridge calls;
@@ -53,7 +61,7 @@ See CLAUDE.md for the working rules. Module map:
   The proxy preserves native body streams with no advertised length before
   forwarding them to the backend's bounded request readers.
   Linux uses the gtk3 compatibility tag with WebKitGTK 4.1; native package/UI
-  acceptance is tracked separately from headless tests. `internal/devicehost` selects DirFS,
+  acceptance is tracked separately from headless tests. `internal/ship/devicehost` selects DirFS,
   WPD on Windows/WSL, or native Linux MTP.
 - `internal/containers/application` owns SemVer/channel selection, saved history,
   independent desktop/CLI/backend inventory and DownloadReleaseAction. Stable is
@@ -150,12 +158,12 @@ See CLAUDE.md for the working rules. Module map:
   Missing compiled key disables preparation and export while keeping
   metadata reads and removal available. Native Apply uses a blocking progress dialog and
   existing unsaved-edit confirmation. No public HTTP/MCP installer or rollback UI.
-- `internal/device/mtp`: native libusb transport on Linux with CGO; serial MTP
+- `internal/ship/device/mtp`: native libusb transport on Linux with CGO; serial MTP
   transactions and filesystem operations, including Garmin's `0x9002` hidden
   listing. Non-CGO CLI builds retain WPD/DirFS support. Linux packages include
   the libusb-enabled CLI; the portable WSL CLI stays free of shared-library
   dependencies. Hardware verification of the native Linux path is pending.
-- `internal/device`: `Device` interface (List/Stat/Read/Write/Delete/Mkdir).
+- `internal/ship/device`: `Device` interface (List/Stat/Read/Write/Delete/Mkdir).
   `Read` hands its buffer to the caller. `ErrNotFound` means absence only:
   `DirFS` returns other lookup failures as they are, and the WPD client takes
   absence from the bridge's `notFound` flag, never from error text.
@@ -165,9 +173,9 @@ See CLAUDE.md for the working rules. Module map:
   delete, mkdir, objectid, listid, mtpread, mtpwrite, mtpnodata, quit;
   payloads are base64. `wpd/raw.go` holds the raw PTP operations (hidden
   app folder, storage info).
-- `internal/fit`: `Decode`/`Encode` keep raw records; `Profile.Describe`
+- `internal/ship/fit`: `Decode`/`Encode` keep raw records; `Profile.Describe`
   names fields; `Builder` writes new files Garmin-style (local slot 0).
-- `internal/deviceinfo`: pure GarminDevice.xml models, parsing and software
+- `internal/ship/deviceinfo`: pure GarminDevice.xml models, parsing and software
   version formatting. watchsession and the connect, health, music and workouts
   containers import it directly.
 - `internal/app` assembles runtime/account owners for entry points and supplies
@@ -186,7 +194,7 @@ See CLAUDE.md for the working rules. Module map:
 - `internal/ship/mcpx` owns Streamable HTTP tracking/protocol close, generic
   watch lease handlers, tool registration and annotation helpers. Its narrow
   owner/lease contracts accept the Session Manager directly.
-  `internal/mcpserver` supplies protocol instructions and registered-tool
+  `internal/ship/mcpserver` supplies protocol instructions and registered-tool
   construction; app binds feature bodies to the shared runtime.
 - `internal/ship/watchsession` owns cached/raw filesystem access, optional
   capabilities, scoped diagnostics, watch paths and metadata reads. Its Manager
@@ -252,7 +260,7 @@ See CLAUDE.md for the working rules. Module map:
   nine routes and ui/mcp four typed tools; app injects the same account and
   coordinator into HTTP/MCP/auto. HTTP keeps 202/409; compatible MCP waiters join
   the runtime job.
-- `internal/gc`: Garmin Connect protocol session (SSO/MFA, OAuth1 to OAuth2,
+- `internal/ship/gc`: Garmin Connect protocol session (SSO/MFA, OAuth1 to OAuth2,
   protected token state, bearer helpers). CloudProfile/SocialProfile own the
   profile protocol and label mapping. Caller-scoped identity cache/error policy
   and queue/upload workflows belong to containers/connect.
@@ -344,19 +352,19 @@ See CLAUDE.md for the working rules. Module map:
   `garminctl application status`. Prepare removes operations unchanged
   for a day except the one holding that newest result. No replay is added. App binds this port to the existing owned backend stop/join; reused
   backends are refused. Native GUI/installation/restart acceptance is separate.
-- `internal/ciqstore/store.go`: public store website API (`Browse`,
+- `internal/ship/ciqstore/store.go`: public store website API (`Browse`,
   `Detail`, `Reviews`, `DeviceTypeID`); the store container merges it
   with the installed apps.
-- `internal/ciqstore`: `Fetch`/`Load`/`Parse` of the apps.garmin.com
+- `internal/ship/ciqstore`: `Fetch`/`Load`/`Parse` of the apps.garmin.com
   settings page; `Setting.OptionValue` resolves labels to values; `AppInfo`
   reads the public store record (latest version).
-- `internal/web`: `net/http` API + embedded `ui/` (vanilla JS). `handler`
+- `internal/ship/web`: `net/http` API + embedded `ui/` (vanilla JS). `handler`
   wraps the mux in `localOnly` (Host/Origin/Sec-Fetch-Site checks; the API
   has no login) and request logging. The UI keeps the open tab and item in
   the URL path, so `handler` serves `index.html` for every first segment
   that `index.html` declares as a `data-tab`. `auto.go` is the USB watcher
   and the background sync job; `server_test.go` drives the API over a dump.
-- `internal/mcpserver`: MCP instructions and stdio/HTTP shells receive all
+- `internal/ship/mcpserver`: MCP instructions and stdio/HTTP shells receive all
   feature tool registrars from app. Stdio borrows the narrow Context/Close
   runtime contract; HTTP borrows its parent context. The shell imports no
   feature package or account client. Lease/error handling belongs to mcpx and
@@ -385,8 +393,8 @@ the Windows autostart copy, keeping stopped servers stopped); `make update`
 pulls the current branch first. The web and HTTP MCP servers share one
 `process.Runtime` and account client from `app.ServeListener`: one
 `watchsession.Manager` (one lazily opened watch), the sync and activity jobs
-and the app schema cache. `internal/paths` names the cache directory; tests
-over a dump use `internal/testdump`, which owns the shared XML and
+and the app schema cache. `internal/ship/paths` names the cache directory; tests
+over a dump use `internal/ship/testdump`, which owns the shared XML and
 app-registry fixtures. Unit tests stay beside their package; application
 contract suites live in `tests/contracts` (HTTP and MCP) and
 `tests/contracts/cli`, and the architecture gate in `tests/architecture`.

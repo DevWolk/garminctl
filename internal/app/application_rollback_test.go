@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 type applicationRollbackFixture struct {

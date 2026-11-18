@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 )
 

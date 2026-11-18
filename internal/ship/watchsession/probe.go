@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 // ProbeObservation is a fresh transport observation or an explicit skipped

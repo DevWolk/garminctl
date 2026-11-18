@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 // NewApplicationRecoverySnapshots binds only the configured protected backup root.

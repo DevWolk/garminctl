@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 // StatusAction runs the existing Status workflow.

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestWorkoutRejectsInvalidNumbersBeforeNarrowing(t *testing.T) {

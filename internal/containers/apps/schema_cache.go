@@ -3,7 +3,7 @@ package apps
 import (
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

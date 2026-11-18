@@ -3,8 +3,8 @@ package store
 import (
 	"context"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 )
 
 // InstalledApps reads registry entries within the caller's existing watch lease.

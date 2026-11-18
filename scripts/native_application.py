@@ -71,7 +71,7 @@ def fixture_watch(repo, work):
                            ('fit/testdata/Settings.fit', 'Settings/Settings.fit')]:
         path = dump / 'GARMIN' / target
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(repo / 'internal' / source, path)
+        shutil.copyfile(repo / 'internal' / 'ship' / source, path)
     return dump
 
 

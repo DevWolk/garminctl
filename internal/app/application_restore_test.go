@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 func TestApplicationRestoreRequiresRealOwnedBackendJoinAndKeepsSafetyCopy(t *testing.T) { //nolint:paralleltest // Production runtime and account paths are isolated with process environment.

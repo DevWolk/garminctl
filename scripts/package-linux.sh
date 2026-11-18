@@ -11,7 +11,7 @@ root="$stage/root"
 install -Dm755 bin/garmin-desktop "$root/usr/bin/garmin-desktop"
 install -Dm755 bin/garminctl-linux "$root/usr/bin/garminctl"
 install -Dm644 build/linux/garminctl.desktop "$root/usr/share/applications/garminctl.desktop"
-install -Dm644 internal/web/ui/icon.svg "$root/usr/share/icons/hicolor/scalable/apps/garminctl.svg"
+install -Dm644 internal/ship/web/ui/icon.svg "$root/usr/share/icons/hicolor/scalable/apps/garminctl.svg"
 install -Dm644 build/linux/69-garminctl.rules "$root/usr/lib/udev/rules.d/69-garminctl.rules"
 install -Dm644 LICENSE "$root/usr/share/doc/garminctl/LICENSE"
 mkdir -p "$root/DEBIAN" dist

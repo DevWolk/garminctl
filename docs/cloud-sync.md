@@ -74,5 +74,5 @@ server with those options; see [server lifecycle](desktop.md#window-and-server).
 From WSL it requires a Windows CLI binary beside the WSL binary. It does not
 open the desktop window; see [CLI server commands](cli.md#servers).
 
-Sources: [sign-in and token storage](../internal/gc/client.go),
-[sync](../internal/containers/connect/cloud.go), [USB watcher](../internal/web/auto.go).
+Sources: [sign-in and token storage](../internal/ship/gc/client.go),
+[sync](../internal/containers/connect/cloud.go), [USB watcher](../internal/ship/web/auto.go).

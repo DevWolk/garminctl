@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 )
 
 func sampleSpec() *WorkoutSpec {

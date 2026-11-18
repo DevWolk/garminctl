@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 

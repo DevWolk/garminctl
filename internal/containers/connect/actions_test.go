@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 func TestLogoutDeletesSessionCopiesAndReportsEveryFailure(t *testing.T) {

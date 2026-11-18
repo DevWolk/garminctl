@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/updates"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 const updatesCommand = "updates"

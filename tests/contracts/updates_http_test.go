@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/updates"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestUpdatesHTTPContracts(t *testing.T) { //nolint:paralleltest // replaces process HTTP clients

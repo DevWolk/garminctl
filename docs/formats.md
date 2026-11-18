@@ -1,13 +1,13 @@
 # File formats and transport
 
-This reference describes the codecs and transfer rules in `internal/fit`,
-`internal/ciq`, `internal/device`, `internal/deviceinfo` and the feature
+This reference describes the codecs and transfer rules in `internal/ship/fit`,
+`internal/ship/ciq`, `internal/ship/device`, `internal/ship/deviceinfo` and the feature
 containers under `internal/containers`. Fixture tests cover the
 included samples; device contents and firmware behavior can differ.
 
 ## Device paths and transport
 
-Paths are relative to device storage. [`GarminDevice.xml`](../internal/deviceinfo/xml.go)
+Paths are relative to device storage. [`GarminDevice.xml`](../internal/ship/deviceinfo/xml.go)
 describes data types, folders and transfer directions; use those capabilities
 rather than assuming that every device has the same files.
 
@@ -22,16 +22,16 @@ rather than assuming that every device has the same files.
 | App binaries | `GARMIN/APPS/MEDIA/<file>.PRG` | Use hidden-object operations when needed. |
 | Activities and local audio | `GARMIN/Activity`, `Music`, `Audiobooks`, `Podcasts` | Activity FIT files and user-managed audio. |
 
-The [WPD bridge](../internal/device/wpd/client.go) exchanges JSON lines with a
+The [WPD bridge](../internal/ship/device/wpd/client.go) exchanges JSON lines with a
 PowerShell/C# helper on Windows, including Windows PowerShell through WSL.
 Binary payloads are base64. A failed reply marks a missing path with `notFound`;
 the client never derives absence from the error text. Automatic selection requires manufacturer `Garmin`
 or USB vendor `091e` in the device ID; an explicit ID must match exactly.
 
-The [native Linux transport](../internal/device/mtp/usb_linux.go) uses libusb
+The [native Linux transport](../internal/ship/device/mtp/usb_linux.go) uses libusb
 with CGO, selects vendor `091e`, and claims an MTP interface. It does not detach
 kernel drivers or reset USB. Its protocol tests use a simulated wire and do not
-establish physical USB compatibility. [`DirFS`](../internal/device/dirfs.go)
+establish physical USB compatibility. [`DirFS`](../internal/ship/device/dirfs.go)
 provides offline access through `os.Root`, with case-insensitive path matching
 and rejection of paths escaping the root.
 
@@ -41,18 +41,18 @@ with Garmin `GetObjectIds` (`0x9002`) for hidden listings. File writes use
 and thumbnail formats `0x3000`. Replacements delete the existing object first.
 Hidden WPD writes and native Linux writes check the reported size after transfer.
 They do not compare the downloaded bytes with the uploaded bytes.
-See [WPD raw operations](../internal/device/wpd/raw.go) and the
-[native filesystem implementation](../internal/device/mtp/device.go).
+See [WPD raw operations](../internal/ship/device/wpd/raw.go) and the
+[native filesystem implementation](../internal/ship/device/mtp/device.go).
 
 The native transport serializes complete operations, including two-command writes.
-The [protocol](../internal/device/mtp/protocol.go) invalidates the session after
+The [protocol](../internal/ship/device/mtp/protocol.go) invalidates the session after
 transfer or framing failures; a protocol response error alone does not.
 Keep command/data framing,
 transaction IDs and zero-length packet handling intact.
 
 ## FIT codec
 
-[`internal/fit`](../internal/fit/) retains record order, local definitions,
+[`internal/ship/fit`](../internal/ship/fit/) retains record order, local definitions,
 field bytes, developer fields and compressed timestamp headers. Definitions
 select their byte order. The profile names documented fields; raw unknown fields
 remain available without adding a profile entry.
@@ -60,7 +60,7 @@ remain available without adding a profile entry.
 `Decode` accepts 12- or 14-byte headers. It checks nonzero header CRCs in
 14-byte headers and file CRCs when present, returning decoded data alongside
 CRC errors. `Encode` writes a 14-byte header and recalculates both CRCs, so it
-normalizes those details. [Round-trip tests](../internal/fit/fit_test.go) require
+normalizes those details. [Round-trip tests](../internal/ship/fit/fit_test.go) require
 byte-identical output for the included fixtures.
 
 `Builder` uses local slot 0 and emits a definition whenever the message number
@@ -108,7 +108,7 @@ of the device's uint64 UnitID, preserving the existing protocol representation.
 
 ## Connect IQ settings
 
-[`internal/ciq`](../internal/ciq/ciq.go) implements big-endian serialization:
+[`internal/ship/ciq`](../internal/ship/ciq/ciq.go) implements big-endian serialization:
 
 1. Optional string block: `0xABCDABCD`, `uint32` byte length, then strings
    with a `uint16` length counting UTF-8 bytes and the NUL terminator.
@@ -125,7 +125,7 @@ of the device's uint64 UnitID, preserving the existing protocol representation.
 | `0x0E`, `0x0F` | Long, double | `int64`, `float64`. |
 
 Dictionaries preserve insertion order; encoding interns strings in order of
-first appearance. The [fixture tests](../internal/ciq/ciq_test.go) require
+first appearance. The [fixture tests](../internal/ship/ciq/ciq_test.go) require
 byte-identical round trips. Converting a dictionary to a JSON object loses order.
 
 [`ApplySettingsAction`](../internal/containers/apps/settings.go) edits existing
@@ -135,7 +135,7 @@ rewrites it and reads it back. A failed copy prevents the device write. When a
 option labels and checks read-only fields, numeric bounds and text length.
 Without a schema, it coerces values to the existing types.
 
-[`internal/ciqstore`](../internal/ciqstore/ciqstore.go) fetches the settings page
+[`internal/ship/ciqstore`](../internal/ship/ciqstore/ciqstore.go) fetches the settings page
 at `apps.garmin.com/en-US/appSettings2/<app>/versions/<version>/devices/<part>/edit?singlePage=true`.
 It parses labels, dropdown values and input constraints. Schema lookup tries
 the installed version, then the latest store version, and caches successful
@@ -198,9 +198,9 @@ The implementation makes these network requests:
 
 | Area | Implementation and behavior |
 | --- | --- |
-| Authentication | [`internal/gc`](../internal/gc/client.go) uses mobile SSO with MFA, OAuth1 preauthorization and OAuth2 bearer exchange. Token responses supply expiry times. |
+| Authentication | [`internal/ship/gc`](../internal/ship/gc/client.go) uses mobile SSO with MFA, OAuth1 preauthorization and OAuth2 bearer exchange. Token responses supply expiry times. |
 | Software updates | [`updates/tasks.go`](../internal/containers/updates/tasks.go) POSTs `{"GarminDeviceXml": "..."}` to `https://omt.garmin.com/api/device-software/v1/updates`. Downloads check supplied size and MD5 before writing the manifest's installation path. |
-| Store | [`ciqstore/store.go`](../internal/ciqstore/store.go) requests public app metadata, search, device types and reviews under `apps.garmin.com/api/appsLibraryExternalServices/api/asw`. `startPageIndex` is a record offset. Store type IDs differ from registry type IDs. |
+| Store | [`ciqstore/store.go`](../internal/ship/ciqstore/store.go) requests public app metadata, search, device types and reviews under `apps.garmin.com/api/appsLibraryExternalServices/api/asw`. `startPageIndex` is a record offset. Store type IDs differ from registry type IDs. |
 | Cloud sync | [`cloud.go`](../internal/containers/connect/cloud.go) reads and updates device settings, downloads device messages, and uploads supported data types using `uploadTargets`. |
 | Health and workouts | [`daily.go`](../internal/containers/health/daily.go), [`history.go`](../internal/containers/health/history.go) and [`workouts/actions.go`](../internal/containers/workouts/actions.go) define the Connect endpoints and payloads. |
 | Audio providers | [`music/tasks.go`](../internal/containers/music/tasks.go) reports provider names and cache sizes from device XML separately from local audio files. |
@@ -212,7 +212,7 @@ device files and record accepted or duplicate files in a per-device ledger.
 App update checks compare store metadata; the store browser does not queue
 app installations.
 
-[`paths.Cache`](../internal/paths/paths.go) uses the OS cache directory, falling
+[`paths.Cache`](../internal/ship/paths/paths.go) uses the OS cache directory, falling
 back to the temporary directory, under `garminctl/`. It holds settings schemas,
 registry backups and per-device caches. The default Connect token store uses
 `os.UserConfigDir()/garminctl/garmin-connect.json`. An unavailable config

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 // Diagnostics is a borrowed handle-operation scope, created only for a

@@ -48,5 +48,5 @@ A browser that supports installed web apps can install garminctl from the
 address bar or browser menu. The server must still run when the browser app
 opens. Windows users can configure its [background server](cli.md#servers).
 
-Sources: [interface](../internal/web/ui/index.html),
-[routes and request checks](../internal/web/server.go).
+Sources: [interface](../internal/ship/web/ui/index.html),
+[routes and request checks](../internal/ship/web/server.go).

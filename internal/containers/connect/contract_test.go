@@ -3,7 +3,7 @@ package connect
 import (
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestConnectModelContracts(t *testing.T) {

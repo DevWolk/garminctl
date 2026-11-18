@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestMusicHTTPContracts(t *testing.T) { //nolint:paralleltest // cases isolate process account paths and transports.

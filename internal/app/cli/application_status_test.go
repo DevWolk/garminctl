@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 func TestApplicationStatusPrintsTheInstallerRecordWithoutWatchOrKey(t *testing.T) {

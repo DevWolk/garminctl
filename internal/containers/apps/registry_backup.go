@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostfile"
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 // backupRegistry publishes a verified private snapshot of OUT.BIN and of the

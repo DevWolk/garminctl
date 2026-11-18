@@ -1,7 +1,7 @@
 // Served only by the CI fixture proxy, never embedded in the application.
 import { Call } from '/wails/runtime.js';
 
-const prefix = 'github.com/DevWolk/garminctl/internal/desktop.App.';
+const prefix = 'github.com/DevWolk/garminctl/internal/ship/desktop.App.';
 const boot = crypto.randomUUID();
 const downloads = new Map();
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 )
 
 func TestVerificationPromptCancellation(t *testing.T) {

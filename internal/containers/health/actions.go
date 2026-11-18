@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

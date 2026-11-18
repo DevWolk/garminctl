@@ -5,8 +5,8 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/app"
 	watchcli "github.com/DevWolk/garminctl/internal/containers/watch/ui/cli"
-	"github.com/DevWolk/garminctl/internal/devicehost"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/devicehost"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

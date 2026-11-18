@@ -233,5 +233,5 @@ it exits.
 
 Sources: [installer](../build/windows/installer.nsi),
 [Linux packages](../scripts/package-linux.sh),
-[desktop lifecycle](../internal/desktop/backend.go),
+[desktop lifecycle](../internal/ship/desktop/backend.go),
 [launch options](../cmd/garmin-desktop/main.go).
