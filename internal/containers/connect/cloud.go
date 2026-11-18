@@ -168,6 +168,7 @@ func (c *Cloud) cachedProfile(ctx context.Context) (*CloudProfile, error) {
 func (c *Cloud) registration(ctx context.Context, st *CloudStatus) {
 	dx, err := c.deviceXML(ctx)
 	if err != nil {
+		st.Error = err.Error()
 		return
 	}
 
@@ -742,6 +743,12 @@ func (c *Cloud) Upload(ctx context.Context, progress Progress) (*UploadResult, e
 			}
 
 			if err := run.folder(ctx, dt.Name, t, f); err != nil {
+				// Remember what Garmin accepted before the session ended, so
+				// the next run does not send it again.
+				if saveErr := c.saveLedger(dx.UnitID, run.led); saveErr != nil {
+					err = errors.Join(err, fmt.Errorf("save upload ledger: %w", saveErr))
+				}
+
 				return run.res, err
 			}
 		}

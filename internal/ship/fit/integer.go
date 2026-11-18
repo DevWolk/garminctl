@@ -5,6 +5,13 @@ import (
 	"math"
 )
 
+// CheckInteger reports an error when v is outside b's signed or unsigned
+// integer range. The FIT invalid pattern is inside the range.
+func (b BaseType) CheckInteger(v int64) error {
+	_, err := integerBits(b, v)
+	return err
+}
+
 // integerBits validates a value before producing its two's-complement bits.
 // FIT's reserved invalid values remain writable within each type's full range;
 // decoding/encoding untouched Raw bytes does not call this mutation helper.

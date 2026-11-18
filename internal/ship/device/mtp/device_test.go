@@ -17,12 +17,14 @@ type (
 		parent      uint32
 		dir, hidden bool
 		data        []byte
+		size        uint32 // reported instead of len(data) when set
 	}
 	modelWire struct {
 		testWire
-		objects map[uint32]modelObject
-		request []byte
-		sending uint32
+		objects   map[uint32]modelObject
+		request   []byte
+		sending   uint32
+		onCommand func(code uint16)
 	}
 )
 
@@ -39,6 +41,11 @@ func (w *modelWire) WriteContext(ctx context.Context, b []byte) (int, error) {
 	code := binary.LittleEndian.Uint16(b[6:])
 
 	transaction := binary.LittleEndian.Uint32(b[8:])
+
+	if kind == containerCommand && w.onCommand != nil {
+		w.onCommand(code)
+	}
+
 	if kind == containerCommand && (code == 0x100c || code == 0x100d) {
 		w.request = bytes.Clone(b)
 		return len(b), nil
@@ -86,9 +93,7 @@ func (w *modelWire) respond(code uint16, body []byte) ([]byte, []uint32, error) 
 
 		return words(ids...), nil, nil
 	case 0x1008:
-		obj := w.objects[binary.LittleEndian.Uint32(body)]
-		data, err := encodeObject(1, obj.parent, obj.name, len(obj.data), obj.dir)
-
+		data, err := w.objectInfo(binary.LittleEndian.Uint32(body))
 		return data, nil, err
 	case 0x1009:
 		return w.objects[binary.LittleEndian.Uint32(body)].data, nil, nil
@@ -114,6 +119,17 @@ func (w *modelWire) respond(code uint16, body []byte) ([]byte, []uint32, error) 
 	default:
 		return nil, nil, fmt.Errorf("unexpected operation: %04x", code)
 	}
+}
+
+func (w *modelWire) objectInfo(handle uint32) ([]byte, error) {
+	obj := w.objects[handle]
+
+	data, err := encodeObject(1, obj.parent, obj.name, len(obj.data), obj.dir)
+	if err == nil && obj.size != 0 {
+		binary.LittleEndian.PutUint32(data[8:], obj.size)
+	}
+
+	return data, err
 }
 
 func words(values ...uint32) []byte {
@@ -218,4 +234,71 @@ func TestMTPSelection(t *testing.T) {
 	if err != nil || got.ID != "usb:001:003" {
 		t.Fatalf("explicit ID: %v %v", got, err)
 	}
+}
+
+func TestReplaceFinishesAfterCancellationAtDelete(t *testing.T) {
+	t.Parallel()
+
+	d, w := modelDevice(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	w.onCommand = func(code uint16) {
+		if code == 0x100b {
+			cancel()
+		}
+	}
+
+	data := []byte("new PRG contents")
+	if err := d.WriteHidden(ctx, "GARMIN/Apps/Media", "OLD.PRG", data); err != nil {
+		t.Fatalf("replace interrupted after deleting the old file: %v", err)
+	}
+
+	w.onCommand = nil
+
+	got, err := d.Read(t.Context(), "GARMIN/Apps/Media/OLD.PRG")
+	if err != nil || !bytes.Equal(got, data) || ctx.Err() == nil {
+		t.Fatalf("after cancelled replace: %q %v", got, err)
+	}
+}
+
+func TestReadRefusesFileLargerThanOneContainer(t *testing.T) {
+	t.Parallel()
+
+	d, w := modelDevice(t)
+	w.objects[5] = modelObject{name: "BOOK.MP3", parent: 1, size: maxContainer}
+
+	if _, err := d.Read(t.Context(), "GARMIN/BOOK.MP3"); err == nil || errors.Is(err, device.ErrDisconnected) {
+		t.Fatalf("oversized read = %v", err)
+	}
+
+	if d.protocol.broken {
+		t.Fatal("oversized read broke the session")
+	}
+
+	if _, err := d.Read(t.Context(), "GARMIN/Apps/Media/OLD.PRG"); err != nil {
+		t.Fatalf("session unusable after refusing a large read: %v", err)
+	}
+}
+
+func TestOpenContinuesSessionAlreadyOpen(t *testing.T) {
+	t.Parallel()
+
+	w := &testWire{packets: [][]byte{
+		packet(containerResponse, 0x201e, 0, nil),
+		packet(containerData, 0x1004, 1, words(0x10001)),
+		packet(containerResponse, responseOK, 1, nil),
+	}}
+
+	d, err := newDevice(t.Context(), w, device.Info{Name: "Garmin test"})
+	if err != nil {
+		t.Fatalf("open after an aborted session: %v", err)
+	}
+
+	if d.storage != 0x10001 {
+		t.Fatalf("storage = %#x", d.storage)
+	}
+
+	_ = d.Close()
 }

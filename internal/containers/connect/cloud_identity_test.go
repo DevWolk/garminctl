@@ -2,6 +2,7 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -225,5 +226,29 @@ func TestCloudIdentityWithMissingOrInvalidAccountStore(t *testing.T) {
 				t.Fatalf("missing account identity error=%v", err)
 			}
 		})
+	}
+}
+
+// unreadableWatch fails every read.
+type unreadableWatch struct{ device.Device }
+
+func (*unreadableWatch) Read(context.Context, string) ([]byte, error) {
+	return nil, errors.New("synthetic read failure")
+}
+
+func TestCloudStatusReportsWatchReadError(t *testing.T) {
+	t.Parallel()
+
+	client := syncTestClient(t, func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != socialProfilePath {
+			return nil, fmt.Errorf("unexpected request: %s", req.URL.Path)
+		}
+
+		return syncResponse(req, []byte(`{"displayName":"status-identity"}`)), nil
+	})
+
+	st := NewCloud(watchsession.New(&unreadableWatch{}), client).Status(t.Context())
+	if !st.LoggedIn || st.Registered || !strings.Contains(st.Error, "synthetic read failure") {
+		t.Fatalf("status=%+v, want the watch read error", st)
 	}
 }

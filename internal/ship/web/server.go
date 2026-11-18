@@ -33,8 +33,11 @@ const (
 // shells receive registrations, never import the feature implementations.
 // Functions taking a Session borrow the caller's lease only for that call.
 type Features struct {
-	HTTP []httpx.RouteRegistrar
-	MCP  []mcpx.ToolRegistrar
+	// Source names the watch or directory this server reads; /api/server
+	// reports it so a desktop window reuses only a server for its own data.
+	Source string
+	HTTP   []httpx.RouteRegistrar
+	MCP    []mcpx.ToolRegistrar
 	// WatchSummary is the connection-state view of the leased watch.
 	WatchSummary func(context.Context, *watchsession.Session) (any, error)
 	// WatchModel names the leased watch in notifications.
@@ -244,7 +247,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{"endpoint": "http://" + r.Host + "/mcp", "status": s.mcp.Snapshot()})
 	})
 	mux.HandleFunc("GET /api/server", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.WriteJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"application": "garminctl", "version": s.version, "desktopAPI": "1", "source": s.features.Source})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("POST /api/connect", s.admittedOperation(s.connect))

@@ -174,8 +174,8 @@ func lastIncompleteInstallation(ctx context.Context, reader Reader) string {
 		return ""
 	}
 
-	// The record outlives a later manual installation of the same or a newer version.
-	if info, err := reader.Info(ctx); err == nil && info != nil && outcome.Superseded(info.Desktop.Version) {
+	// The record outlives a later installation, for example Setup run by hand.
+	if info, err := reader.Info(ctx); err == nil && info != nil && outcome.Resolved(info.Desktop.Version, info.CLI.Version) {
 		return ""
 	}
 

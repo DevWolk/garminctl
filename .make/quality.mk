@@ -43,7 +43,7 @@ test-package-runner: up ## Check installed-package process cleanup
 	$(DOCKER_EXEC) python3 -m unittest discover -s tests/native -p 'test_*.py'
 
 test-ui: up ## Check Application UI behavior without a browser or native window
-	$(DOCKER_EXEC) node --test tests/ui/test_application_ui.cjs tests/ui/test_mcp_ui.cjs
+	$(DOCKER_EXEC) node --test tests/ui/test_application_ui.cjs tests/ui/test_dialog_ui.cjs tests/ui/test_mcp_ui.cjs
 
 check: tidy lint lint-windows race test-integration test-ui test-package-runner vuln vuln-windows ## Run the complete required quality gate
 

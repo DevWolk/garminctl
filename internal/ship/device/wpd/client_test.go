@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -380,5 +383,131 @@ func TestTrimInfo(t *testing.T) {
 
 	if !slices.Equal(got, want) {
 		t.Errorf("trimInfo() = %q, want %q", got, want)
+	}
+}
+
+func TestBridgeReplyBeforeCancellationIsSuccess(t *testing.T) {
+	t.Parallel()
+
+	b, input := scriptedBridge("{\"id\":1,\"ok\":true}\n{\"id\":2,\"ok\":true}\n")
+	// Live through admission; cancelled once the request is on the pipe.
+	ctx := &lateCancelContext{live: 3}
+
+	if _, err := b.call(ctx, pathReq("delete", "GARMIN/NewFiles/a.fit")); err != nil {
+		t.Fatalf("answered request reported as failed: %v", err)
+	}
+
+	if b.closed.Load() {
+		t.Fatal("cancellation after the reply stopped the bridge")
+	}
+
+	if _, err := b.call(t.Context(), pathReq("stat", "GARMIN")); err != nil || input.writes != 2 {
+		t.Fatalf("bridge unusable after an answered request: %v, writes=%d", err, input.writes)
+	}
+}
+
+func TestWriteFinishesAfterCallerCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	b := &Bridge{cmd: &exec.Cmd{}, stdin: cancelInput{cancel: cancel}, out: bufio.NewReader(strings.NewReader("{\"id\":1,\"ok\":true}\n")), stderr: &bridgeDiagnostics{}}
+	d := &Device{bridge: b}
+
+	if err := d.Write(ctx, "GARMIN/Music/book.mp3", []byte("audio")); err != nil {
+		t.Fatalf("admitted write interrupted by caller: %v", err)
+	}
+
+	if b.closed.Load() {
+		t.Fatal("caller cancellation stopped the bridge during a write")
+	}
+
+	cancelled, stop := context.WithCancel(t.Context())
+	stop()
+
+	if err := d.Write(cancelled, "GARMIN/Music/book.mp3", []byte("audio")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-cancelled write = %v", err)
+	}
+}
+
+// cancelOnWrite cancels the caller when the bridge receives request number at.
+type cancelOnWrite struct {
+	bridgeInput
+
+	at     int
+	cancel context.CancelFunc
+}
+
+func (w *cancelOnWrite) Write(data []byte) (int, error) {
+	n, err := w.bridgeInput.Write(data)
+	if w.writes == w.at {
+		w.cancel()
+	}
+
+	return n, err
+}
+
+func mtpReply(id int, data []byte, params ...uint32) string {
+	p, _ := json.Marshal(params)
+	if params == nil {
+		p = []byte("[]")
+	}
+
+	return fmt.Sprintf("{\"id\":%d,\"ok\":true,\"code\":%d,\"params\":%s,\"b64\":%q}\n", id, ptpOK, p, base64.StdEncoding.EncodeToString(data))
+}
+
+func handleList(handles ...uint32) []byte {
+	b := binary.LittleEndian.AppendUint32(nil, uint32(len(handles))) //nolint:gosec // small test fixtures.
+	for _, h := range handles {
+		b = binary.LittleEndian.AppendUint32(b, h)
+	}
+
+	return b
+}
+
+func TestWriteHiddenReplaceFinishesAfterCancellationAtDelete(t *testing.T) {
+	t.Parallel()
+
+	oldInfo, err := objectInfoDataset(0x10001, 1, "OLD.PRG", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newInfo, err := objectInfoDataset(0x10001, 1, "OLD.PRG", 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replies := "{\"id\":1,\"ok\":true,\"objectId\":\"o1\",\"storage\":\"s10001\"}\n" +
+		mtpReply(2, handleList(5)) + mtpReply(3, oldInfo) + mtpReply(4, handleList(5)) +
+		mtpReply(5, nil) + // DeleteObject of the old file
+		mtpReply(6, nil, 0x10001, 1, 6) + mtpReply(7, nil) +
+		mtpReply(8, handleList(6)) + mtpReply(9, newInfo) + mtpReply(10, handleList(6))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	input := &cancelOnWrite{at: 5, cancel: cancel}
+	b := &Bridge{cmd: &exec.Cmd{}, stdin: input, out: bufio.NewReader(strings.NewReader(replies)), stderr: &bridgeDiagnostics{}}
+	d := &Device{bridge: b}
+
+	if err := d.WriteHidden(ctx, "GARMIN", "OLD.PRG", []byte("new app!")); err != nil {
+		t.Fatalf("replace interrupted after deleting the old file: %v", err)
+	}
+
+	if input.writes != 10 || ctx.Err() == nil {
+		t.Fatalf("requests=%d, caller cancelled=%v", input.writes, ctx.Err())
+	}
+}
+
+func TestStorageRejectsInfoWithoutDescription(t *testing.T) {
+	t.Parallel()
+
+	b, _ := scriptedBridge("{\"id\":1,\"ok\":true,\"objectId\":\"o1\",\"storage\":\"s10001\"}\n" + mtpReply(2, make([]byte, 26)))
+	d := &Device{bridge: b}
+
+	if _, err := d.Storage(t.Context()); err == nil {
+		t.Fatal("accepted a 26-byte StorageInfo")
 	}
 }

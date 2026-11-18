@@ -49,17 +49,7 @@ function toast(msg, kind) {
   setTimeout(() => t.remove(), kind === 'bad' ? 9000 : 5000);
 }
 
-function confirmDialog({ title, body, ok }) {
-  return new Promise((resolve) => {
-    const dlg = $('#dlg');
-    $('#dlg-title').textContent = title;
-    $('#dlg-body').innerHTML = body;
-    $('#dlg-ok').textContent = ok || 'Confirm';
-    dlg.returnValue = 'cancel';
-    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok'), { once: true });
-    dlg.showModal();
-  });
-}
+// confirmDialog and promptDialog live in dialog.js.
 
 function setConn(kind, text) {
   const c = $('#conn');
@@ -251,7 +241,9 @@ async function pollStatus() {
     } else if (!st.connected && state.connected) {
       state.connected = false; setConn('bad', 'Unplugged');
       storeConnectionChanged();
-      state.rows = []; state.apps = []; state.app = null;
+      const lost = state.pending.size + state.appPending.size;
+      resetWatchData();
+      if (lost) toast('Unsaved watch and app settings changes were discarded: the watch disconnected.', 'warn');
     }
   } catch (e) {}
 }
@@ -350,16 +342,36 @@ async function loadNewFiles() {
   } catch (e) { ul.innerHTML = `<li class="muted">${esc(e.message)}</li>`; }
 }
 $('#btn-connect').onclick = connect;
-$('#btn-refresh').onclick = async () => {
-  if (!state.connected) return connect();
-  try { await api('POST', '/api/refresh'); } catch (e) {}
+// Bumped whenever data read from the watch and the edits made to it are dropped,
+// so a save confirmed before that does not write edits the user no longer sees.
+let watchEpoch = 0;
+// Forget the watch's settings and apps with their unsaved edits and empty both
+// panels, so the next visit reads them again instead of editing a stale copy.
+function resetWatchData() {
+  watchEpoch++;
   state.rows = []; state.apps = []; state.pending.clear(); state.appPending.clear(); state.app = null;
+  $('#settings-groups').innerHTML = '<p class="muted">Connect the watch to load settings.</p>';
+  $('#apps-list').innerHTML = '<p class="muted">Connect the watch to list apps.</p>';
+  $('#app-title').textContent = 'Select an app';
+  $('#app-hint').textContent = 'Choose an installed app to edit its settings.';
+  for (const id of ['#app-store', '#app-filter', '#app-remove', '#app-notice', '#face-preview']) $(id).hidden = true;
+  $('#app-groups').replaceChildren();
+  if (state.preview.timer) { clearInterval(state.preview.timer); state.preview.timer = null; }
   updateActionBar();
-  try { const st = await api('GET', '/api/status?connect=1'); if (st.summary) renderOverview(st.summary); } catch (e) {}
+}
+// Reload rereads the watch. It asks before dropping unsaved watch and app edits
+// and keeps them when the watch cannot be reread.
+async function refreshFromWatch() {
+  if (!state.connected) return connect();
+  if ((state.pending.size || state.appPending.size) && !await confirmDialog({ title: 'Discard unsaved changes?', body: '<p>Reload rereads the watch. Unsaved watch and app settings changes will be lost.</p>', ok: 'Discard and reload' })) return;
+  try { await api('POST', '/api/refresh'); } catch (e) { toast('Could not reload from the watch: ' + e.message, 'bad'); return; }
+  resetWatchData();
+  try { const st = await api('GET', '/api/status?connect=1'); if (st.summary) { state.summary = st.summary; renderOverview(st.summary); } } catch (e) {}
   loadNewFiles();
   loadTab(state.tab);
   toast('Reloaded from the watch');
-};
+}
+$('#btn-refresh').onclick = refreshFromWatch;
 
 // ---------- watch settings ----------
 const groupTitles = {
@@ -481,9 +493,10 @@ $('#btn-discard').onclick = () => {
 };
 $('#btn-review').onclick = () => (state.tab === 'apps' ? applyAppChanges() : state.tab === 'cloud' ? applyCloudChanges() : applySettings());
 async function applySettings() {
-  const list = [...state.pending.values()];
+  const list = [...state.pending.values()], epoch = watchEpoch;
   const body = `<ul class="changes">${list.map((c) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">Unplug the watch after saving to apply these changes.</p>`;
   if (!await confirmDialog({ title: 'Save watch settings?', body, ok: 'Save changes' })) return;
+  if (epoch !== watchEpoch) { toast('Not saved: the watch was reloaded or disconnected.', 'warn'); return; }
   try {
     const res = await api('POST', '/api/settings/apply', { changes: list.map(({ mesg, index, field, value }) => ({ mesg, index, field, value })) });
     state.pending.clear(); updateActionBar();
@@ -746,16 +759,20 @@ document.querySelectorAll('.seg-btn').forEach((b) => b.addEventListener('click',
 $('#preview-aod').addEventListener('change', () => { state.preview.aod = $('#preview-aod').checked; renderPreview(); });
 
 async function applyAppChanges() {
-  if (!state.app) return;
+  const app = state.app, epoch = watchEpoch;
+  if (!app) return;
   const list = [...state.appPending.entries()];
   const body = `<ul class="changes">${list.map(([, c]) => `<li><span>${esc(c.label)}</span><span><span class="from">${esc(c.from)}</span><span class="to">${esc(c.to)}</span></span></li>`).join('')}</ul><p class="note">Changes are saved directly to the watch.</p>`;
-  if (!await confirmDialog({ title: `Save to ${state.app.name}?`, body, ok: 'Save to watch' })) return;
+  if (!await confirmDialog({ title: `Save to ${app.name}?`, body, ok: 'Save to watch' })) return;
+  if (epoch !== watchEpoch || state.app !== app) { toast('Not saved: the watch was reloaded or disconnected.', 'warn'); return; }
   const values = Object.fromEntries(list.map(([k, c]) => [k, c.value]));
   try {
-    const as = await api('PUT', `/api/apps/${encodeURIComponent(state.app.fileName)}/settings`, { values });
-    state.appValues = as.values; state.appItems = as.items || []; state.appPending.clear(); updateActionBar();
-    renderAppSettings(); renderPreview();
-    toast(`Saved ${list.length} setting${list.length > 1 ? 's' : ''} to ${state.app.name}`);
+    const as = await api('PUT', `/api/apps/${encodeURIComponent(app.fileName)}/settings`, { values });
+    if (state.app === app) {
+      state.appValues = as.values; state.appItems = as.items || []; state.appPending.clear(); updateActionBar();
+      renderAppSettings(); renderPreview();
+    }
+    toast(`Saved ${list.length} setting${list.length > 1 ? 's' : ''} to ${app.name}`);
   } catch (e) { toast(e.message, 'bad'); }
 }
 
@@ -1345,7 +1362,8 @@ function renderInstalled() {
 }
 async function setAppHidden(a, hidden) {
   try {
-    const r = await api('PUT', `/api/apps/${encodeURIComponent(a.fileName || a.id)}/hidden`, { hidden });
+    const ref = `${a.typeName}:${a.id || a.fileName || a.name}`; // one registry entry: the app, glance and activity of one app share their ids
+    await api('PUT', `/api/apps/${encodeURIComponent(ref)}/hidden`, { hidden });
     toast(`${a.name}: ${hidden ? 'hidden from' : 'shown in'} the watch's lists after the next unplug.`);
     state.installed.pending = await api('GET', '/api/apps/pending').catch(() => state.installed.pending);
     renderInstalled(); loadNewFiles();
@@ -1402,7 +1420,7 @@ $('#music-files').addEventListener('change', async () => {
 });
 $('#music-playlist').onclick = async () => {
   const tracks = state.music.lib.tracks.map((t) => t.path).filter((p) => state.music.sel.has(p));
-  const name = await promptDialog('New playlist', 'Playlist name', 'My playlist');
+  const name = await promptDialog('New playlist', 'Playlist name', 'My playlist', 'Create playlist');
   if (!name) return;
   try { await api('PUT', '/api/music/playlists/' + encodeURIComponent(name), { tracks }); toast(`Playlist “${name}” written`); state.music.sel.clear(); loadMusic(); } catch (e) { toast(e.message, 'bad'); }
 };
@@ -1412,17 +1430,6 @@ $('#music-delete').onclick = async () => {
   for (const p of paths) { try { await api('DELETE', '/api/music?path=' + encodeURIComponent(p)); } catch (e) { toast(e.message, 'bad'); } }
   state.music.sel.clear(); loadMusic();
 };
-function promptDialog(title, label, value) {
-  return new Promise((resolve) => {
-    const dlg = $('#dlg');
-    $('#dlg-title').textContent = title;
-    $('#dlg-body').innerHTML = `<label class="form" style="display:block">${esc(label)}<input id="dlg-input" type="text" value="${esc(value)}" style="width:100%;margin-top:6px"></label>`;
-    $('#dlg-ok').textContent = 'Create playlist';
-    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'ok' ? $('#dlg-input').value.trim() : null), { once: true });
-    dlg.showModal(); $('#dlg-input').select();
-  });
-}
-
 // ---------- Connect IQ store ----------
 state.store = { loaded: false, q: '', type: prefs.get('storeType', 'watchface'), sort: prefs.get('storeSort', 'mostPopular'), page: 0, apps: [], total: -1, selected: null, busy: false, generation: 0 };
 function storeConnectionChanged() {

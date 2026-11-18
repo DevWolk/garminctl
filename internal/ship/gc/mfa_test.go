@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+// exchangePath is the OAuth1-to-OAuth2 token exchange.
+const exchangePath = "/oauth-service/oauth/exchange/user/2.0"
+
 type fakeSSO struct {
 	verifyCalls atomic.Int32
 	failOAuth   atomic.Bool
@@ -41,7 +44,7 @@ func (s *fakeSSO) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_, _ = io.WriteString(w, "oauth_token=test-oauth1&oauth_token_secret=test-secret")
-	case "/oauth-service/oauth/exchange/user/2.0":
+	case exchangePath:
 		_, _ = io.WriteString(w, `{"access_token":"test-access","token_type":"Bearer","expires_in":3600}`)
 	default:
 		http.NotFound(w, r)
@@ -128,7 +131,7 @@ func TestMFACompletionSurvivesOlderTokenRefresh(t *testing.T) {
 			entered, gate := make(chan struct{}), make(chan struct{})
 			sso := &fakeSSO{}
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/oauth-service/oauth/exchange/user/2.0" && strings.Contains(r.Header.Get("Authorization"), `oauth_token="test-token"`) {
+				if r.URL.Path == exchangePath && strings.Contains(r.Header.Get("Authorization"), `oauth_token="test-token"`) {
 					close(entered)
 
 					select {
@@ -380,5 +383,101 @@ func TestMFACancellationAndEmptyCodeDoNotConsumeChallenge(t *testing.T) {
 
 	if err := client().ResumeMFA(t.Context(), "654321"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Only Garmin's 401 to the token exchange deletes the saved session; a 403
+// from a firewall in front of Garmin is temporary.
+func TestTokenRefreshKeepsSessionOnForbidden(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		status int
+		kept   bool
+	}{{http.StatusForbidden, true}, {http.StatusBadGateway, true}, {http.StatusUnauthorized, false}} {
+		t.Run(http.StatusText(tt.status), func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "session.json")
+			if err := New(path).saveSession(testSession(oldTestEmail)); err != nil {
+				t.Fatal(err)
+			}
+
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == exchangePath {
+					http.Error(w, "refused", tt.status)
+					return
+				}
+
+				(&fakeSSO{}).ServeHTTP(w, r)
+			})
+
+			_, err := fakeSSOClient(t, path, handler)().bearer(t.Context())
+			if err == nil {
+				t.Fatal("refresh succeeded")
+			}
+
+			if kept := New(path).LoggedIn(); kept != tt.kept {
+				t.Fatalf("session kept = %t after HTTP %d: %v", kept, tt.status, err)
+			}
+
+			if errors.Is(err, ErrNotLoggedIn) == tt.kept {
+				t.Fatalf("HTTP %d error = %v", tt.status, err)
+			}
+		})
+	}
+}
+
+func TestConcurrentCallersShareOneTokenRefresh(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "session.json")
+	if err := New(path).saveSession(testSession(oldTestEmail)); err != nil {
+		t.Fatal(err)
+	}
+
+	var exchanges atomic.Int32
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == exchangePath {
+			exchanges.Add(1)
+			// Keep the exchange open long enough for every caller to find
+			// the token expired.
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		(&fakeSSO{}).ServeHTTP(w, r)
+	})
+	c := fakeSSOClient(t, path, handler)()
+
+	const callers = 5
+
+	var started, done sync.WaitGroup
+
+	started.Add(callers)
+
+	errs := make(chan error, callers)
+
+	for range callers {
+		done.Go(func() {
+			started.Done()
+			started.Wait()
+
+			_, err := c.bearer(t.Context())
+			errs <- err
+		})
+	}
+
+	done.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if n := exchanges.Load(); n != 1 {
+		t.Fatalf("token exchanges = %d, want 1", n)
 	}
 }

@@ -23,6 +23,9 @@ const historyUser = "user"
 type historyAccount struct {
 	failSleep  atomic.Bool
 	failBefore string // every range request of a window starting before this date fails
+	// syncedThrough, when set, is the last day the watch synced; later days
+	// are listed without steps or sleep.
+	syncedThrough atomic.Value
 }
 
 // historyDate finds the first date of a range request.
@@ -37,13 +40,13 @@ func (a *historyAccount) GetJSON(_ context.Context, path string, out any) error 
 
 	switch {
 	case strings.HasPrefix(path, "/usersummary-service/stats/steps/daily/"):
-		body = historyRows(path, `{"calendarDate":%q,"totalSteps":100}`, "[", "]")
+		body = a.rows(path, `{"calendarDate":%q,"totalSteps":100}`, `{"calendarDate":%q,"totalSteps":0}`, "[", "]")
 	case strings.HasPrefix(path, "/sleep-service/stats/sleep/daily/"):
 		if a.failSleep.Load() {
 			return errors.New("sleep unavailable")
 		}
 
-		body = historyRows(path, `{"calendarDate":%q,"values":{"totalSleepTimeInSeconds":3600}}`, `{"individualStats":[`, "]}")
+		body = a.rows(path, `{"calendarDate":%q,"values":{"totalSleepTimeInSeconds":3600}}`, `{"calendarDate":%q,"values":{}}`, `{"individualStats":[`, "]}")
 	case strings.HasPrefix(path, "/userstats-service/"):
 		body = "{}"
 	default:
@@ -57,9 +60,9 @@ func (*historyAccount) SendJSON(context.Context, string, string, any, any) error
 	return errors.New("unexpected write")
 }
 
-// historyRows formats one row per day of the window named by the path's last
-// two segments.
-func historyRows(path, row, open, closing string) string {
+// rows formats one row per day of the window named by the path's last two
+// segments, using empty for the days after syncedThrough.
+func (a *historyAccount) rows(path, row, empty, open, closing string) string {
 	parts := strings.Split(path, "/")
 
 	from, err := time.Parse(time.DateOnly, parts[len(parts)-2])
@@ -72,9 +75,17 @@ func historyRows(path, row, open, closing string) string {
 		return open + closing
 	}
 
+	synced, _ := a.syncedThrough.Load().(string)
+
 	var rows []string
+
 	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
-		rows = append(rows, fmt.Sprintf(row, d.Format(time.DateOnly)))
+		date := d.Format(time.DateOnly)
+		if synced != "" && date > synced {
+			rows = append(rows, fmt.Sprintf(empty, date))
+		} else {
+			rows = append(rows, fmt.Sprintf(row, date))
+		}
 	}
 
 	return open + strings.Join(rows, ",") + closing
@@ -299,5 +310,46 @@ func TestHistoryMarksValuesConnectDidNotReport(t *testing.T) {
 				t.Fatalf("row %s reports %s although Connect returned none: %v", row.Date, field, row.Unavailable)
 			}
 		}
+	}
+}
+
+func TestHistoryRefetchesDaysTheWatchHadNotSynced(t *testing.T) {
+	t.Parallel()
+
+	account := &historyAccount{}
+	account.syncedThrough.Store(time.Now().AddDate(0, 0, -5).Format(time.DateOnly))
+
+	action := HistoryAction{Access: AccountAccess{
+		Client:      account,
+		DisplayName: func(context.Context) (string, error) { return historyUser, nil },
+		DeviceXML:   func(context.Context) (*deviceinfo.DeviceXML, error) { return nil, errors.New("no watch") },
+		CacheDir:    t.TempDir(),
+	}}
+
+	// 30 days make an older window ending at the final-day cutoff; its last
+	// days had not been synced yet and must not be cached as final.
+	first, err := action.Run(t.Context(), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unsynced := len(first) - 3
+	if first[unsynced].Steps != 0 || !first[unsynced].Lacks("steps") {
+		t.Fatalf("unsynced row = %+v, want steps missing", first[unsynced])
+	}
+
+	account.syncedThrough.Store("")
+
+	second, err := action.Run(t.Context(), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if second[unsynced].Steps != 100 || second[unsynced].SleepSec != 3600 {
+		t.Fatalf("row after the watch synced = %+v, want its steps and sleep", second[unsynced])
+	}
+
+	if second[0].Steps != 100 {
+		t.Fatalf("oldest row = %+v, want its steps", second[0])
 	}
 }

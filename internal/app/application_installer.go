@@ -76,7 +76,7 @@ func LastApplicationInstallation(ctx context.Context) (*application.Installation
 		return nil, err
 	}
 
-	return &application.InstallationOutcome{Tag: result.Tag, Status: result.Status, Error: result.Error, Finished: result.Finished, Directory: result.Directory}, nil
+	return &application.InstallationOutcome{Tag: result.Tag, Status: result.Status, Error: result.Error, From: result.From, Finished: result.Finished, Directory: result.Directory}, nil
 }
 
 // LastInstallation lets the native window show an installation that failed after the application closed.

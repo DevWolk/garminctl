@@ -17,7 +17,7 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 		return err
 	}
 
-	return app.Serve(ctx, *addr, c.opener(), *autoSync && c.root == "", c.buildVersion)
+	return app.Serve(ctx, *addr, c.opener(), app.WatchSource(c.root, c.devID), *autoSync && c.root == "", c.buildVersion)
 }
 
 func (c *cli) mcp(ctx context.Context, _ []string) error {

@@ -78,7 +78,7 @@ func serveApplicationBackendVersion(t *testing.T, version string) *applicationBa
 	go func() {
 		defer close(fixture.done)
 
-		if err := fixture.control.ServeListener(ctx, ready, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, false, version); err != nil {
+		if err := fixture.control.ServeListener(ctx, ready, func(context.Context) (device.Device, error) { return device.NewDirFS(root) }, "", false, version); err != nil {
 			t.Errorf("owned backend: %v", err)
 		}
 	}()
@@ -278,9 +278,9 @@ func TestApplicationBackendReusedServerCreatesNoRuntime(t *testing.T) { //nolint
 		t.Fatal(err)
 	}
 
-	reused, err := desktop.StartBackend(t.Context(), endpoint.Host, func(ctx context.Context, listener net.Listener) error {
+	reused, err := desktop.StartBackend(t.Context(), endpoint.Host, "", func(ctx context.Context, listener net.Listener) error {
 		starts.Add(1)
-		return other.ServeListener(ctx, listener, nil, false, "test")
+		return other.ServeListener(ctx, listener, nil, "", false, "test")
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +311,7 @@ func TestApplicationBackendRejectsSecondServeWithoutReplacingOwner(t *testing.T)
 		t.Fatal(err)
 	}
 
-	if err := f.control.ServeListener(t.Context(), listener, nil, false, "other"); err == nil {
+	if err := f.control.ServeListener(t.Context(), listener, nil, "", false, "other"); err == nil {
 		t.Fatal("control accepted a second runtime")
 	}
 

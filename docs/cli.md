@@ -209,7 +209,13 @@ updates install PART            Download, verify, and write one software/data up
 software                        List installed software components.
 ```
 
-Use an app name or file ID from `apps`. Settings addresses accept message names,
+Use an app name or file ID from `apps`; a name, file ID or store ID that matches
+more than one app is refused. The app, glance and activity entries of one app
+share name and IDs, so `app-hide` and `app-show` also accept `KIND:ID`, with the
+kind and store ID from `apps` (for example `glance:<id>`); a ref that matches
+several entries is refused and the error lists their `KIND:ID` refs.
+
+Settings addresses accept message names,
 message indexes, numeric fields, and array indexes:
 
 ```sh
@@ -276,7 +282,12 @@ heart rate, floors, intensity minutes, active time); the text output of
 `health -days` and `health history` prints `-` for them. When one of the range
 requests fails, the days that still have data add its fields to `unavailable`;
 a day without any data carries `error`. Such days are not cached, so a later
-call fetches them again.
+call fetches them again. A day for which Connect has not reported every value
+yet, because the watch has not synced it, is cached only once a later day has
+data.
+
+`music add` refuses a file whose target is already on the watch; remove it
+first to replace it.
 
 Activities are decoded locally and cached. Health and Connect workouts require
 sign-in. `workouts create` saves in Connect by default; `-send` also fetches the
@@ -310,7 +321,7 @@ default. Search ignores sorting. `-page` defaults to `0`.
 ## Servers
 
 ```text
-desktop                         Launch the installed app; accepts no arguments.
+desktop                         Launch the installed app; honours the global -root and -device.
 serve [-addr IP:PORT] [-autosync=false]
 mcp                             Run an independent stdio MCP server.
 autostart [on|off|status]        Manage Windows background-server startup; defaults to status.

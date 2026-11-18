@@ -75,14 +75,17 @@ type Client struct {
 	Domain string
 	HTTP   *http.Client
 
-	mu       sync.Mutex
-	authMu   sync.Mutex
-	now      func() time.Time
-	store    string
-	storeErr error
-	sess     Session
-	consumer *consumer
-	pending  *pendingLogin
+	mu     sync.Mutex
+	authMu sync.Mutex
+	// refreshMu lets one caller exchange an expired token while the others
+	// wait and use its result. Sign-in under authMu never takes it.
+	refreshMu sync.Mutex
+	now       func() time.Time
+	store     string
+	storeErr  error
+	sess      Session
+	consumer  *consumer
+	pending   *pendingLogin
 }
 
 // DefaultStorePath returns garminctl/garmin-connect.json under the platform
@@ -518,7 +521,7 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oauth2 exchange answered %s", resp.Status)
+		return nil, fmt.Errorf("oauth2 exchange: %w", &HTTPError{Status: resp.StatusCode, Body: string(b), URL: req.URL.Redacted()})
 	}
 
 	var t OAuth2Token
@@ -533,16 +536,35 @@ func (c *Client) exchange(ctx context.Context, o1 *OAuth1Token, login bool) (*OA
 	return &t, nil
 }
 
+// tokens returns the current session tokens.
+func (c *Client) tokens() (*OAuth1Token, *OAuth2Token) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.sess.OAuth1, c.sess.OAuth2
+}
+
 // bearer returns a valid access token, refreshing it when needed.
 func (c *Client) bearer(ctx context.Context) (string, error) {
 	if err := c.StoreError(); err != nil {
 		return "", err
 	}
 
-	c.mu.Lock()
-	o1, o2 := c.sess.OAuth1, c.sess.OAuth2
-	c.mu.Unlock()
+	o1, o2 := c.tokens()
+	if o1 == nil || o1.Token == "" {
+		return "", ErrNotLoggedIn
+	}
 
+	if !o2.expired() {
+		return o2.TokenType + " " + o2.AccessToken, nil
+	}
+
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+
+	// Another caller may have refreshed or lost the session while this one
+	// waited.
+	o1, o2 = c.tokens()
 	if o1 == nil || o1.Token == "" {
 		return "", ErrNotLoggedIn
 	}
@@ -553,7 +575,10 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 
 	n2, err := c.exchange(ctx, o1, false)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
+		// Only Garmin's 401 to the exchange means the saved token is no longer
+		// valid. A network error or a 403 from a firewall in front of Garmin is
+		// temporary and must not delete the session.
+		if rejected := (*HTTPError)(nil); errors.As(err, &rejected) && rejected.Status == http.StatusUnauthorized {
 			return "", errors.Join(fmt.Errorf("%w: the saved session was rejected, sign in again", ErrNotLoggedIn), c.logout(o1))
 		}
 

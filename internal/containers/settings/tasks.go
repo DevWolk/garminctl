@@ -63,6 +63,10 @@ func (s *resolverTask) run(c Change, view *View) (ResolvedChange, error) {
 		return rc, fmt.Errorf("field %s.%s: %w", c.Mesg, c.Field, err)
 	}
 
+	if err := checkBaseRange(targetBase(view, rc, fp), raw); err != nil {
+		return rc, fmt.Errorf("field %s.%s: %w", c.Mesg, c.Field, err)
+	}
+
 	rc.Raw = raw
 
 	if view != nil {
@@ -70,6 +74,36 @@ func (s *resolverTask) run(c Change, view *View) (ResolvedChange, error) {
 	}
 
 	return rc, nil
+}
+
+// targetBase returns the base type name of the field the change targets:
+// the definition in the current settings when the field is there, otherwise
+// the profile's, otherwise "".
+func targetBase(view *View, rc ResolvedChange, fp *fit.FieldProfile) string {
+	if f := viewField(view, rc); f != nil {
+		return f.Base
+	}
+
+	if fp != nil {
+		return fp.BaseType
+	}
+
+	return ""
+}
+
+// checkBaseRange refuses an integer outside the range of an integer base
+// type; float, string and unknown base types are not checked here.
+func checkBaseRange(base string, raw int64) error {
+	bt, ok := fit.BaseTypeByName(base)
+	if !ok {
+		return nil
+	}
+
+	if bt == fit.BaseFloat32 || bt == fit.BaseFloat64 || bt == fit.BaseString {
+		return nil
+	}
+
+	return bt.CheckInteger(raw)
 }
 
 // resolveMesg sets rc.MesgNum from a profile name or a number and returns
@@ -145,8 +179,12 @@ func changeRaw(v any) (int64, error) {
 	return raw, nil
 }
 
-// previousValue reads the field's current value from the settings view.
-func previousValue(view *View, rc ResolvedChange) any {
+// viewField returns the field the change targets in the settings view.
+func viewField(view *View, rc ResolvedChange) *fit.NamedField {
+	if view == nil {
+		return nil
+	}
+
 	m, ok := view.Message(strconv.Itoa(int(rc.MesgNum)), rc.Index)
 	if !ok {
 		return nil
@@ -154,6 +192,16 @@ func previousValue(view *View, rc ResolvedChange) any {
 
 	f, ok := m.FieldByName(strconv.Itoa(int(rc.FieldNum)))
 	if !ok {
+		return nil
+	}
+
+	return f
+}
+
+// previousValue reads the field's current value from the settings view.
+func previousValue(view *View, rc ResolvedChange) any {
+	f := viewField(view, rc)
+	if f == nil {
 		return nil
 	}
 

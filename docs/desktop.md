@@ -53,9 +53,10 @@ storage, and pending changes. The [tab guide](web-ui.md) covers available action
 [Garmin Connect](cloud-sync.md) describes automatic sync.
 
 The app starts a server on `127.0.0.1:8787` or reuses a compatible garminctl
-server already at that address. An unrelated or incompatible server causes a
-startup error. When the window exits, a server it started and its background
-sync stop; a reused server continues running.
+server already at that address that reads the same watch or directory
+(`-root`, `-device`). A garminctl server for other data makes the app start its
+own on a free port; an unrelated or incompatible server causes a startup error. When the window exits, a server it
+started and its background sync stop; a reused server continues running.
 
 Launching the app again focuses its existing window. The View menu provides
 Back, Reload, **AI & MCP**, and Quit. Reload and window exit ask before
@@ -64,8 +65,8 @@ open the default browser. The installer does not enable launch at sign-in.
 
 ## Launch options
 
-`garminctl desktop` accepts no arguments. Invoke the desktop executable for a
-custom port or an offline directory:
+`garminctl -root DIR desktop` and `garminctl -device ID desktop` pass those
+options to the app. Invoke the desktop executable for a custom port:
 
 ```sh
 garmin-desktop -addr 127.0.0.1:8791 -root ./watch-dump
@@ -77,9 +78,12 @@ On Windows, run `garmin-desktop.exe` from the installation directory.
 | --- | --- | --- |
 | `-addr IP:PORT` | `127.0.0.1:8787` | Choose a loopback IP and port. |
 | `-root DIR` | USB device | Use a watch directory or dump and disable automatic USB watching. |
+| `-device ID` | First Garmin device | Use this USB device. |
 
-For `-device` selection or `-autosync=false`, start a [CLI server](cli.md#servers)
-with those options, then launch the app at the same address to reuse it.
+An open app only comes to the front when launched again; quit it before
+launching it with other options. For `-autosync=false`, start a
+[CLI server](cli.md#servers) with that option, then launch the app at the same
+address to reuse it.
 
 ## Data, updates, and uninstall
 
@@ -113,6 +117,8 @@ Choose **Help → Application updates…** to open **Application**, or open
 [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
 Download the newer package for the same system and architecture, then quit
 garminctl before installing it. Stop any separate `garminctl serve` process too.
+Windows Setup also updates the server copy made by `garminctl autostart on`;
+a copy in use by a running server keeps its old version.
 
 | Installation | Update |
 | --- | --- |

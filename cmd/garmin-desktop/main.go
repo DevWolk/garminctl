@@ -34,6 +34,7 @@ func main() {
 func run() error {
 	addr := flag.String("addr", "127.0.0.1:8787", "local server address")
 	root := flag.String("root", "", "watch directory for offline testing")
+	deviceID := flag.String("device", "", "device ID (default: first Garmin device)")
 
 	flag.Parse()
 
@@ -46,15 +47,16 @@ func run() error {
 	defer cancel()
 
 	open := func(ctx context.Context) (device.Device, error) {
-		return devicehost.Open(ctx, *root, "")
+		return devicehost.Open(ctx, *root, *deviceID)
 	}
 
 	backend := new(app.ApplicationBackend)
+	source := app.WatchSource(*root, *deviceID)
 	serve := func(ctx context.Context, listener net.Listener) error {
-		return backend.ServeListener(ctx, listener, open, *root == "", version)
+		return backend.ServeListener(ctx, listener, open, source, *root == "", version)
 	}
 
-	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, serve) }, func(ctx context.Context, scope desktop.Scope) {
+	return desktop.Run(func() (*desktop.Backend, error) { return desktop.StartBackend(ctx, *addr, source, serve) }, func(ctx context.Context, scope desktop.Scope) {
 		if startup == nil {
 			return
 		}

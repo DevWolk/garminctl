@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net"
+	"path/filepath"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -36,7 +37,7 @@ import (
 )
 
 // Serve binds an HTTP listener before constructing its backend owners.
-func Serve(ctx context.Context, addr string, open watchsession.Opener, autoSync bool, version string) error {
+func Serve(ctx context.Context, addr string, open watchsession.Opener, source string, autoSync bool, version string) error {
 	var config net.ListenConfig
 
 	listener, err := config.Listen(ctx, "tcp", addr)
@@ -44,17 +45,36 @@ func Serve(ctx context.Context, addr string, open watchsession.Opener, autoSync 
 		return err
 	}
 
-	return ServeListener(ctx, listener, open, autoSync, version)
+	return ServeListener(ctx, listener, open, source, autoSync, version)
 }
 
 // ServeListener assembles the shared HTTP/MCP/watch backend. The web shell owns
-// the listener and drains/closes the supplied runtime when serving ends.
-func ServeListener(ctx context.Context, listener net.Listener, open watchsession.Opener, autoSync bool, version string) error {
+// the listener and drains/closes the supplied runtime when serving ends. source
+// names what open reads (see WatchSource) so a desktop window reuses only a
+// server for the same watch or directory.
+func ServeListener(ctx context.Context, listener net.Listener, open watchsession.Opener, source string, autoSync bool, version string) error {
 	runtime := NewRuntime(ctx, open)
-	return serveListenerRuntime(listener, runtime, autoSync, version)
+	return serveListenerRuntime(listener, runtime, source, autoSync, version)
 }
 
-func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, autoSync bool, version string) error {
+// WatchSource names the data a server reads: "" for the first USB watch,
+// "root:DIR" for a directory and "device:ID" for a chosen watch.
+func WatchSource(root, deviceID string) string {
+	switch {
+	case root != "":
+		if abs, err := filepath.Abs(root); err == nil {
+			root = abs
+		}
+
+		return "root:" + filepath.Clean(root)
+	case deviceID != "":
+		return "device:" + deviceID
+	default:
+		return ""
+	}
+}
+
+func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, source string, autoSync bool, version string) error {
 	account := gc.New(gc.DefaultStorePath())
 
 	return web.ServeRuntime(listener, runtime, account, autoSync, version, web.Features{
@@ -72,6 +92,7 @@ func serveListenerRuntime(listener net.Listener, runtime *process.Runtime, autoS
 			&updateshttp.Handler{Manager: runtime.Manager(), Config: WatchUpdateConfig, Registry: UpdatesRegistry, InvalidateFor: updateInvalidator(runtime)},
 		},
 		MCP:             mcpTools(runtime, account),
+		Source:          source,
 		WatchSummary:    WatchSummary,
 		WatchModel:      WatchModel,
 		SoftwareUpdates: SoftwareUpdateNames,

@@ -23,7 +23,7 @@ type ApplicationBackend struct {
 }
 
 // ServeListener starts the owned backend after the native host has reserved its listener.
-func (b *ApplicationBackend) ServeListener(ctx context.Context, listener net.Listener, open watchsession.Opener, autoSync bool, version string) (result error) {
+func (b *ApplicationBackend) ServeListener(ctx context.Context, listener net.Listener, open watchsession.Opener, source string, autoSync bool, version string) (result error) {
 	if b == nil {
 		return errors.Join(errors.New("owned backend control is not configured"), listener.Close())
 	}
@@ -52,7 +52,7 @@ func (b *ApplicationBackend) ServeListener(ctx context.Context, listener net.Lis
 		b.mu.Unlock()
 	}()
 
-	return serveListenerRuntime(listener, runtime, autoSync, version)
+	return serveListenerRuntime(listener, runtime, source, autoSync, version)
 }
 
 func (b *ApplicationBackend) maintenanceFor(address string, owned bool) func(context.Context) (func(), error) {

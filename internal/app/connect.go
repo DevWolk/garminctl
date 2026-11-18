@@ -76,8 +76,17 @@ func syncNotes(job *connect.SyncJob) []string {
 		parts = append(parts, fmt.Sprintf("%d file(s) uploaded to Garmin Connect", res.Upload.Uploaded))
 	}
 
-	if len(res.Pulled) > 0 {
-		parts = append(parts, fmt.Sprintf("%d item(s) from Connect written to the watch", len(res.Pulled)))
+	if res.Upload != nil && res.Upload.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d upload(s) failed", res.Upload.Failed))
+	}
+
+	written, failure := connect.Written(res.Pulled)
+	if written > 0 {
+		parts = append(parts, fmt.Sprintf("%d item(s) from Connect written to the watch", written))
+	}
+
+	if failed := len(res.Pulled) - written; failure != "" {
+		parts = append(parts, fmt.Sprintf("%d item(s) from Connect not written: %s", failed, failure))
 	}
 
 	if len(res.Errors) > 0 {

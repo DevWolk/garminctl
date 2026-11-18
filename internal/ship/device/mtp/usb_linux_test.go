@@ -35,3 +35,16 @@ func TestUSBOpenErrorClassification(t *testing.T) {
 		})
 	}
 }
+
+func TestUSBContextInitPanicBecomesError(t *testing.T) {
+	t.Parallel()
+
+	usb, err := newUSBContext(func() *gousb.Context { panic(gousb.ErrorAccess) })
+	if usb != nil || !errors.Is(err, gousb.ErrorAccess) {
+		t.Fatalf("libusb init failure = %v", err)
+	}
+
+	if _, err := newUSBContext(func() *gousb.Context { panic("no libusb") }); err == nil {
+		t.Fatal("non-error panic was not reported")
+	}
+}

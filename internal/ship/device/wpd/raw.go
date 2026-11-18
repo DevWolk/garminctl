@@ -364,9 +364,19 @@ func (d *Device) WriteHidden(ctx context.Context, dir, name string, data []byte)
 		return err
 	}
 
-	if old, found, err := d.FindChild(ctx, storage, handle, name); err != nil {
+	old, found, err := d.FindChild(ctx, storage, handle, name)
+	if err != nil {
 		return err
-	} else if found {
+	}
+
+	// From the delete of the old file on, the caller's cancellation would
+	// leave the watch with neither file; cleanup of a half-sent object must run
+	// after it too. Abort still interrupts.
+	detached, cancel := device.Detached(ctx, len(data))
+	defer cancel()
+
+	if found {
+		ctx = detached
 		if err := d.DeleteHandle(ctx, old.Handle); err != nil {
 			return fmt.Errorf("replace %s/%s: %w", dir, name, err)
 		}
@@ -375,19 +385,19 @@ func (d *Device) WriteHidden(ctx context.Context, dir, name string, data []byte)
 	h, err := d.SendFile(ctx, storage, handle, name, data)
 	if err != nil {
 		if h != 0 {
-			_ = d.DeleteHandle(ctx, h)
+			_ = d.DeleteHandle(detached, h)
 		}
 
 		return fmt.Errorf("write %s/%s: %w", dir, name, err)
 	}
 
-	o, found, err := d.FindChild(ctx, storage, handle, name)
+	o, found, err := d.FindChild(detached, storage, handle, name)
 	if err != nil {
 		return err
 	}
 
 	if !found || uint64(o.Size) != uint64(len(data)) {
-		_ = d.DeleteHandle(ctx, h)
+		_ = d.DeleteHandle(detached, h)
 		return fmt.Errorf("write %s/%s: the watch lists %d bytes after writing %d", dir, name, o.Size, len(data))
 	}
 
@@ -425,7 +435,7 @@ func (d *Device) Storage(ctx context.Context) (device.Storage, error) {
 		return device.Storage{}, err
 	}
 
-	if code != ptpOK || len(data) < 26 {
+	if code != ptpOK || len(data) < 27 {
 		return device.Storage{}, fmt.Errorf("GetStorageInfo: PTP response 0x%04X, %d bytes", code, len(data))
 	}
 	// StorageType u16, FilesystemType u16, AccessCapability u16, MaxCapacity u64, FreeSpaceInBytes u64, FreeSpaceInObjects u32, StorageDescription string, VolumeLabel string

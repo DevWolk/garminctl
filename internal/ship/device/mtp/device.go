@@ -29,7 +29,9 @@ func newDevice(ctx context.Context, w wire, info device.Info) (*Device, error) {
 	lifetime, abort := context.WithCancel(context.Background())
 
 	d := &Device{protocol: protocol{wire: w, lifetime: lifetime}, info: info, abort: abort}
-	if _, _, err := d.protocol.exchange(ctx, 0x1002, []uint32{1}, nil); err != nil {
+	// A session left open by an aborted run answers SessionAlreadyOpen; like
+	// libmtp, continue in it.
+	if _, _, err := d.protocol.exchange(ctx, 0x1002, []uint32{1}, nil); err != nil && !errors.Is(err, responseError(0x201e)) {
 		abort()
 
 		_ = w.Close()
@@ -216,6 +218,11 @@ func (d *Device) Read(ctx context.Context, path string) ([]byte, error) {
 		return nil, errors.New("cannot read a directory")
 	}
 
+	// A larger data phase exceeds one container and would break the session.
+	if obj.entry.Size > maxContainer-12 {
+		return nil, fmt.Errorf("%s is %d bytes; native USB reads files up to 512 MiB", path, obj.entry.Size)
+	}
+
 	data, _, err := d.protocol.exchange(ctx, 0x1009, []uint32{obj.handle}, nil)
 
 	return data, err
@@ -255,8 +262,22 @@ func (d *Device) write(ctx context.Context, path string, data []byte, dir bool) 
 		return err
 	} // Validate before removing an existing file.
 
-	if err := d.prepareWrite(ctx, parent.handle, name, dir); err != nil {
+	existing, found, err := d.existingFile(ctx, parent.handle, name, dir)
+	if err != nil {
 		return err
+	}
+
+	if found {
+		// From the delete of the old file on, the caller's cancellation would
+		// leave the watch with neither file. Abort still interrupts.
+		var cancel context.CancelFunc
+
+		ctx, cancel = device.Detached(ctx, len(data))
+		defer cancel()
+
+		if _, _, err := d.protocol.exchange(ctx, 0x100b, []uint32{existing, 0}, nil); err != nil {
+			return err
+		}
 	}
 
 	_, params, err := d.protocol.exchange(ctx, 0x100c, []uint32{d.storage, parent.handle}, dataset)
@@ -296,10 +317,12 @@ func (d *Device) verifyWrite(ctx context.Context, handle uint32, size int, dir b
 	return nil
 }
 
-func (d *Device) prepareWrite(ctx context.Context, parent uint32, name string, dir bool) error {
+// existingFile finds the file a write replaces. A directory of that name, or
+// a directory write over any existing name, is a conflict.
+func (d *Device) existingFile(ctx context.Context, parent uint32, name string, dir bool) (uint32, bool, error) {
 	kids, err := d.children(ctx, parent, true)
 	if err != nil {
-		return err
+		return 0, false, err
 	}
 
 	for _, kid := range kids {
@@ -308,15 +331,13 @@ func (d *Device) prepareWrite(ctx context.Context, parent uint32, name string, d
 		}
 
 		if kid.entry.Dir || dir {
-			return errors.New("directory already exists or conflicts with a file")
+			return 0, false, errors.New("directory already exists or conflicts with a file")
 		}
 
-		_, _, err := d.protocol.exchange(ctx, 0x100b, []uint32{kid.handle, 0}, nil)
-
-		return err
+		return kid.handle, true, nil
 	}
 
-	return nil
+	return 0, false, nil
 }
 
 // WriteHidden writes into a Garmin hidden directory.

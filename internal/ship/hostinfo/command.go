@@ -15,8 +15,12 @@ import (
 
 var errNoPackageOwner = errors.New("no package owns this file")
 
+// probeTimeout bounds one read-only package query. dpkg-query reads the whole
+// status database and has needed more than two seconds on a busy machine.
+const probeTimeout = 10 * time.Second
+
 func runProbe(ctx context.Context, kind probeCommand, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
 	var command *exec.Cmd

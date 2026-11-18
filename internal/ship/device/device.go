@@ -5,6 +5,7 @@ package device
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrNotFound is returned when a path does not exist on the device.
@@ -19,6 +20,19 @@ var ErrBusy = errors.New("watch is busy")
 
 // ErrInvalidArgument identifies rejected device paths or operation parameters.
 var ErrInvalidArgument = errors.New("invalid device argument")
+
+// TransferTimeout bounds a transfer of size bytes that runs without the
+// caller's cancellation: two minutes plus one second per 256 KiB.
+func TransferTimeout(size int) time.Duration {
+	return 2*time.Minute + time.Duration(max(size, 0)/(256<<10))*time.Second
+}
+
+// Detached keeps ctx's values but not its cancellation, bounded by
+// TransferTimeout(size). A replace switches to it once the old object is being
+// deleted, so a cancelled caller cannot leave the watch without either file.
+func Detached(ctx context.Context, size int) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), TransferTimeout(size))
+}
 
 // Entry describes a file or directory on the device.
 type Entry struct {

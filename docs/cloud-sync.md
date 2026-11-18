@@ -52,7 +52,9 @@ before retrying; garminctl does not automatically replay that upload.
 Queued files can include settings, Connect IQ apps and updates, workouts,
 courses, and personal records. Availability depends on the device and Connect's
 queue. `cloud messages` lists that queue. Use `cloud sync -no-upload` or
-`cloud sync -no-download` to run only one direction.
+`cloud sync -no-download` to run only one direction. `cloud sync` exits with an
+error when an upload failed, a queued file was not written to the watch or a
+direction could not run; with `-json` it prints the result first.
 
 `cloud settings` reads Connect's device settings; `cloud settings set K=V`
 updates them and fetches the settings file Connect generates. Use these for

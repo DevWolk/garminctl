@@ -126,10 +126,17 @@ func (h *historyBuild) cachedWindow(cache map[string]DailyHealth, ws, we time.Ti
 // rows lays the collected days out in order and refreshes the cache with the
 // days that no longer change. In a window with a failed fetch, a day with data
 // names the failed fields in Unavailable and a day without data reports the
-// error; neither is cached, so a later call fetches them again. A day taken
-// from the cache is complete and keeps its cached values.
+// error; neither is cached, so a later call fetches them again. A day missing
+// a value is cached only when Connect reported a value for a later day: the
+// watch has synced past it, so the value will not arrive later. A day taken
+// from the cache keeps its cached values.
 func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, final string) []DailyHealth {
 	out := make([]DailyHealth, 0, len(h.byDate))
+
+	synced := "" // the newest day Connect reported a value for
+	for date := range h.reported {
+		synced = max(synced, date)
+	}
 
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
 		date := d.Format(time.DateOnly)
@@ -162,7 +169,7 @@ func (h *historyBuild) rows(cache map[string]DailyHealth, start, end time.Time, 
 			row.Unavailable = append(row.Unavailable, fields...)
 		case message != "":
 			row.Error = message
-		case ok && date <= final:
+		case ok && date <= final && (date < synced || len(row.Unavailable) == len(historyUnavailable)):
 			cache[date] = row
 		}
 

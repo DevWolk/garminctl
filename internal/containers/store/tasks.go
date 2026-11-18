@@ -27,7 +27,11 @@ func storeDeviceType(ctx context.Context, part string) string {
 		return id
 	}
 
-	id, _ = ciqstore.DeviceTypeID(ctx, part)
+	id, err := ciqstore.DeviceTypeID(ctx, part)
+	if err != nil {
+		// A failed lookup is asked again next time; only answers are cached.
+		return ""
+	}
 
 	deviceTypeMu.Lock()
 	deviceTypeCache[part] = id

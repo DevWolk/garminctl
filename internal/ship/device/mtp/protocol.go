@@ -18,6 +18,9 @@ const (
 	containerResponse = 3
 	responseOK        = 0x2001
 	maxContainer      = 512<<20 + 12
+	// transferTimeout bounds each USB transfer, not a whole exchange: a large
+	// file's data phase may take far longer than any single packet.
+	transferTimeout = 2 * time.Minute
 )
 
 type wire interface {
@@ -32,6 +35,8 @@ type protocol struct {
 	transaction uint32
 	pending     []byte
 	broken      bool
+	// timeout overrides transferTimeout in tests.
+	timeout time.Duration
 	// This is the transport-owned cancellation lifetime, not a retained request.
 	lifetime context.Context //nolint:containedctx // Abort must interrupt a transaction without acquiring its lock.
 }
@@ -76,7 +81,7 @@ func (p *protocol) exchange(ctx context.Context, op uint16, params []uint32, dat
 		return nil, nil, fmt.Errorf("%w: MTP request is too large", device.ErrInvalidArgument)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if p.lifetime != nil {
@@ -131,7 +136,7 @@ func (p *protocol) send(ctx context.Context, kind, code uint16, payload []byte) 
 		chunk = append(chunk, payload[offset:offset+n]...)
 		offset += n
 
-		written, err := p.wire.WriteContext(ctx, chunk)
+		written, err := p.write(ctx, chunk)
 		if err != nil {
 			return err
 		}
@@ -142,11 +147,34 @@ func (p *protocol) send(ctx context.Context, kind, code uint16, payload []byte) 
 	}
 
 	if (len(payload)+12)%p.wire.PacketSize() == 0 {
-		_, err := p.wire.WriteContext(ctx, []byte{})
+		_, err := p.write(ctx, []byte{})
 		return err
 	}
 
 	return nil
+}
+
+func (p *protocol) transferContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := p.timeout
+	if timeout <= 0 {
+		timeout = transferTimeout
+	}
+
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (p *protocol) write(ctx context.Context, b []byte) (int, error) {
+	ctx, cancel := p.transferContext(ctx)
+	defer cancel()
+
+	return p.wire.WriteContext(ctx, b)
+}
+
+func (p *protocol) read(ctx context.Context, b []byte) (int, error) {
+	ctx, cancel := p.transferContext(ctx)
+	defer cancel()
+
+	return p.wire.ReadContext(ctx, b)
 }
 
 func (p *protocol) receive(ctx context.Context, op uint16) ([]byte, []uint32, error) {
@@ -194,7 +222,7 @@ func (p *protocol) fill(ctx context.Context, size int) error {
 
 		packet := make([]byte, 64<<10)
 
-		n, err := p.wire.ReadContext(ctx, packet)
+		n, err := p.read(ctx, packet)
 		if err != nil {
 			return err
 		}

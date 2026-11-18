@@ -17,10 +17,46 @@ func TestProfileRejectsScaledIntegerOverflowBeforeCast(t *testing.T) {
 		}
 	}
 
-	for value, want := range map[float64]int64{1.25: 125, 1.255: 125, -1.25: -124} {
+	for value, want := range map[float64]int64{1.25: 125, 1.255: 125, -1.25: -125, -1.255: -125, -1.256: -126} {
 		got, err := p.ParseValue(fp, value)
 		if err != nil || got != want {
-			t.Fatalf("existing scale/rounding changed for %v: %v, %v, want %d", value, got, err, want)
+			t.Fatalf("scaled %v: %v, %v, want %d", value, got, err, want)
 		}
+	}
+}
+
+func TestProfileRoundsNegativeScaledValuesAwayFromZero(t *testing.T) {
+	t.Parallel()
+
+	p := &Profile{}
+
+	// timeZoneOffset: sint8, scale 4 (hours).
+	fp := &FieldProfile{Name: "timeZoneOffset", BaseType: "sint8", Scale: 4}
+	for value, want := range map[string]int64{"-5": -20, "-4.75": -19, "-0.125": -1, "0.125": 1, "5.5": 22} {
+		got, err := p.ParseValue(fp, value)
+		if err != nil || got != want {
+			t.Fatalf("%s: %v, %v, want %d", value, got, err, want)
+		}
+	}
+}
+
+func TestProfileParsesTextForFieldsWithoutProfile(t *testing.T) {
+	t.Parallel()
+
+	p := &Profile{}
+
+	for value, want := range map[string]any{"8": int64(8), "-3": int64(-3), "2.5": 2.5, "true": int64(1), "false": int64(0)} {
+		got, err := p.ParseValue(nil, value)
+		if err != nil || got != want {
+			t.Fatalf("%q: %v (%T), %v, want %v", value, got, got, err, want)
+		}
+	}
+
+	if got, err := p.ParseValue(nil, "eight"); err == nil {
+		t.Fatalf("non-numeric text accepted: %v", got)
+	}
+
+	if got, err := p.ParseValue(nil, int64(7)); err != nil || got != int64(7) {
+		t.Fatalf("number changed: %v, %v", got, err)
 	}
 }

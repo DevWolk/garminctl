@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/ship/device"
 )
@@ -247,5 +248,66 @@ func TestProtocolWriteEmptyAndPacketMultiple(t *testing.T) {
 				t.Fatal("missing zero-length packet")
 			}
 		})
+	}
+}
+
+// slowWire takes a little time for every transfer and records its deadline.
+type slowWire struct {
+	testWire
+
+	delay     time.Duration
+	deadlines []time.Time
+	stall     bool
+}
+
+func (w *slowWire) ReadContext(ctx context.Context, b []byte) (int, error) {
+	deadline, _ := ctx.Deadline()
+	w.deadlines = append(w.deadlines, deadline)
+
+	if w.stall {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	}
+
+	time.Sleep(w.delay)
+
+	return w.testWire.ReadContext(ctx, b)
+}
+
+func TestProtocolTimeoutAppliesPerTransfer(t *testing.T) {
+	t.Parallel()
+
+	payload := bytes.Repeat([]byte{0x42}, 40*64)
+	data := packet(containerData, 0x1009, 0, payload)
+
+	w := &slowWire{delay: 5 * time.Millisecond}
+
+	for len(data) > 0 {
+		n := min(64, len(data))
+		w.packets = append(w.packets, data[:n])
+		data = data[n:]
+	}
+
+	w.packets = append(w.packets, packet(containerResponse, responseOK, 0, nil))
+
+	// The whole exchange takes longer than one transfer may.
+	p := protocol{wire: w, timeout: 100 * time.Millisecond}
+
+	got, _, err := p.exchange(t.Context(), 0x1009, nil, nil)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("slow read: %d bytes, %v", len(got), err)
+	}
+
+	for i := 1; i < len(w.deadlines); i++ {
+		if w.deadlines[i].IsZero() || !w.deadlines[i].After(w.deadlines[i-1]) {
+			t.Fatalf("transfer %d did not get its own deadline", i)
+		}
+	}
+
+	stalled := &slowWire{stall: true}
+	p = protocol{wire: stalled, timeout: 10 * time.Millisecond}
+
+	if _, _, err := p.exchange(t.Context(), 0x1009, nil, nil); !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, device.ErrDisconnected) {
+		t.Fatalf("stalled transfer = %v", err)
 	}
 }
