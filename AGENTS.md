@@ -398,6 +398,11 @@ over a dump use `internal/ship/testdump`, which owns the shared XML and
 app-registry fixtures. Unit tests stay beside their package; application
 contract suites live in `tests/contracts` (HTTP and MCP) and
 `tests/contracts/cli`, and the architecture gate in `tests/architecture`.
+`tests/native` holds the acceptance harness for installed packages and the
+native window with the Python tests of that harness and of the packaging
+scripts; `tests/ui` holds the Node tests of the embedded UI scripts. `scripts`
+keeps what builds, signs, installs or runs: packaging, signing, `install.sh`
+and the Windows test runner.
 `tools/expresswatch` monitors upstream release notes
 (state in `docs/express-release.json`, workflow `express-watch.yml`). gocyclo is capped at 15 and nothing is
 excused from it; a `//nolint` names its linter and states the reason.

@@ -187,9 +187,9 @@ jobs:
           if ($env:PREVIOUS_VERSION) {
             $previous = @(Get-ChildItem dist/previous/*_setup.exe)
             if ($previous.Count -ne 1) { throw 'Expected exactly one previous Setup.' }
-            ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -PreviousSetup $previous[0].FullName -PreviousVersion $env:PREVIOUS_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+            ./tests/native/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -PreviousSetup $previous[0].FullName -PreviousVersion $env:PREVIOUS_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
           } else {
-            ./scripts/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
+            ./tests/native/test-windows-package.ps1 -Setup $setup -Version $env:PACKAGE_VERSION -RequireSignature:($env:SIGNING_MODE -eq 'certificate')
           }
       - name: Retain native acceptance traces
         if: always()
@@ -247,7 +247,7 @@ jobs:
           docker run --rm --init --mount "type=bind,src=$PWD,target=/src,readonly" \
             --mount "type=bind,src=$PWD/dist/native-results,target=/evidence" \
             -e NATIVE_RESULTS_DIR=/evidence -e GITHUB_ACTIONS "$TEST_IMAGE" \
-            bash /src/scripts/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION" "${previous[@]}"
+            bash /src/tests/native/test-linux-package.sh "$PACKAGE_FORMAT" "/src/$package" "$PACKAGE_VERSION" "${previous[@]}"
       - name: Retain native acceptance traces
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

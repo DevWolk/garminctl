@@ -10,7 +10,7 @@ import textwrap
 import unittest
 
 
-REPOSITORY = Path(__file__).resolve().parent.parent
+REPOSITORY = Path(__file__).resolve().parents[2]
 PAYLOADS = (
     'garminctl_v1.2.0_windows_amd64_setup.exe',
     'garminctl_1.2.0_linux_amd64.deb',

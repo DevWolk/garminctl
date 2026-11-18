@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $paired = [bool]$PreviousSetup
 if ($paired -ne [bool]$PreviousVersion) { throw 'PreviousSetup and PreviousVersion must be supplied together.' }
 if ($paired -and ($env:GITHUB_ACTIONS -ne 'true' -or $PreviousVersion -eq $Version)) { throw 'Two distinct package versions require an isolated CI runner.' }
-$catalog = Join-Path $PSScriptRoot '../dist/native-package-catalog/setup'
+$catalog = Join-Path $PSScriptRoot '../../dist/native-package-catalog/setup'
 if ($paired -and !(Test-Path -LiteralPath $catalog)) { throw 'Paired acceptance requires the retained native catalog artifact.' }
 $installed = Join-Path $env:LOCALAPPDATA 'Programs\garminctl'
 if ($paired) {
@@ -66,7 +66,7 @@ function Invoke-PackageCheck([string]$Expected, [string]$Phase, [bool]$NativeUI)
       throw "Incorrect signature: $name"
     }
   }
-  $arguments = @('scripts/test-package.py', '--repo', '.', '--version', $Expected, '--state', $state, '--desktop', (Join-Path $installed 'garmin-desktop.exe'), '--cli', (Join-Path $installed 'garminctl.exe'))
+  $arguments = @('tests/native/test-package.py', '--repo', '.', '--version', $Expected, '--state', $state, '--desktop', (Join-Path $installed 'garmin-desktop.exe'), '--cli', (Join-Path $installed 'garminctl.exe'))
   if ($NativeUI) { $arguments += '--native-ui' }
   python @arguments
   if ($LASTEXITCODE -ne 0) { throw 'Installed native application/MCP check failed.' }
