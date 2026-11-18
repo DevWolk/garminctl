@@ -47,7 +47,7 @@ if [[ -n $previous_package ]]; then
     deb) apt-get install -y --no-install-recommends polkitd pkexec ;;
     rpm) dnf install -y polkit ;;
   esac
-  install -m 0644 /src/scripts/fixtures/native-package.rules /etc/polkit-1/rules.d/00-garminctl-native-acceptance.rules
+  install -m 0644 /src/tests/native/fixtures/native-package.rules /etc/polkit-1/rules.d/00-garminctl-native-acceptance.rules
   mkdir -p /run/dbus
   dbus-daemon --system --fork --nopidfile
   /usr/lib/polkit-1/polkitd --no-debug > "$state/polkit.log" 2>&1 &
@@ -69,7 +69,7 @@ check_version() {
   fi
   runuser -u garmin-smoke -- env GTK_MODULES=atk-bridge NO_AT_BRIDGE=0 LANG=C.UTF-8 NATIVE_RESULTS_DIR="$results" \
     dbus-run-session -- xvfb-run -a \
-    python3 /src/scripts/test-package.py --repo /src --version "$expected" --state "$state" \
+    python3 /src/tests/native/test-package.py --repo /src --version "$expected" --state "$state" \
     --desktop /usr/bin/garmin-desktop --cli /usr/bin/garminctl "$@"
   test "$(cat "$state/config/garminctl/package-acceptance.txt")" = 'preserve synthetic package state'
 }
@@ -82,7 +82,7 @@ application_transition() {
   mkdir -p "$work"
   chown 1500:1500 "$work"
   runuser -u garmin-smoke -- env GTK_MODULES=atk-bridge NO_AT_BRIDGE=0 LANG=C.UTF-8 \
-    "${display[@]}" python3 /src/scripts/native_application.py \
+    "${display[@]}" python3 /src/tests/native/native_application.py \
     --repo /src --desktop /usr/bin/garmin-desktop --cli /usr/bin/garminctl --state "$state" \
     --work "$work" --current "$current" --target "$target" "$@"
 }

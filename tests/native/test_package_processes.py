@@ -21,7 +21,7 @@ stop_app = package_tests["stop_app"]
 class PackageStateTests(unittest.TestCase):
     def launch_environment(self, work, state=None):
         work.mkdir()
-        repo = Path(__file__).resolve().parent.parent
+        repo = Path(__file__).resolve().parents[2]
         with mock.patch.object(subprocess, 'check_output', return_value='garminctl v0.0.1\n'), \
              mock.patch.object(subprocess, 'Popen', side_effect=RuntimeError('native-start-barrier')) as launch:
             with self.assertRaisesRegex(RuntimeError, 'native-start-barrier'):
@@ -51,7 +51,7 @@ class PackageStateTests(unittest.TestCase):
 
     def test_cli_version_prefix_is_not_accepted_as_the_exact_build(self):
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(__file__).resolve().parent.parent
+            repo = Path(__file__).resolve().parents[2]
             with mock.patch.object(subprocess, 'check_output', return_value='garminctl v0.0.10\n'), \
                  mock.patch.object(subprocess, 'Popen') as launch:
                 with self.assertRaises(AssertionError):

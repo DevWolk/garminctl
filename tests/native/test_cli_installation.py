@@ -12,7 +12,7 @@ import unittest
 import zipfile
 
 
-REPOSITORY = Path(__file__).resolve().parent.parent
+REPOSITORY = Path(__file__).resolve().parents[2]
 MODULE = 'github.com/DevWolk/garminctl'
 VERSIONS = ('v0.0.0-cli-test.1', 'v0.0.0-cli-test.2')
 

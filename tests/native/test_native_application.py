@@ -239,7 +239,7 @@ class NativeApplicationTests(unittest.TestCase):
         driver.activate.side_effect = click
         if wrong_dialog:
             driver.wait_text.side_effect = AssertionError('wrong selected version')
-        repo = Path(__file__).resolve().parent.parent
+        repo = Path(__file__).resolve().parents[2]
         responses = ['garminctl ' + current + '\n', 'garminctl ' + target + '\n']
         metadata = [({'application': 'garminctl', 'version': current}, {}),
                     ({'application': 'garminctl', 'version': target}, {})]

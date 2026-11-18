@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const window = {};
-vm.runInContext(readFileSync(path.join(__dirname, '../internal/ship/web/ui/mcp-setup.js'), 'utf8'), vm.createContext({window}));
+vm.runInContext(readFileSync(path.join(__dirname, '../../internal/ship/web/ui/mcp-setup.js'), 'utf8'), vm.createContext({window}));
 const endpoint = 'http://127.0.0.1:8787/mcp';
 const setup = client => window.mcpSetup(client, endpoint);
 
