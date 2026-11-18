@@ -1,7 +1,7 @@
 # garminctl
 
 [![Release](https://img.shields.io/github/v/release/DevWolk/garminctl)](https://github.com/DevWolk/garminctl/releases/latest)
-[![Tests](https://github.com/DevWolk/garminctl/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/DevWolk/garminctl/actions/workflows/test.yml)
+[![Tests](https://github.com/DevWolk/garminctl/actions/workflows/main.yml/badge.svg?branch=main)](https://github.com/DevWolk/garminctl/actions/workflows/main.yml)
 [![License](https://img.shields.io/github/license/DevWolk/garminctl)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/DevWolk/garminctl)](go.mod)
 
