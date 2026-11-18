@@ -271,3 +271,33 @@ func TestHistoryLoadsAndSavesOneCachePath(t *testing.T) {
 		t.Fatalf("cache files %v (%v), want only the path the call loaded", files, err)
 	}
 }
+
+func TestHistoryMarksValuesConnectDidNotReport(t *testing.T) {
+	t.Parallel()
+
+	action := HistoryAction{Access: AccountAccess{
+		Client:      &historyAccount{},
+		DisplayName: func(context.Context) (string, error) { return historyUser, nil },
+		DeviceXML:   func(context.Context) (*deviceinfo.DeviceXML, error) { return nil, errors.New("no watch") },
+		CacheDir:    t.TempDir(),
+	}}
+
+	rows, err := action.Run(t.Context(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The synthetic account reports steps and sleep only; the other range
+	// endpoints answer without rows, so their fields read as missing, not zero.
+	for _, row := range rows {
+		if row.Lacks("steps") || row.Lacks("sleepSec") {
+			t.Fatalf("row %s marks a reported value unavailable: %v", row.Date, row.Unavailable)
+		}
+
+		for _, field := range []string{"restingHr", "avgStress", "bodyBatteryLow", "bodyBatteryHigh", "stepGoal"} {
+			if !row.Lacks(field) {
+				t.Fatalf("row %s reports %s although Connect returned none: %v", row.Date, field, row.Unavailable)
+			}
+		}
+	}
+}
