@@ -30,6 +30,12 @@ Windows packages can be unsigned or signed according to the release configuratio
 A personal self-signed certificate does not establish public trust or guarantee
 Windows acceptance. See [release signing](releases.md).
 
+With Smart App Control on, Windows can refuse to run the copy of `garminctl.exe`
+that the application starts from its cache to check packages and install
+updates. The application then reports that its helper program was blocked and
+changes nothing. Install the newer Setup from GitHub Releases by hand in that
+case.
+
 ## USB access
 
 Windows and WSL use Windows Portable Devices (WPD). Native Linux packages use
