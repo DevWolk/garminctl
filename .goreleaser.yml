@@ -24,6 +24,8 @@ builds:
       # Same string as the Make-built package binaries, which keep the tag's v.
       - -X main.version={{ .Env.PACKAGE_VERSION }}
       - -X main.updatePublicKey={{ .Env.APPLICATION_UPDATE_PUBLIC_KEY }}
+      - -X github.com/DevWolk/garminctl/internal/ship/gc.buildConsumerKey={{ envOrDefault "GARMIN_OAUTH_CONSUMER_KEY" "" }}
+      - -X github.com/DevWolk/garminctl/internal/ship/gc.buildConsumerSecret={{ envOrDefault "GARMIN_OAUTH_CONSUMER_SECRET" "" }}
     hooks:
       post:
         - cmd: 'bash scripts/sign-release-binary.sh "{{ .Os }}" "{{ .Path }}"'

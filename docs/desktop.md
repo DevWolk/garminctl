@@ -30,11 +30,22 @@ Windows packages can be unsigned or signed according to the release configuratio
 A personal self-signed certificate does not establish public trust or guarantee
 Windows acceptance. See [release signing](releases.md).
 
-With Smart App Control on, Windows can refuse to run the copy of `garminctl.exe`
-that the application starts from its cache to check packages and install
-updates. The application then reports that its helper program was blocked and
-changes nothing. Install the newer Setup from GitHub Releases by hand in that
-case.
+## Smart App Control
+
+[Smart App Control](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions)
+is a Windows 11 protection that runs an app only when Microsoft's cloud service
+rates it safe or when it is signed with a certificate from a publicly trusted
+authority. garminctl releases have neither, and Windows offers no exception for
+a single app.
+
+**With Smart App Control on, Windows can block `garminctl.exe`.** The CLI does
+not start, the Application tab cannot check the installation or saved
+packages, and in-app update and rollback report that the helper program was
+blocked and change nothing. The desktop app itself may still run.
+
+**Turning Smart App Control off is not recommended.** Install each release by
+hand with the Setup from [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest)
+instead.
 
 ## USB access
 

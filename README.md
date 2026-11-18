@@ -5,6 +5,13 @@
 [![License](https://img.shields.io/github/license/DevWolk/garminctl)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/DevWolk/garminctl)](go.mod)
 
+> [!IMPORTANT]
+> garminctl is an independent open-source project and is not affiliated with,
+> endorsed by or supported by Garmin Ltd. Garmin, Garmin Connect and Connect IQ
+> are trademarks of Garmin Ltd. or its subsidiaries. garminctl talks to the same
+> Garmin services as Garmin's own apps, and Garmin may change them at any time.
+> Use at your own risk.
+
 Manage a Garmin watch over USB through a CLI, native desktop app, local web UI,
 or MCP server. Browse files, edit settings, manage apps and workouts, and sync
 recordings with Garmin Connect.
@@ -14,7 +21,8 @@ recordings with Garmin Connect.
 Download a package from [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest)
 and follow the [desktop installation guide](docs/desktop.md). It covers Windows,
 WSL, Linux, and USB support limits. Native Linux USB remains experimental and
-has not been verified on physical hardware.
+has not been verified on physical hardware. On Windows with Smart App Control
+on, read [Smart App Control](docs/desktop.md#smart-app-control) first.
 
 For an existing installation, follow the [update instructions](docs/desktop.md#update-an-installed-package).
 

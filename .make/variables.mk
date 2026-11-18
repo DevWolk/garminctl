@@ -3,7 +3,13 @@ GO_SERVICE := go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 APPLICATION_UPDATE_PUBLIC_KEY := $(strip $(file <build/update-public-key.b64))
 export APPLICATION_UPDATE_PUBLIC_KEY
-LDFLAGS := -X main.version=$(VERSION) -X main.updatePublicKey=$(APPLICATION_UPDATE_PUBLIC_KEY)
+# The Connect app's public OAuth consumer; builds without it download it at run time.
+GARMIN_OAUTH_CONSUMER_KEY ?=
+GARMIN_OAUTH_CONSUMER_SECRET ?=
+GC_PACKAGE := github.com/DevWolk/garminctl/internal/ship/gc
+LDFLAGS := -X main.version=$(VERSION) -X main.updatePublicKey=$(APPLICATION_UPDATE_PUBLIC_KEY) \
+	-X $(GC_PACKAGE).buildConsumerKey=$(GARMIN_OAUTH_CONSUMER_KEY) \
+	-X $(GC_PACKAGE).buildConsumerSecret=$(GARMIN_OAUTH_CONSUMER_SECRET)
 DESKTOP_TAGS := desktop,production,gtk3
 GATE_TAGS := $(DESKTOP_TAGS),integration
 WINDOWS_TAGS := desktop,production
