@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 // InstallWorkerConfig carries only compiled/local composition, not IPC-selected trust.

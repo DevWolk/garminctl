@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 func TestDevicesUsesInjectedDiscoveryWithoutSession(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 const infoCommand = "info"

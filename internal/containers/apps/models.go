@@ -1,7 +1,7 @@
 // Package apps owns the installed application registry and app operations.
 package apps
 
-import "github.com/DevWolk/garminctl/internal/ciq"
+import "github.com/DevWolk/garminctl/internal/ship/ciq"
 
 // App is an installed application listed in GARMIN/Apps/OUT.BIN.
 type App struct {

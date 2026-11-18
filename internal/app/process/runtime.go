@@ -10,7 +10,7 @@ import (
 	"github.com/DevWolk/garminctl/internal/containers/apps"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/containers/health"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )

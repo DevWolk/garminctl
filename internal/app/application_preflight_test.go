@@ -15,8 +15,8 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
-	"github.com/DevWolk/garminctl/internal/paths"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 type preflightLocalSource struct {

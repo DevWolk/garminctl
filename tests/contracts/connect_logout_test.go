@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/hostfile"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestCloudLogoutOverHTTPRemovesSessionCopiesFromApplicationBackups(t *testing.T) { //nolint:paralleltest // The fixture redirects process config/cache environment.

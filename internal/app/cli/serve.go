@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/DevWolk/garminctl/internal/app"
-	"github.com/DevWolk/garminctl/internal/device"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 func (c *cli) serve(ctx context.Context, args []string) error {

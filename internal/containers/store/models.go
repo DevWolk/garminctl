@@ -1,7 +1,7 @@
 // Package store owns public Connect IQ catalog browsing and watch decoration.
 package store
 
-import "github.com/DevWolk/garminctl/internal/ciqstore"
+import "github.com/DevWolk/garminctl/internal/ship/ciqstore"
 
 // View is a store page merged with what the watch has installed.
 type View struct {

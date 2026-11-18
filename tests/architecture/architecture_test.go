@@ -59,7 +59,7 @@ var architectureOwners = []architectureOwner{
 	{pkg: "internal/ship/watchsession", names: []string{"NewManager", "NewManagerWithGate"}, callers: []string{ownerApp}},
 	{pkg: "internal/containers/connect", names: []string{"NewSyncCoordinator"}, callers: []string{ownerApp}},
 	{pkg: "internal/containers/health", names: []string{"NewActivityCoordinator"}, callers: []string{ownerApp}},
-	{pkg: "internal/gc", names: []string{"New"}, callers: []string{"cmd", ownerApp, "internal/testdump"}},
+	{pkg: "internal/ship/gc", names: []string{"New"}, callers: []string{"cmd", ownerApp, "internal/ship/testdump"}},
 }
 
 // architectureRoot finds the module above the working directory, which go test
@@ -241,7 +241,7 @@ func architectureFeatureEdge(from, to string) bool {
 func architectureShell(path string) bool {
 	rel := architectureInternal(path)
 
-	return architectureWithin(rel, "web") || architectureWithin(rel, "mcpserver") || architectureWithin(rel, "desktop")
+	return architectureWithin(rel, "ship/web") || architectureWithin(rel, "ship/mcpserver") || architectureWithin(rel, "ship/desktop")
 }
 
 func architectureWithin(path, prefix string) bool {
@@ -269,24 +269,17 @@ func architectureFeatureUI(path string) bool {
 
 func architectureTransport(path string) bool {
 	rel := architectureInternal(path)
-	for _, prefix := range []string{"web", "mcpserver", "desktop", "ship/httpx", "ship/mcpx", "ship/clix"} {
+	for _, prefix := range []string{"ship/httpx", "ship/mcpx", "ship/clix"} {
 		if architectureWithin(rel, prefix) {
 			return true
 		}
 	}
 
-	return architectureFeatureUI(path)
+	return architectureShell(path) || architectureFeatureUI(path)
 }
 
 func architectureInfrastructure(path string) bool {
-	rel := architectureInternal(path)
-	for _, prefix := range []string{"ship", "device", "devicehost", "deviceinfo", "fit", "ciq", "ciqstore", "prg", "gc", "hostfile", "hostexec", "paths", "notify"} {
-		if architectureWithin(rel, prefix) {
-			return true
-		}
-	}
-
-	return false
+	return architectureWithin(architectureInternal(path), "ship") && !architectureShell(path)
 }
 
 func architectureCore(path string) bool {
@@ -298,7 +291,7 @@ func architectureImportViolation(from, to string) string {
 		return "only entry points and app wiring may import app"
 	}
 
-	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureTransport(to) && !architectureWithin(architectureInternal(to), "ship")) {
+	if architectureInfrastructure(from) && (architectureFeature(to) != "" || architectureShell(to)) {
 		return "infrastructure cannot depend on features or server/native shells"
 	}
 
@@ -324,7 +317,7 @@ func architectureShellImportViolation(from, to string) string {
 		return "shells receive feature registrations from app"
 	}
 
-	if architectureWithin(architectureInternal(from), "desktop") && architectureShell(to) && !architectureWithin(architectureInternal(to), "desktop") {
+	if architectureWithin(architectureInternal(from), "ship/desktop") && architectureShell(to) && !architectureWithin(architectureInternal(to), "ship/desktop") {
 		return "the native shell imports neither the web nor the MCP shell"
 	}
 
@@ -371,11 +364,11 @@ func architectureApprovedLibrary(from, to string) bool {
 	}
 
 	allow := map[string][]string{
-		"device/mtp":             {"github.com/google/gousb"},
-		"ciqstore":               {"golang.org/x/net/html"},
-		"gc":                     {"golang.org/x/net/publicsuffix"},
-		"hostfile":               {architectureWindows},
-		"hostexec":               {architectureWindows},
+		"ship/device/mtp":        {"github.com/google/gousb"},
+		"ship/ciqstore":          {"golang.org/x/net/html"},
+		"ship/gc":                {"golang.org/x/net/publicsuffix"},
+		"ship/hostfile":          {architectureWindows},
+		"ship/hostexec":          {architectureWindows},
 		"containers/application": {"golang.org/x/mod/semver"}, // pinned SemVer policy without the Wails runtime
 	}
 	for owner, libraries := range allow {

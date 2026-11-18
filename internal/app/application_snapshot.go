@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/hostfile"
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 // applicationBackups names the data backup directory beside the account store.

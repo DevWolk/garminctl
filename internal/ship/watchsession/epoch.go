@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 // BindEpoch cancels a job when its original connection is retired. It performs

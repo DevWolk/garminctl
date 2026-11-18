@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 const (

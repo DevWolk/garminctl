@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

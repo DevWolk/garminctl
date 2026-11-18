@@ -9,7 +9,7 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 type inventoryContractSource struct{}

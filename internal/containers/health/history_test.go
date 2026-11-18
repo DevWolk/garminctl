@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
 )
 
 // historyUser is the display name of the synthetic account.

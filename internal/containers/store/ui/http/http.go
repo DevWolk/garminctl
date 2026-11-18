@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/store"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )

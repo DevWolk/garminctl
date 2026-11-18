@@ -15,8 +15,8 @@ import (
 
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/containers/workouts"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 const (

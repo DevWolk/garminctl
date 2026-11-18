@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 // BackupSource supplies bounded file operations. The caller owns job admission

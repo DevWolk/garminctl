@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/DevWolk/garminctl/internal/device/wpd"
-	"github.com/DevWolk/garminctl/internal/hostexec"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device/wpd"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 // autostart manages a Startup shortcut for the hidden Windows server.

@@ -13,9 +13,9 @@ import (
 	"os/signal"
 
 	"github.com/DevWolk/garminctl/internal/app"
-	"github.com/DevWolk/garminctl/internal/desktop"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/devicehost"
+	"github.com/DevWolk/garminctl/internal/ship/desktop"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/devicehost"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

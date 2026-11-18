@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 type activityBarrierDevice struct {
@@ -84,7 +84,7 @@ func activityTestDevice(t *testing.T, count int) (*activityBarrierDevice, []devi
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile("../../fit/testdata/WalkingWalk.fit")
+	data, err := os.ReadFile("../../ship/fit/testdata/WalkingWalk.fit")
 	if err != nil {
 		t.Fatal(err)
 	}

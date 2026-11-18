@@ -5,7 +5,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func checkToolContracts(t *testing.T, want map[string]string) {

@@ -25,21 +25,21 @@ func TestArchitectureImportRules(t *testing.T) {
 		forbidden      bool
 	}{
 		{name: "entry point builds app", from: architectureModule + "/cmd/garminctl", to: architectureModule + "/internal/app"},
-		{name: "shell cannot import app", from: architectureModule + "/internal/web", to: architectureModule + "/internal/app", forbidden: true},
+		{name: "shell cannot import app", from: architectureModule + "/internal/ship/web", to: architectureModule + "/internal/app", forbidden: true},
 		{name: "infrastructure cannot import feature", from: architectureModule + "/internal/ship/watchsession", to: architectureSettings, forbidden: true},
 		{name: "core cannot import HTTP helper", from: architectureSettings, to: architectureModule + "/internal/ship/httpx", forbidden: true},
 		{name: "own UI uses core", from: architectureSettings + "/ui/http", to: architectureSettings},
 		{name: "UI cannot import other feature", from: architectureSettings + "/ui/http", to: architectureApps, forbidden: true},
 		{name: "core cannot import own UI", from: architectureSettings, to: architectureSettings + "/ui/http", forbidden: true},
 		{name: "process runtime builds feature owners", from: architectureProcess, to: architectureModule + "/internal/containers/connect"},
-		{name: "shell cannot import process runtime", from: architectureModule + "/internal/web", to: architectureProcess, forbidden: true},
+		{name: "shell cannot import process runtime", from: architectureModule + "/internal/ship/web", to: architectureProcess, forbidden: true},
 		{name: "feature cannot import process runtime", from: architectureSettings, to: architectureProcess, forbidden: true},
 		{name: "HTTP clients allowed", from: architectureSettings, to: "net/http"},
 		{name: "MCP SDK forbidden in core", from: architectureSettings, to: "github.com/modelcontextprotocol/go-sdk/mcp", forbidden: true},
 		{name: "Wails forbidden in core", from: architectureSettings, to: "github.com/wailsapp/wails/v3/pkg/application", forbidden: true},
 		{name: "MCP helper allowed", from: architectureModule + "/internal/ship/mcpx", to: "github.com/modelcontextprotocol/go-sdk/mcp"},
-		{name: "reviewed HTML parser", from: architectureModule + "/internal/ciqstore", to: "golang.org/x/net/html"},
-		{name: "reviewed USB library", from: architectureModule + "/internal/device/mtp", to: "github.com/google/gousb"},
+		{name: "reviewed HTML parser", from: architectureModule + "/internal/ship/ciqstore", to: "golang.org/x/net/html"},
+		{name: "reviewed USB library", from: architectureModule + "/internal/ship/device/mtp", to: "github.com/google/gousb"},
 		{name: "unreviewed feature library", from: architectureSettings, to: "example.com/new/library", forbidden: true},
 		{name: "application SemVer allowance", from: architectureModule + "/internal/containers/application", to: "golang.org/x/mod/semver"},
 		{name: "host inventory registry allowance", from: architectureModule + "/internal/ship/hostinfo", to: architectureRegistry},
@@ -62,13 +62,13 @@ func TestArchitectureImportRules(t *testing.T) {
 		{name: "app wires release transport", from: architectureModule + "/internal/app", to: architectureModule + "/internal/ship/updatetransport"},
 		{name: "app wires release policy", from: architectureModule + "/internal/app", to: architectureModule + "/internal/containers/application"},
 		{name: "application has no watch feature dependency", from: architectureModule + "/internal/containers/application", to: architectureApps, forbidden: true},
-		{name: "shell cannot import feature adapter", from: architectureModule + "/internal/web", to: architectureSettings + "/ui/http", forbidden: true},
-		{name: "shell cannot import feature core", from: architectureModule + "/internal/mcpserver", to: architectureApps, forbidden: true},
-		{name: "desktop cannot import web shell", from: architectureModule + "/internal/desktop", to: architectureModule + "/internal/web", forbidden: true},
-		{name: "desktop cannot import MCP shell", from: architectureModule + "/internal/desktop", to: architectureModule + "/internal/mcpserver", forbidden: true},
-		{name: "web mounts MCP shell", from: architectureModule + "/internal/web", to: architectureModule + "/internal/mcpserver"},
-		{name: "UI cannot import web shell", from: architectureSettings + "/ui/http", to: architectureModule + "/internal/web", forbidden: true},
-		{name: "UI cannot import MCP shell", from: architectureSettings + "/ui/mcp", to: architectureModule + "/internal/mcpserver", forbidden: true},
+		{name: "shell cannot import feature adapter", from: architectureModule + "/internal/ship/web", to: architectureSettings + "/ui/http", forbidden: true},
+		{name: "shell cannot import feature core", from: architectureModule + "/internal/ship/mcpserver", to: architectureApps, forbidden: true},
+		{name: "desktop cannot import web shell", from: architectureModule + "/internal/ship/desktop", to: architectureModule + "/internal/ship/web", forbidden: true},
+		{name: "desktop cannot import MCP shell", from: architectureModule + "/internal/ship/desktop", to: architectureModule + "/internal/ship/mcpserver", forbidden: true},
+		{name: "web mounts MCP shell", from: architectureModule + "/internal/ship/web", to: architectureModule + "/internal/ship/mcpserver"},
+		{name: "UI cannot import web shell", from: architectureSettings + "/ui/http", to: architectureModule + "/internal/ship/web", forbidden: true},
+		{name: "UI cannot import MCP shell", from: architectureSettings + "/ui/mcp", to: architectureModule + "/internal/ship/mcpserver", forbidden: true},
 		{name: "declared feature edge", from: architectureModule + "/internal/containers/workouts", to: architectureModule + "/internal/containers/connect"},
 		{name: "undeclared feature edge", from: architectureModule + "/internal/containers/music", to: architectureModule + "/internal/containers/health", forbidden: true},
 		{name: "declared edge is one-way", from: architectureApps, to: architectureModule + "/internal/containers/connect", forbidden: true},
@@ -91,12 +91,12 @@ func TestArchitectureTestImportRules(t *testing.T) {
 		forbidden      bool
 	}{
 		{name: "feature test uses own core", from: architectureSettings + "_test", to: architectureSettings},
-		{name: "feature test uses fixtures", from: architectureSettings, to: architectureModule + "/internal/testdump"},
+		{name: "feature test uses fixtures", from: architectureSettings, to: architectureModule + "/internal/ship/testdump"},
 		{name: "feature test cannot import app", from: architectureSettings + "_test", to: architectureModule + "/internal/app", forbidden: true},
 		{name: "UI test may use declared feature edge", from: architectureModule + "/internal/containers/updates/ui/cli", to: architectureApps},
 		{name: "feature test cannot add feature edge", from: architectureSettings + "/ui/http_test", to: architectureApps, forbidden: true},
-		{name: "shell test assembles features", from: architectureModule + "/internal/web", to: architectureSettings + "/ui/http"},
-		{name: "shell test builds the process runtime", from: architectureModule + "/internal/web", to: architectureProcess},
+		{name: "shell test assembles features", from: architectureModule + "/internal/ship/web", to: architectureSettings + "/ui/http"},
+		{name: "shell test builds the process runtime", from: architectureModule + "/internal/ship/web", to: architectureProcess},
 		{name: "feature test cannot import process runtime", from: architectureSettings + "_test", to: architectureProcess, forbidden: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +124,7 @@ func TestArchitectureTypedRules(t *testing.T) {
 
 	imports := architectureFixtureImporter{}
 	for _, pkg := range loadArchitecture(t.Context(), t, architectureView{name: "typed fixtures"}, packages.LoadTypes, "net/http",
-		architectureProcess, architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/containers/connect", architectureModule+"/internal/gc") {
+		architectureProcess, architectureModule+"/internal/ship/watchsession", architectureModule+"/internal/containers/connect", architectureModule+"/internal/ship/gc") {
 		imports[pkg.PkgPath] = pkg.Types
 	}
 
@@ -141,13 +141,13 @@ func TestArchitectureTypedRules(t *testing.T) {
 		{name: "server struct", code: `import wire "net/http"; var _ = &wire.Server{}`, forbidden: true},
 		{name: "serve function value", code: `import wire "net/http"; var _ = wire.ListenAndServe`, forbidden: true},
 		{name: "server APIs belong to UI", owner: architectureSettings + "/ui/http", code: `import wire "net/http"; var _ = &wire.Server{}`},
-		{name: "runtime factory alias outside app", owner: architectureModule + "/internal/web", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`, forbidden: true},
+		{name: "runtime factory alias outside app", owner: architectureModule + "/internal/ship/web", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`, forbidden: true},
 		{name: "runtime factory belongs to app", owner: architectureModule + "/internal/app", code: `import rt "github.com/DevWolk/garminctl/internal/app/process"; var factory = rt.New`},
-		{name: "watch owner outside app", owner: architectureModule + "/internal/web", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManager`, forbidden: true},
+		{name: "watch owner outside app", owner: architectureModule + "/internal/ship/web", code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManager`, forbidden: true},
 		{name: "process runtime owns watch manager", owner: architectureProcess, code: `import ws "github.com/DevWolk/garminctl/internal/ship/watchsession"; var _ = ws.NewManagerWithGate`},
-		{name: "sync coordinator outside app", owner: architectureModule + "/internal/mcpserver", code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`, forbidden: true},
-		{name: "account built by feature UI", owner: architectureSettings + "/ui/http", code: `import "github.com/DevWolk/garminctl/internal/gc"; var _ = gc.New`, forbidden: true},
-		{name: "entry point builds account", owner: architectureModule + "/cmd/garminctl", code: `import "github.com/DevWolk/garminctl/internal/gc"; var _ = gc.New`},
+		{name: "sync coordinator outside app", owner: architectureModule + "/internal/ship/mcpserver", code: `import c "github.com/DevWolk/garminctl/internal/containers/connect"; var _ = c.NewSyncCoordinator`, forbidden: true},
+		{name: "account built by feature UI", owner: architectureSettings + "/ui/http", code: `import "github.com/DevWolk/garminctl/internal/ship/gc"; var _ = gc.New`, forbidden: true},
+		{name: "entry point builds account", owner: architectureModule + "/cmd/garminctl", code: `import "github.com/DevWolk/garminctl/internal/ship/gc"; var _ = gc.New`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

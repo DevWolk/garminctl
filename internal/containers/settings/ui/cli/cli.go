@@ -9,8 +9,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/DevWolk/garminctl/internal/containers/settings"
-	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

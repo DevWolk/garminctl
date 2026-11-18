@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/ship/clix"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestWatchDiagnosticDispatchRetainsUnsupportedErrors(t *testing.T) {

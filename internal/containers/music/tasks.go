@@ -6,8 +6,8 @@ import (
 	"path"
 	"strings"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

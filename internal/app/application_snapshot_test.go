@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 func writeApplicationState(t *testing.T, base, name string, data []byte) {

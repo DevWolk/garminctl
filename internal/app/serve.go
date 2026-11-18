@@ -26,13 +26,13 @@ import (
 	watchmcp "github.com/DevWolk/garminctl/internal/containers/watch/ui/mcp"
 	workoutshttp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/http"
 	workoutsmcp "github.com/DevWolk/garminctl/internal/containers/workouts/ui/mcp"
-	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/mcpserver"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/httpx"
+	"github.com/DevWolk/garminctl/internal/ship/mcpserver"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/web"
+	"github.com/DevWolk/garminctl/internal/ship/web"
 )
 
 // Serve binds an HTTP listener before constructing its backend owners.

@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 // accountBackup saves a backup that holds the session, the pending

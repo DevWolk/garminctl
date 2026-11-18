@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"github.com/DevWolk/garminctl/internal/containers/connect"
-	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 
 	"golang.org/x/term"
 )

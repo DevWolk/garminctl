@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/watch"
-	"github.com/DevWolk/garminctl/internal/device"
+	"github.com/DevWolk/garminctl/internal/ship/device"
 )
 
 const backupMissingPath = "missing"

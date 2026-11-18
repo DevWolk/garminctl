@@ -4,8 +4,8 @@ package mcp
 import (
 	"context"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/store"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 	"github.com/DevWolk/garminctl/internal/ship/mcpx"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 	"github.com/modelcontextprotocol/go-sdk/mcp"

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 // registryFixturePath is the OUT.BIN that testdump copies into every dump.
-var registryFixturePath = filepath.Join("..", "..", "testdump", "testdata", "OUT.BIN")
+var registryFixturePath = filepath.Join("..", "..", "ship", "testdump", "testdata", "OUT.BIN")
 
 // registryFixtureApp is one synthetic registry entry. Built-in entries have a
 // native ID; Connect IQ entries have a version, file name and size.

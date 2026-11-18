@@ -18,15 +18,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/DevWolk/garminctl/internal/app"
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/health"
 	"github.com/DevWolk/garminctl/internal/containers/music"
 	"github.com/DevWolk/garminctl/internal/containers/updates"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/fit"
-	"github.com/DevWolk/garminctl/internal/gc"
-	"github.com/DevWolk/garminctl/internal/testdump"
-	"github.com/DevWolk/garminctl/internal/web"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/web"
 )
 
 type trackedRootDevice struct {

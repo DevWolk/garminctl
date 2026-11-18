@@ -6,8 +6,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
 )
 
 // Session provides cached filesystem and optional capability access to one

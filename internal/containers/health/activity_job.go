@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 	"github.com/DevWolk/garminctl/internal/ship/lifecycle"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )

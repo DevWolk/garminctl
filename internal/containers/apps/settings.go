@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path"
 
-	"github.com/DevWolk/garminctl/internal/ciq"
-	"github.com/DevWolk/garminctl/internal/ciqstore"
+	"github.com/DevWolk/garminctl/internal/ship/ciq"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

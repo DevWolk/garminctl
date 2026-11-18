@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 )
 
 const nativeFixtureLinux = "linux"

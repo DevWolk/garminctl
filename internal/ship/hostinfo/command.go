@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 var errNoPackageOwner = errors.New("no package owns this file")

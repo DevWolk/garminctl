@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/store"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/testdump"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 )
 
 func TestStoreHTTPContracts(t *testing.T) { //nolint:paralleltest // fixture replaces the process store client

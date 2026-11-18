@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 type ledger map[string]string // watch path -> "size|modified"

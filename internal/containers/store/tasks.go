@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DevWolk/garminctl/internal/ciqstore"
 	"github.com/DevWolk/garminctl/internal/containers/apps"
+	"github.com/DevWolk/garminctl/internal/ship/ciqstore"
 )
 
 var (

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
-	"github.com/DevWolk/garminctl/internal/hostfile"
+	"github.com/DevWolk/garminctl/internal/ship/hostfile"
 )
 
 func TestApplicationCompatibleRollbackPreservesCurrentEditsAndMFAWithoutRestoration(t *testing.T) { //nolint:paralleltest // Owns isolated account/cache paths and a real fixture backend.

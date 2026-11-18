@@ -2,4 +2,4 @@ name: garminctl CodeQL
 queries:
   - uses: security-extended
 paths-ignore:
-  - internal/web/ui
+  - internal/ship/web/ui

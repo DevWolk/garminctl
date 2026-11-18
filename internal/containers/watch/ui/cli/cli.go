@@ -6,9 +6,9 @@ import (
 	"flag"
 
 	"github.com/DevWolk/garminctl/internal/containers/watch"
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/fit"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 )
 
 // Commands uses supplied writers and already leased Sessions. Discovery is a

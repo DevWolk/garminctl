@@ -6,8 +6,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/app"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	connectcli "github.com/DevWolk/garminctl/internal/containers/connect/ui/cli"
-	"github.com/DevWolk/garminctl/internal/gc"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

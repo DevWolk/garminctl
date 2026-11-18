@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/DevWolk/garminctl/internal/paths"
+	"github.com/DevWolk/garminctl/internal/ship/paths"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
 )
 

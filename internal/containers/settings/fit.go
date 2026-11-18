@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/fit"
+	"github.com/DevWolk/garminctl/internal/ship/fit"
 )
 
 // FileTypeSettingsChange is the file_id.type of the settings-change files

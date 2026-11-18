@@ -6,8 +6,8 @@ import (
 	"github.com/DevWolk/garminctl/internal/app/process"
 	"github.com/DevWolk/garminctl/internal/containers/connect"
 	"github.com/DevWolk/garminctl/internal/containers/workouts"
-	"github.com/DevWolk/garminctl/internal/deviceinfo"
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/deviceinfo"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
 )
 

@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DevWolk/garminctl/internal/device"
-	"github.com/DevWolk/garminctl/internal/gc"
+	"github.com/DevWolk/garminctl/internal/ship/device"
+	"github.com/DevWolk/garminctl/internal/ship/gc"
+	"github.com/DevWolk/garminctl/internal/ship/testdump"
 	"github.com/DevWolk/garminctl/internal/ship/watchsession"
-	"github.com/DevWolk/garminctl/internal/testdump"
 )
 
 const (

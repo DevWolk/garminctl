@@ -1,0 +1,99 @@
+import { Call, Clipboard, Events } from '/wails/runtime.js';
+
+window.runtime ??= {};
+window.runtime.ClipboardSetText = Clipboard.SetText;
+
+(() => {
+  const invoke = (name, ...args) => Call.ByName('github.com/DevWolk/garminctl/internal/ship/desktop.App.' + name, ...args);
+  const native = {
+    Ready: () => invoke('Ready'),
+    FinishClose: () => invoke('FinishClose'),
+    OpenExternal: (raw) => invoke('OpenExternal', raw),
+    Download: (relative, name) => invoke('Download', relative, name),
+  };
+  const applicationCall = (name, ...args) => Call.ByName('github.com/DevWolk/garminctl/internal/containers/application/ui/native.Service.' + name, ...args);
+  window.applicationPage.attach({
+    info: () => applicationCall('Info'),
+    history: (includePrerelease) => applicationCall('History', includePrerelease),
+    check: (includePrerelease) => applicationCall('Check', includePrerelease),
+    downloadStatus: () => applicationCall('DownloadStatus'),
+    startDownload: (tag, includePrerelease) => applicationCall('StartDownload', tag, includePrerelease),
+    cancelDownload: (id) => applicationCall('CancelDownload', id),
+    installationStatus: () => applicationCall('InstallationStatus'),
+    savedPackages: (includePrerelease) => applicationCall('SavedPackages', includePrerelease),
+    savedRollbacks: (includePrerelease) => applicationCall('SavedRollbacks', includePrerelease),
+    startRollback: (request) => applicationCall('StartRollback', request),
+    confirmRollback: (id, consent) => applicationCall('ConfirmRollback', id, consent),
+    confirmRollbackPreparation,
+    startInstallation: (request, consent) => applicationCall('StartInstallation', request, consent),
+    cancelInstallation: (id) => applicationCall('CancelInstallation', id),
+    confirmInstallation,
+    closeWindow: () => native.FinishClose(),
+  });
+  let confirming = false;
+  async function confirmInstallation(tag) {
+    if (confirming) return false;
+    confirming = true;
+    try {
+      if (state.pending.size || state.appPending.size || state.cloudPending.size) {
+        if (!await confirmDialog({title:'Discard unsaved changes if the app closes?', body:'<p>Your unapplied changes will be lost when installation closes the application.</p>', ok:'Continue'})) return false;
+      }
+      return await confirmDialog({title:'Install ' + tag + ' and restart?', body:'<p>The app will verify the update and recovery package, back up local data, close, and start the system installer. System authorization may be required. Cancellation is available only before handoff.</p>', ok:'Install and restart'});
+    } finally { confirming = false; }
+  }
+  async function confirmRollbackPreparation(tag) {
+    if (confirming) return false;
+    confirming = true;
+    try {
+      if (state.pending.size || state.appPending.size || state.cloudPending.size) {
+        if (!await confirmDialog({title:'Discard unsaved changes if rollback closes the app?', body:'<p>Unapplied changes will be lost if you later confirm rollback. Canceling preparation keeps them in this window.</p>', ok:'Continue'})) return false;
+      }
+      return await confirmDialog({title:'Prepare rollback to ' + tag + '?', body:'<p>The app will verify both packages and save a protected copy of current data. No data is replaced and no installation starts until you review and confirm the exact changes.</p>', ok:'Prepare review'});
+    } finally { confirming = false; }
+  }
+  async function action(name) {
+    if (window.applicationPage.installing?.()) {
+      if (name === 'close') await native.FinishClose();
+      return;
+    }
+    if (name === 'back') { history.back(); return; }
+    if (name === 'application') { navigate('application', ''); return; }
+    if (name === 'mcp') { navigate('ai', ''); return; }
+    if (confirming) return;
+    confirming = true;
+    try {
+      if (state.pending.size || state.appPending.size || state.cloudPending.size) {
+        if (!await confirmDialog({ title: 'Discard unsaved changes?', body: '<p>Your changes have not been applied yet.</p>', ok: 'Discard' })) return;
+      }
+      if (name === 'close') await native.FinishClose();
+      if (name === 'reload') { state.pending.clear(); state.appPending.clear(); state.cloudPending.clear(); location.reload(); }
+    } finally { confirming = false; }
+  }
+  Events.On('desktop:action', event => action(event.data));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'F5' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'r')) {
+      event.preventDefault(); action('reload');
+    }
+  });
+  function openExternal(url) { native.OpenExternal(url).catch(error => toast(String(error), 'bad')); }
+  window.open = (raw) => {
+    const url = new URL(raw, location.href);
+    if (url.origin !== location.origin) openExternal(url.href);
+    else { history.pushState(null, '', url.pathname + url.search); applyRoute(); }
+    return null;
+  };
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[href]');
+    if (!link) return;
+    const url = new URL(link.getAttribute('href'), location.href);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      if (url.origin !== location.origin) { event.preventDefault(); openExternal(url.href); return; }
+    }
+    if (url.pathname === '/api/file' || url.pathname === '/api/decode') {
+      event.preventDefault();
+      const name = link.download || (url.searchParams.get('path') || 'download').split('/').pop();
+      native.Download(url.pathname + url.search, name).catch(error => toast(String(error), 'bad'));
+    }
+  }, true);
+  native.Ready();
+})();

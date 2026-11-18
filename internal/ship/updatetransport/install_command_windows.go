@@ -3,7 +3,7 @@ package updatetransport
 import (
 	"os/exec"
 
-	"github.com/DevWolk/garminctl/internal/hostexec"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 func configureInstallerCommand(command *exec.Cmd, invocation installerInvocation) {

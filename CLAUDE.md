@@ -2,7 +2,7 @@
 
 Garmin watch manager with a native desktop app, CLI, web UI and MCP server.
 
-- Read `docs/formats.md` before touching `internal/fit`, `internal/ciq`,
+- Read `docs/formats.md` before touching `internal/ship/fit`, `internal/ship/ciq`,
   `internal/containers` or the WPD bridge; it documents implemented formats and
   transport constraints.
 - Native Linux USB is experimental and needs hardware validation. From WSL

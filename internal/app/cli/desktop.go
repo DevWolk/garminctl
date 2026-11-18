@@ -7,9 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/DevWolk/garminctl/internal/device/wpd"
-	"github.com/DevWolk/garminctl/internal/hostexec"
 	"github.com/DevWolk/garminctl/internal/ship/clix"
+	"github.com/DevWolk/garminctl/internal/ship/device/wpd"
+	"github.com/DevWolk/garminctl/internal/ship/hostexec"
 )
 
 // desktop opens the installed native app; WSL launches the Windows installation.
