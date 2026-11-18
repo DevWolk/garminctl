@@ -273,11 +273,13 @@ async function loadToday() {
     const d = rows[rows.length - 1], y = rows[0];
     if (d.error) throw new Error(d.error);
     const tile = (k, v, unit, sub, pct, teal) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ''}</div>${pct !== undefined ? `<div class="bar"><i class="${teal ? 'teal' : ''}" style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>` : ''}<div class="s">${sub}</div></div>`;
-    box.innerHTML = tile('Steps today', d.steps.toLocaleString(), '', `goal ${d.stepGoal.toLocaleString()}`, d.steps / Math.max(1, d.stepGoal) * 100)
+    // A value Connect has not reported yet is shown as missing, not as zero.
+    const has = (...keys) => !keys.some((k) => lacks(d, k));
+    box.innerHTML = tile('Steps today', has('steps') ? d.steps.toLocaleString() : '–', '', has('stepGoal') ? `goal ${d.stepGoal.toLocaleString()}` : '', has('steps', 'stepGoal') ? d.steps / Math.max(1, d.stepGoal) * 100 : 0)
       + tile('Resting heart rate', d.restingHr || '–', 'bpm', y.restingHr ? `yesterday ${y.restingHr}` : '')
       + tile('Sleep', d.sleepSec ? fmtHM(d.sleepSec) : '–', '', y.sleepSec ? `night before ${fmtHM(y.sleepSec)}` : '')
-      + tile('Body battery', `${d.bodyBatteryLow}–${d.bodyBatteryHigh}`, '', `stress avg ${d.avgStress}`, d.bodyBatteryHigh, true)
-      + tile('Calories', d.calories.toLocaleString(), 'kcal', `${d.activeCalories.toLocaleString()} active`);
+      + tile('Body battery', has('bodyBatteryLow', 'bodyBatteryHigh') ? `${d.bodyBatteryLow}–${d.bodyBatteryHigh}` : '–', '', has('avgStress') ? `stress avg ${d.avgStress}` : '', has('bodyBatteryHigh') ? d.bodyBatteryHigh : 0, true)
+      + tile('Calories', has('calories') ? d.calories.toLocaleString() : '–', has('calories') ? 'kcal' : '', has('activeCalories') ? `${d.activeCalories.toLocaleString()} active` : '');
   } catch (e) {
     box.innerHTML = `<div class="tile prompt"><div class="k">${/signed in/.test(e.message) ? 'Sign in to Garmin Connect to view daily health.' : esc(e.message)}</div></div>`;
   }

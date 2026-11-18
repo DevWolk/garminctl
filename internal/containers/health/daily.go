@@ -96,14 +96,41 @@ func (c *accountReader) daily(ctx context.Context, n int) ([]DailyHealth, error)
 	return out, nil
 }
 
-// fillDaily copies a usersummary answer into a row.
+// fillDaily copies a usersummary answer into a row. A value the answer leaves
+// out, sets to null or marks as not measured is listed in Unavailable, so a
+// day Connect has no data for is not shown as a day of zeros.
 func fillDaily(d *DailyHealth, m map[string]any) {
-	d.Steps, d.StepGoal, d.DistanceM = asInt(m, "totalSteps"), asInt(m, "dailyStepGoal"), asInt(m, "totalDistanceMeters")
-	d.RestingHR, d.MinHR, d.MaxHR = asInt(m, "restingHeartRate"), asInt(m, "minHeartRate"), asInt(m, "maxHeartRate")
-	d.AvgStress, d.BodyBatteryHigh, d.BodyBatteryLow = asInt(m, "averageStressLevel"), asInt(m, "bodyBatteryHighestValue"), asInt(m, "bodyBatteryLowestValue")
-	d.SleepSec, d.Calories, d.ActiveCalories, d.Floors = asInt(m, "sleepingSeconds"), asInt(m, "totalKilocalories"), asInt(m, "activeKilocalories"), asInt(m, "floorsAscended")
-	d.IntensityMinutes = asInt(m, "moderateIntensityMinutes") + 2*asInt(m, "vigorousIntensityMinutes")
-	d.ActiveSec, d.HighlyActiveSec = asInt(m, "activeSeconds"), asInt(m, "highlyActiveSeconds")
+	value := func(field string, keys ...string) int {
+		total, found := 0, false
+
+		for i, key := range keys {
+			number, ok := m[key].(float64)
+			if !ok {
+				continue
+			}
+
+			found = true
+			// Vigorous minutes count twice towards the weekly intensity total.
+			total += (i + 1) * int(math.Round(number))
+		}
+
+		if !found || total < 0 {
+			d.Unavailable = append(d.Unavailable, field)
+
+			return 0
+		}
+
+		return total
+	}
+
+	d.Steps, d.StepGoal, d.DistanceM = value("steps", "totalSteps"), value("stepGoal", "dailyStepGoal"), value("distanceM", "totalDistanceMeters")
+	d.RestingHR, d.MinHR, d.MaxHR = value("restingHr", "restingHeartRate"), value("minHr", "minHeartRate"), value("maxHr", "maxHeartRate")
+	d.AvgStress = value("avgStress", "averageStressLevel")
+	d.BodyBatteryHigh, d.BodyBatteryLow = value("bodyBatteryHigh", "bodyBatteryHighestValue"), value("bodyBatteryLow", "bodyBatteryLowestValue")
+	d.SleepSec, d.Calories, d.ActiveCalories = value("sleepSec", "sleepingSeconds"), value("calories", "totalKilocalories"), value("activeCalories", "activeKilocalories")
+	d.Floors = value("floors", "floorsAscended")
+	d.IntensityMinutes = value("intensityMinutes", "moderateIntensityMinutes", "vigorousIntensityMinutes")
+	d.ActiveSec, d.HighlyActiveSec = value("activeSec", "activeSeconds"), value("highlyActiveSec", "highlyActiveSeconds")
 }
 
 // Series is a time series of [unix ms, value] pairs.
