@@ -1,5 +1,8 @@
 # Building and publishing releases
 
+This page is for maintainers. To install or update a published release, see
+the [desktop guide](desktop.md#install) and [updating garminctl](updating.md).
+
 [`release.yml`](../.github/workflows/release.yml) publishes the exact assets
 that pass [`packages.yml`](../.github/workflows/packages.yml). Local package
 builds and manual workflow runs produce artifacts without publishing a release.
@@ -37,9 +40,12 @@ After Authenticode and packaging, it signs every Setup/DEB/RPM/archive with the
 same PFX and verifies each raw `.sig` against the compiled public key. Checksums
 include those signatures. Publication verifies them again without the PFX.
 Ordinary PR package checks leave `sign_updates` disabled and receive no signing
-secrets. Signed package preparation does not install or roll back the application.
-Releases without the required `.sig` assets are rejected by package preparation;
-the Releases page remains available for manual downloads.
+secrets.
+
+In the app, downloading a release verifies these signatures; it does not
+install or roll back anything. The app refuses to download a release that lacks
+the required `.sig` assets. The Releases page remains available for manual
+downloads.
 
 [`sign-windows.sh`](../scripts/sign-windows.sh) defaults to
 `WINDOWS_SIGNING_MODE=none`. Its supported modes are:

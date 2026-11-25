@@ -1,80 +1,194 @@
 # Garmin Connect and sync
 
-Sign in from **Garmin Connect** in the app or web UI, or use the CLI:
+Garmin Connect is optional. Without it, everything that needs only the watch
+still works. Sign in to:
+
+- upload recordings to Garmin Connect and receive the files it has queued for
+  the watch;
+- see daily health data, records, badges and weight;
+- save workouts in Garmin Connect and send them to the watch from there (a
+  workout can also be written straight to the watch without sign-in);
+- change the settings that Connect manages.
+
+## Sign in
+
+In the app or web UI, open **Garmin Connect**, enter your Garmin email address
+and password, and choose **Sign in**. If Garmin sends a verification code, the
+tab asks for it.
+
+In a terminal:
 
 ```sh
 garminctl cloud login
 garminctl cloud status
-garminctl cloud sync
 ```
 
-Login prompts for credentials and, on a terminal, a verification code when required.
-`cloud login -email ADDRESS`, `GARMIN_EMAIL`, and `GARMIN_PASSWORD` also supply
-credentials. With noninteractive input or an empty verification prompt, finish
-later using `garminctl cloud mfa CODE`.
+`cloud login` asks for your email address and password and, when Garmin
+requires one, a verification code.
 
-Pending verification is stored beside the token file as `garmin-connect.json.mfa`
-with the same file protection. Its ten-minute lifetime is a local policy;
-Garmin may expire a challenge sooner. A wrong code retains the pending challenge
-and updated cookies for another attempt. Starting a new login replaces it;
-successful completion and `cloud logout` remove it. An expired challenge is
-removed when resumed. If Garmin accepts a code but OAuth or token saving fails,
-start `cloud login` again; the previous token file is preserved.
+garminctl never saves the password, in the app or in the terminal. It saves
+the tokens that Garmin returns; see
+[where the sign-in is stored](#where-the-sign-in-is-stored).
 
-Use one authentication writer per store. Running servers keep their loaded
-account snapshot: use the server's account controls or restart it after a
-standalone CLI login/logout. The CLI submits a code against the currently saved
-challenge; it cannot identify a code from an older login locally.
+| Way to give credentials | How |
+| --- | --- |
+| Prompt | `garminctl cloud login` |
+| Email as a flag | `garminctl cloud login -email ADDRESS` |
+| Environment | `GARMIN_EMAIL` and `GARMIN_PASSWORD` |
 
-The app stores tokens in an owner-only directory (`0700` on Unix), with
-owner-only files (`0600` on Unix and a protected current-user DACL on Windows).
-It does not save the password. Saving replaces a complete temporary file;
-a failed write or replacement keeps the previous tokens. Config-path,
-protection and unreadable-session errors are reported instead of silently
-using another directory. `cloud logout` can remove a malformed token file.
-Signing out, from the CLI or the app, also deletes the copies of the token and
-pending-verification files that application data backups hold; those backups
-stay usable for the remaining files.
-See [data locations](desktop.md#data-updates-and-uninstall) for token paths and
-the separate Windows/WSL stores.
+If the input is not a terminal, or you leave the code prompt empty, finish
+later with `garminctl cloud mfa CODE`.
+
+### Verification codes
+
+- A pending verification is saved beside the sign-in file as
+  `garmin-connect.json.mfa`, with the same file protection.
+- It is kept for ten minutes. This limit is garminctl's own; Garmin may expire
+  a code sooner.
+- A wrong code keeps the pending verification for another attempt.
+- Starting a new sign-in replaces it. A completed sign-in and `cloud logout`
+  remove it. An expired one is removed when you try to use it.
+- `cloud mfa CODE` sends the code for the newest sign-in attempt. garminctl
+  cannot tell whether a code came from an earlier attempt.
+- If Garmin accepts a code but the sign-in still fails afterwards, run
+  `cloud login` again. Your previous sign-in file is kept.
+
+### After signing in or out in a terminal
+
+A running app or server keeps the account it has loaded and does not notice the
+change. Sign in or out in its own **Garmin Connect** tab, or restart it.
+
+### Where the sign-in is stored
+
+The sign-in is a token file; see
+[where garminctl keeps its data](desktop.md#where-garminctl-keeps-its-data) for
+its path. Windows and WSL have separate files.
+
+- Only your user account can read the directory and the file (`0700` and
+  `0600` on Unix, a protected access list on Windows).
+- Saving replaces the file with a complete new one. A failed save keeps the
+  previous sign-in.
+- If the configuration directory cannot be used, or the saved sign-in cannot
+  be read, garminctl reports the error. It does not fall back to another
+  directory.
+- `cloud logout` can remove a damaged sign-in file.
+- Signing out, from the CLI or the app, also deletes the copies of the sign-in
+  and pending-verification files that
+  [application data backups](updating.md#what-garminctl-keeps-for-updates)
+  hold. Those backups stay usable for their other files.
 
 ## Manual sync
 
-`cloud sync` uploads supported recordings this computer has not sent, then
-downloads and acknowledges Connect's queued files. Uploaded recordings remain
-on the watch. Garmin's duplicate responses are recorded to avoid repeat uploads.
+Choose **Sync now** in the **Garmin Connect** tab, or run:
 
-A damaged or unreadable local upload ledger stops uploads and reports an error.
-If Garmin accepts files but saving that ledger fails, the sync result retains
-the accepted files and reports the save error. Fix the local storage problem
-before retrying; garminctl does not automatically replay that upload.
+```sh
+garminctl cloud sync
+```
 
-Queued files can include settings, Connect IQ apps and updates, workouts,
-courses, and personal records. Availability depends on the device and Connect's
-queue. `cloud messages` lists that queue. Use `cloud sync -no-upload` or
-`cloud sync -no-download` to run only one direction. `cloud sync` exits with an
-error when an upload failed, a queued file was not written to the watch or a
-direction could not run; with `-json` it prints the result first.
+A sync has two directions:
 
-`cloud settings` reads Connect's device settings; `cloud settings set K=V`
-updates them and fetches the settings file Connect generates. Use these for
-fields marked `managedByConnect` in Watch settings. Some recording types require
-privacy consent in Garmin Connect and are skipped until consent is available.
+| Direction | What happens | Skip it with |
+| --- | --- | --- |
+| Upload | Recordings that this computer has not sent yet go to Garmin Connect. They stay on the watch. | `-no-upload` |
+| Download | Files that Connect has queued for the watch are written to it and acknowledged. | `-no-download` |
+
+- Queued files can be settings, Connect IQ apps and updates, workouts, courses
+  and personal records. What is available depends on the watch and on
+  Connect's queue. `garminctl cloud messages` lists the queue.
+- Unplug the watch after a sync so that it applies the downloaded files.
+- If the watch is unplugged during a sync, the sync stops and reports what it
+  had done. Sync again later: accepted uploads are remembered, and files not
+  yet written are still in Connect's queue.
+- When Garmin answers that it already has a recording, garminctl remembers
+  that and does not upload the recording again.
+- Some recording types need privacy consent in Garmin Connect. They are
+  skipped until you give it.
+- `cloud sync` exits with an error when an upload failed, a queued file was not
+  written to the watch, or a direction could not run. With `-json` it prints
+  the result first.
+
+### If the upload record is damaged
+
+garminctl records what it has uploaded in a file on this computer.
+
+- If that file is damaged or cannot be read, uploads stop and an error is
+  reported.
+- If Garmin accepts files but saving the record fails, the sync result lists
+  the accepted files and reports the save error. Fix the storage problem
+  before you retry; garminctl does not upload those files again by itself.
+
+### Settings that Connect manages
+
+Garmin's service keeps its own copy of some watch settings. In **Watch
+settings** these fields are marked `managedByConnect`. If you change such a
+field only on the watch, Connect's value returns with a later sync. Change it
+in Connect as well, in either way:
+
+- In the **Garmin Connect** tab, edit the setting, choose **Review and apply**
+  and confirm.
+- In a terminal:
+
+  ```sh
+  garminctl cloud settings
+  garminctl cloud settings set KEY=VALUE
+  ```
+
+  `cloud settings` prints the keys. `cloud settings set` saves the values in
+  Connect and fetches the settings file that Connect generates for the watch.
+
+Unplug the watch afterwards so that it applies the file.
 
 ## Automatic USB sync
 
-The desktop app and `garminctl serve` watch USB by default. When a watch appears,
-the server connects, uploads recordings and downloads queued files if signed
-in, then checks for software updates. Events appear in the UI and Windows
-notifications. Update checks do not install firmware automatically.
+The desktop app and `garminctl serve` watch for a watch on USB. When one
+appears, the server:
 
-`garminctl serve -autosync=false` disables USB watching and automatic sync.
-Directory mode (`-root`) also disables the watcher. The desktop can reuse a
-server with those options; see [server lifecycle](desktop.md#window-and-server).
+1. connects to it;
+2. if you are signed in, uploads recordings and downloads queued files;
+3. checks for watch software updates. It does not install them.
 
-`garminctl autostart on` installs a Windows sign-in shortcut for a hidden server.
-From WSL it requires a Windows CLI binary beside the WSL binary. It does not
-open the desktop window; see [CLI server commands](cli.md#servers).
+Events appear in the UI and as Windows notifications.
+
+### Turn automatic sync off
+
+The app has no switch for it. There are two ways:
+
+- **Stay signed out of Garmin Connect.** The app still connects to the watch
+  and checks for watch software updates, but it does not sync.
+- **Run the server yourself without it.** Start the server in a terminal and
+  leave the terminal open:
+
+  ```sh
+  garminctl serve -autosync=false
+  ```
+
+  Then open the desktop app, or `http://127.0.0.1:8787` in a browser. The app
+  finds this server and uses it.
+
+  With this option:
+
+  - The server no longer detects the watch. Choose **Connect watch** after
+    plugging it in.
+  - The server keeps running when the app's window closes. Stop it with
+    Ctrl+C in the terminal.
+  - The **Application** tab cannot install garminctl updates while the app
+    uses a server that you started;
+    [update by hand](updating.md#update-by-hand).
+
+On Windows, see [run the CLI on Windows](desktop.md#run-the-cli-on-windows) for
+how to type the command. Reading a directory (`-root`) also turns automatic
+sync off.
+
+### Start the server when you log in to Windows
+
+`garminctl autostart on` makes a server start, hidden, when you log in to
+Windows. It copies the CLI to `%LOCALAPPDATA%\garminctl\garminctl.exe` and adds
+a shortcut to the Windows Startup folder that runs `garminctl serve` from that
+copy. `garminctl autostart off` removes the shortcut, and
+`garminctl autostart status` shows the current state.
+
+- It starts the server only, not the desktop window.
+- From WSL, it needs a Windows `garminctl.exe` beside the WSL binary.
 
 Sources: [sign-in and token storage](../internal/ship/gc/client.go),
 [sync](../internal/containers/connect/cloud.go), [USB watcher](../internal/ship/web/auto.go).

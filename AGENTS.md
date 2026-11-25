@@ -1,6 +1,7 @@
 # Agent notes
 
-See CLAUDE.md for the working rules.
+See CLAUDE.md for the working rules and `docs/architecture.md` for the design
+and its reasons.
 
 `internal` has three directories: `app` wires the process and the commands,
 `containers/<feature>` holds one feature each with its `ui/` adapters, and

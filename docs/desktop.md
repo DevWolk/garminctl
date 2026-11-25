@@ -1,34 +1,65 @@
-# Desktop application
+# Desktop app
 
-The native app includes the CLI and starts its web and MCP server automatically.
-Download a package from [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
+The desktop app is garminctl in its own window. It shows the same
+[tabs](web-ui.md) as the browser interface. Installing it also installs the
+command-line program (the [CLI](cli.md)), and the app starts the
+[local server](#the-local-server) that browsers and AI assistants connect to.
 
-## Install and launch
+## Install
 
-| System | Package | Installation |
-| --- | --- | --- |
-| Windows 10+, x64 | `*_windows_amd64_setup.exe` | Run Setup, then launch **garminctl** from Start or the desktop shortcut. |
-| WSL | Windows Setup above | Install and launch on Windows. An existing WSL CLI can launch it with `garminctl desktop`. |
-| Ubuntu 24.04+, x64 | `*_linux_amd64.deb` | Run `sudo apt install ./garminctl_*.deb`, then launch from the application menu. |
-| Fedora with WebKitGTK 4.1, x64 | `*_linux_amd64.rpm` | Run `sudo dnf install ./garminctl_*.rpm`, then launch from the application menu. |
+1. On Windows 11, check [Smart App Control](#smart-app-control) first.
+2. Open [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest)
+   and download the file for your system:
 
-Windows Setup installs WebView2 when absent; this requires internet access.
-Its default installation directory is `%LOCALAPPDATA%\Programs\garminctl`.
-Setup does not add the CLI to `PATH`. In PowerShell:
+   | System | File name ends with | Install and open |
+   | --- | --- | --- |
+   | Windows 10 or later, 64-bit | `_windows_amd64_setup.exe` | Run it, then open **garminctl** from Start or the desktop shortcut. |
+   | WSL | The Windows file above | Install and open it on Windows. A CLI inside WSL can open it with `garminctl desktop`. |
+   | Ubuntu 24.04 or later, 64-bit | `_linux_amd64.deb` | `sudo apt install ./garminctl_*.deb`, then open it from the application menu. |
+   | Fedora with WebKitGTK 4.1, 64-bit | `_linux_amd64.rpm` | `sudo dnf install ./garminctl_*.rpm`, then open it from the application menu. |
+
+   The other files on that page are the CLI-only archives, checksums and
+   signatures.
+3. Connect the watch by USB. On Linux, reconnect it after the installation so
+   that the new USB access rule applies.
+4. Open **Overview**. It shows the watch and its storage. If it says **Not
+   connected**, choose **Connect watch** at the bottom of the sidebar.
+
+### Windows notes
+
+- Setup installs WebView2, the Windows component that displays the app, when
+  it is missing; this needs internet access.
+- The default installation directory is `%LOCALAPPDATA%\Programs\garminctl`.
+- Windows and WSL have separate CLI installations.
+- A release's Windows files can be unsigned or signed, depending on how the
+  release was built. A personal self-signed certificate does not establish
+  public trust or guarantee that Windows accepts the files. See
+  [release signing](releases.md#configure-windows-signing).
+
+### Run the CLI on Windows
+
+Setup does not add the CLI to `PATH`, so a command such as `garminctl info`
+from these guides is not found. In PowerShell, either run the program by its
+full path:
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\garminctl\garminctl.exe" version
-& "$env:LOCALAPPDATA\Programs\garminctl\garminctl.exe" desktop
 ```
 
-Use your chosen directory if it differs. WSL and Windows have separate CLI
-installations. Linux packages install `/usr/bin/garmin-desktop`,
-`/usr/bin/garminctl`, and the required libraries. Reconnect the watch after
-installation so the Garmin USB access rule applies.
+or define the short name for the current PowerShell window, then use the
+commands as the guides print them:
 
-Windows packages can be unsigned or signed according to the release configuration.
-A personal self-signed certificate does not establish public trust or guarantee
-Windows acceptance. See [release signing](releases.md).
+```powershell
+Set-Alias garminctl "$env:LOCALAPPDATA\Programs\garminctl\garminctl.exe"
+garminctl version
+```
+
+Use your own directory if you changed it during Setup.
+
+### Linux notes
+
+The packages install `/usr/bin/garmin-desktop`, `/usr/bin/garminctl` and the
+libraries they need.
 
 ## Smart App Control
 
@@ -38,46 +69,78 @@ rates it safe or when it is signed with a certificate from a publicly trusted
 authority. garminctl releases have neither, and Windows offers no exception for
 a single app.
 
+Microsoft's page, linked above, explains how to see whether it is on.
+
 **With Smart App Control on, Windows can block `garminctl.exe`.** The CLI does
 not start, the Application tab cannot check the installation or saved
 packages, and in-app update and rollback report that the helper program was
 blocked and change nothing. The desktop app itself may still run.
 
-**Turning Smart App Control off is not recommended.** Install each release by
-hand with the Setup from [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest)
-instead.
+What this means in practice:
+
+- Use the app's tabs. Commands in these guides that start with `garminctl` do
+  not run.
+- To update garminctl, install each release by hand with the Setup from
+  [GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
+
+**Turning Smart App Control off is not recommended.**
 
 ## USB access
 
-Windows and WSL use Windows Portable Devices (WPD). Native Linux packages use
-libusb/MTP. Native Linux USB remains experimental and has not been verified on
-physical Garmin hardware; device compatibility is not established across models.
+| System | How garminctl reaches the watch |
+| --- | --- |
+| Windows and WSL | Windows Portable Devices (WPD), which is part of Windows. |
+| Linux | libusb and MTP, in the CLI from the DEB or RPM package or in a source build with CGO. |
 
-The portable CLI archives support Windows/WSL and directory dumps. Direct Linux
-USB requires the CLI in the DEB/RPM package or a CGO-enabled source build.
-See [CLI installation and device selection](cli.md).
+Native Linux USB is experimental. It has not been verified on physical Garmin
+hardware, and compatibility across watch models is not established.
 
-## Window and server
+The portable CLI archives support Windows, WSL and
+[directory copies of a watch](cli.md#global-options), but not direct Linux USB.
 
-Launch the app and connect the watch. **Overview** shows the connected device,
-storage, and pending changes. The [tab guide](web-ui.md) covers available actions;
-[Garmin Connect](cloud-sync.md) describes automatic sync.
+## Use the app
 
-The app starts a server on `127.0.0.1:8787` or reuses a compatible garminctl
-server already at that address that reads the same watch or directory
-(`-root`, `-device`). A garminctl server for other data makes the app start its
-own on a free port; an unrelated or incompatible server causes a startup error. When the window exits, a server it
-started and its background sync stop; a reused server continues running.
+Open the app and connect the watch. **Overview** shows the connected watch, its
+storage and pending changes. The [tab guide](web-ui.md) covers what each tab
+does.
 
-Launching the app again focuses its existing window. The View menu provides
-Back, Reload, **AI & MCP**, and Quit. Reload and window exit ask before
-discarding unapplied edits. Downloads use a native Save dialog; external links
-open the default browser. The installer does not enable launch at sign-in.
+When a watch is plugged in, the app connects to it and checks for watch
+software updates. If you are signed in to Garmin Connect, it also syncs. See
+[automatic USB sync](cloud-sync.md#automatic-usb-sync), also for turning this
+off.
+
+- Opening the app again brings the existing window to the front.
+- The **View** menu has **Back**, **Reload**, **AI & MCP** and **Quit**.
+  **Help → Application updates…** opens the **Application** tab.
+- **Reload** and closing the window ask before discarding edits you have not
+  saved.
+- Downloads use a Save dialog. Links to websites open in your default browser.
+- The app does not start by itself when you log in to your computer.
+
+### Saving files
+
+A file export stops when the window closes, and a transfer times out after ten
+minutes. If an export fails or is cancelled, a file that already exists at the
+destination is kept; only a completed download replaces it.
+
+### The local server
+
+The interface is served by a small web server inside garminctl, the local
+server. It listens at `127.0.0.1:8787` by default, an address that only this
+computer can reach. Usually the app starts the server and stops it when the
+window closes. The exception is a server that is already running:
+
+| What the app finds at that address | What it does |
+| --- | --- |
+| Nothing | Starts its own server. The server and its background sync stop when the window closes. |
+| A server started with `garminctl serve` for the same watch | Uses it. That server keeps running after the window closes. |
+| A `garminctl serve` that reads another watch or directory (`-device`, `-root`) | Starts its own server on a free port. |
+| Another program, or an incompatible garminctl | Reports a startup error. Stop that program first. |
 
 ## Launch options
 
 `garminctl -root DIR desktop` and `garminctl -device ID desktop` pass those
-options to the app. Invoke the desktop executable for a custom port:
+options to the app. For another port, run the desktop executable itself:
 
 ```sh
 garmin-desktop -addr 127.0.0.1:8791 -root ./watch-dump
@@ -85,169 +148,82 @@ garmin-desktop -addr 127.0.0.1:8791 -root ./watch-dump
 
 On Windows, run `garmin-desktop.exe` from the installation directory.
 
-| Flag | Default | Usage |
+| Flag | Default | Use |
 | --- | --- | --- |
-| `-addr IP:PORT` | `127.0.0.1:8787` | Choose a loopback IP and port. |
-| `-root DIR` | USB device | Use a watch directory or dump and disable automatic USB watching. |
+| `-addr IP:PORT` | `127.0.0.1:8787` | A loopback IP address and port. |
+| `-root DIR` | USB watch | Read a watch directory or copy, and turn off automatic USB detection. |
 | `-device ID` | First Garmin device | Use this USB device. |
 
-An open app only comes to the front when launched again; quit it before
-launching it with other options. For `-autosync=false`, start a
-[CLI server](cli.md#servers) with that option, then launch the app at the same
-address to reuse it.
+Quit an open app before starting it with other options.
 
-## Data, updates, and uninstall
+To run the app without automatic sync, see
+[turn automatic sync off](cloud-sync.md#turn-automatic-sync-off).
 
-File exports are cancelled when the window closes and have a ten-minute
-transfer timeout. If an export fails or is cancelled, an existing destination
-file is retained; only a completed download replaces it.
+## Where garminctl keeps its data
 
-| Data | Windows default | Linux/WSL default |
+| Data | Windows | Linux and WSL |
 | --- | --- | --- |
-| Connect tokens | `%APPDATA%\garminctl\garmin-connect.json` | `~/.config/garminctl/garmin-connect.json` |
-| Caches and registry backups | `%LOCALAPPDATA%\garminctl` | `~/.cache/garminctl` |
-| Desktop WebView2 profile | `%APPDATA%\garminctl\desktop` | Not used |
+| Configuration directory, `<config>` | `%APPDATA%\garminctl` | `~/.config/garminctl` |
+| Garmin Connect sign-in | `<config>\garmin-connect.json` | `<config>/garmin-connect.json` |
+| Cache directory, `<cache>`: caches and safety copies | `%LOCALAPPDATA%\garminctl` | `~/.cache/garminctl` |
+| The window's browser profile | `<config>\desktop` | Not used |
 
-Linux paths respect `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`. Windows and WSL have
-separate data directories, so switching between them can require another
-Connect sign-in.
+- On Windows, paste a path such as `%APPDATA%\garminctl` into File Explorer's
+  address bar to open it.
+- The cache directory `%LOCALAPPDATA%\garminctl` is not the program directory
+  `%LOCALAPPDATA%\Programs\garminctl`.
+- Linux paths follow `XDG_CONFIG_HOME` and `XDG_CACHE_HOME`.
+- Windows and WSL have separate data directories, so you may need to sign in
+  to Garmin Connect in each.
+- A sign-in that waits for a verification code is saved beside the sign-in
+  file; see [verification codes](cloud-sync.md#verification-codes).
 
-Before staging an app-list visibility change, garminctl saves and reads back
-`OUT.BIN`, and the pending `IN.BIN` when one exists, in a unique
-`OUT.BIN-<timestamp>-<suffix>/` snapshot under the cache directory. Before
-rewriting a Connect IQ app's settings it saves the current file in
-`<NAME>.SET-<timestamp>-<suffix>/<NAME>.SET`. Directory/file access is
-restricted to the current user. If a backup fails, the change is not written.
-Successful copies remain available even if the subsequent device write fails;
-nothing removes them automatically, and cache removal also removes these
-recovery copies.
+### Safety copies of watch files
 
-### Update an installed package
+Before two kinds of change, garminctl saves the current watch file under the
+cache directory and reads the copy back:
 
-Choose **Help → Application updates…** to open **Application**, or open
-[GitHub Releases](https://github.com/DevWolk/garminctl/releases/latest).
-Download the newer package for the same system and architecture, then quit
-garminctl before installing it. Stop any separate `garminctl serve` process too.
-Windows Setup also updates the server copy made by `garminctl autostart on`;
-a copy in use by a running server keeps its old version.
-
-| Installation | Update |
+| Change | Copy |
 | --- | --- |
-| Windows/WSL desktop | Run the new Setup using the existing installation directory. |
-| Ubuntu DEB | Run `sudo apt install ./garminctl_NEW_VERSION_linux_amd64.deb`. |
-| Fedora RPM | Run `sudo dnf upgrade ./garminctl_NEW_VERSION_linux_amd64.rpm`. |
-| Portable CLI archive | Follow the [standalone CLI replacement](cli.md#update-a-standalone-cli) in its own directory. |
-| CLI installed with Go | Use the [separate source CLI flow](cli.md#update-a-standalone-cli) with an explicit `GOBIN`. |
+| Hiding or showing an app | `OUT.BIN`, and the pending `IN.BIN` when one exists, in a unique `OUT.BIN-<timestamp>-<suffix>/` directory. |
+| Changing a Connect IQ app's settings | The current file, as `<NAME>.SET-<timestamp>-<suffix>/<NAME>.SET`. |
 
-Replace `NEW_VERSION` with the downloaded version. Packages preserve the data
-locations above. Reopen garminctl after updating; a running server must restart
-to use the new binary. MCP configuration can stay unchanged when its URL or
-executable path stays the same.
+- Only your user account can read these copies.
+- If a copy fails, the change is not written.
+- A copy stays even when the write to the watch fails afterwards.
+- Nothing removes the copies automatically. Deleting the cache directory
+  deletes them too.
 
-**Application** shows separate desktop, CLI and backend versions, local platform,
-and the detected installation type. Unknown ownership and differing versions
-remain visible. **Check for updates** refreshes release history from GitHub;
-stable releases are selected by default. **Include prereleases** changes which
-saved releases are shown without another network request. Saved history includes
-the time of its last successful check and remains available offline. Release
-notes are displayed as text. The Releases link opens the browser for manual
-package download. In builds with a trusted verification key, **Download selected
-release** verifies and saves the package locally. **Cancel download** waits for
-worker cleanup; reloading the page resumes observation of the same operation.
-Preparation requires confirmed installation ownership and matching desktop/CLI
-builds. A missing key or an unsupported installation is reported explicitly.
-**Install saved release…** verifies both the selected update and a retained
-package of the current version, saves a protected data backup and asks before
-handoff. Active watch jobs or a separately owned backend prevent preparation.
-Cancellation is available before handoff and waits for cleanup. Once the system
-installer takes ownership, its outcome must be checked after restart; an accepted
-handoff does not prove successful installation. An installation that did not
-complete is shown in **Application** on the next start and by
-`garminctl application status`, with the directory of its logs.
-DEB and RPM updates ask once for system authorization (`pkexec`) to run the
-installed `garminctl`, which verifies the package again before the package
-manager installs it. Missing system tools, or on Windows a running
-`garminctl.exe`, are reported before the application closes.
-The **Updates** tab manages watch software and apps. The GitHub packages do not
-configure an APT/DNF repository, so system updates alone will not fetch newer
-versions of garminctl.
+The files kept for updating garminctl are listed in
+[what garminctl keeps for updates](updating.md#what-garminctl-keeps-for-updates).
 
-### Restore an older version and its data
+## Update
 
-In **Application**, select an older saved version and its matching data backup
-under **Return to an older version**. **Prepare rollback review…** verifies the
-packages and saves a fresh copy of current data. It does not restore or install
-yet. To preserve current files, first select **Keep current data (requires
-compatibility check)**. Preparation requires explicit matching format
-provenance in both backups and checks the current account, MFA and upload-ledger
-reader formats. Missing, unknown or incompatible provenance refuses this mode;
-it never silently switches to restoring the older copy.
+See [updating garminctl](updating.md): updating by hand, updating from the
+**Application** tab, and returning to an older version. The **Updates** tab is
+for watch software and watch apps.
 
-Review the selected mode, the two backup IDs and any file replacement/removal, then
-check the explicit consent box and choose **Restore backup and install older
-version** or **Keep current data and install older version**. Cancel keeps the
-current files and waits for preparation cleanup. Confirmed work cannot be
-canceled; a request to close the window waits until it ends.
+## Uninstall
 
-Explicit restoration replaces the listed files with the selected backup; newer
-changes to them remain only in the fresh safety copy. The compatible mode makes
-no data replacements and rechecks current files after backend shutdown before
-installer handoff. Other files, browser data and retained packages stay in place.
-Reload resumes the same review and never confirms it automatically.
+| System | How |
+| --- | --- |
+| Windows | **Installed apps** → **garminctl Desktop** → **Uninstall** |
+| Ubuntu | `sudo apt remove garminctl` |
+| Fedora | `sudo dnf remove garminctl` |
 
-Restoration across files is not atomic. A failure may leave a partial data set
-or an uncertain installer outcome; the dialog states whether local data is
-unchanged, partly restored or fully restored. After a partial or full restore
-do not repeat the operation; retain both
-backup IDs and the packages for manual recovery. The GUI-independent
-`garminctl application recovery snapshots` lists backups and
-`garminctl application recovery inspect ID` checks an explicit copy.
-`garminctl application recovery list` lists retained packages;
-`garminctl application recovery export ID` verifies and exports a manual repair
-package. These CLI commands do not restore data or run an installer.
+Uninstalling keeps your configuration and caches, including the saved Garmin
+Connect sign-in. On Windows it also removes the startup shortcut and the copy
+of the CLI that [`garminctl autostart on`](cloud-sync.md#start-the-server-when-you-log-in-to-windows)
+created; a server that is still running keeps its copy until it exits.
 
-### What garminctl keeps for updates
+To remove everything:
 
-Updates and rollbacks keep the files below, private to the current user.
-`<config>` is the directory of the Connect tokens and `<cache>` the cache
-directory from the [table above](#data-updates-and-uninstall).
-
-| Directory | Contents | Kept |
-| --- | --- | --- |
-| `<config>/application-backups/` | Data backups, one saved before each installation and each rollback review: copies of the Connect token and pending-verification files, upload ledgers and the watch recovery copies. | The 10 newest. |
-| `<cache>/application-packages/` | Downloaded packages with their signatures. | The 5 most recently saved, and always the package of the installed version. |
-| `<cache>/application-recovery/` | Copies made by `application recovery export`. | Until you delete them. |
-| `<cache>/application-staging/` | Working copies of a download or a verification. | Removed when the operation ends. |
-| `<cache>/application-installing/` | The package, a copy of the CLI and the log of an installation. | Removed when an installation is canceled. After a handoff to the system installer, the operation with the latest recorded result. |
-| `<cache>/application-history/` | The release list of the last successful check. | Replaced by the next successful check. |
-
-The counts are fixed. Once the installer accepts an update, the backups beyond
-the newest 10 are deleted; an update that is refused or canceled and a rollback
-delete none, so a retry does not push out older backups and the backup selected
-for a rollback stays. A download that saves a new package deletes the packages beyond
-the limit, and of two saved copies of one release it keeps the later one. A
-working copy left by an interrupted operation is deleted by the next download,
-update or installation once it has been unchanged for a day.
-
-Signing out of Garmin Connect, in the app or with `garminctl cloud logout`,
-deletes the token and pending-verification copies from every backup. The
-backups stay valid for their other files.
-
-A saved package or backup that this build cannot read is skipped, not deleted:
-it may belong to a build with another update key or a later format.
-`garminctl application recovery list` and `snapshots` name skipped entries and
-the `remove-package ID` or `remove-snapshot ID` command that deletes one; see
-[application recovery](cli.md#application-recovery). Downloading a release
-again replaces a damaged copy of its package.
-
-### Uninstall
-
-Uninstall through
-Windows Installed Apps (**garminctl Desktop**), `sudo apt remove garminctl`, or
-`sudo dnf remove garminctl`. Uninstall preserves configuration and caches.
-On Windows it also removes the sign-in shortcut and the server copy created by
-`garminctl autostart on`; a server that is still running keeps its copy until
-it exits.
+1. In the **Garmin Connect** tab, choose **Sign out**. This deletes the saved
+   sign-in and its copies in the data backups.
+2. Uninstall as above.
+3. Delete the `<config>` and `<cache>` directories from
+   [the table above](#where-garminctl-keeps-its-data).
+4. If you connected an AI assistant, remove garminctl from its MCP settings.
 
 Sources: [installer](../build/windows/installer.nsi),
 [Linux packages](../scripts/package-linux.sh),
