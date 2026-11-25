@@ -1,9 +1,14 @@
 # File formats and transport
 
-This reference describes the codecs and transfer rules in `internal/ship/fit`,
-`internal/ship/ciq`, `internal/ship/device`, `internal/ship/deviceinfo` and the feature
-containers under `internal/containers`. Fixture tests cover the
-included samples; device contents and firmware behavior can differ.
+This reference is for contributors. It describes the codecs and transfer rules
+in `internal/ship/fit`, `internal/ship/ciq`, `internal/ship/device`,
+`internal/ship/deviceinfo` and the feature containers under
+`internal/containers`. Fixture tests cover the included samples; device
+contents and firmware behavior can differ.
+
+For the overall design, read [how garminctl works](architecture.md). For when a
+change takes effect on the watch, see the
+[CLI guide](cli.md#when-changes-take-effect).
 
 ## Device paths and transport
 
@@ -167,11 +172,16 @@ results. A missing schema does not imply a missing `.SET` file.
 `IN.BIN` as its base when present, otherwise `OUT.BIN`; a read error other than
 absence stops it. It changes exactly one entry: a name, file name or ID may be
 prefixed with the entry's kind (`glance:<id>`), since the entries of one app
-share name and IDs, and a ref matching several entries is refused. It refuses writes if identity re-encoding changes any bytes,
-changes field 4 for the matched entry, writes and reads back a private backup
-of `OUT.BIN` and the pending `IN.BIN`, then writes `IN.BIN`. Backup failure
-prevents the device write. Finish the USB session before checking
-visibility on the watch.
+share name and IDs, and a ref matching several entries is refused. It then:
+
+1. refuses to write if re-encoding the unchanged registry would alter any
+   byte;
+2. changes field 4 of the matched entry;
+3. writes and reads back a private backup of `OUT.BIN` and the pending
+   `IN.BIN`; a failed backup prevents the device write;
+4. writes `IN.BIN`.
+
+Finish the USB session before checking visibility on the watch.
 
 [`InstallPRGAction`](../internal/containers/apps/binary.go) performs a minimal header check
 and writes a randomly named `.PRG` through `WriteFileAction`; it does not parse
