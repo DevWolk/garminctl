@@ -32,17 +32,20 @@ window.createApplicationDownload = ({selection, busy, changed}) => {
       resolving: 'Finding the package for this installation.',
       downloading: 'Downloading the selected package.',
       verifying: 'Verifying and saving the package.',
+      recovery: 'Saving the package of the running version as the way back.',
       canceling: 'Canceling download and cleaning up.',
     };
     const total = Number.isSafeInteger(state?.total) && state.total > 0 ? state.total : 0;
     const written = Number.isSafeInteger(state?.written) ? Math.max(0, Math.min(state.written, total)) : 0;
     progress.hidden = !active() && phase !== 'ready';
-    if (total && (phase === 'downloading' || phase === 'ready')) {
+    if (total && (phase === 'downloading' || phase === 'recovery' || phase === 'ready')) {
       progress.max = total;
       progress.value = written;
     } else { progress.removeAttribute('value'); }
     detail.textContent = messages[phase] || '';
-    if (phase === 'downloading' && total) detail.textContent = `${written.toLocaleString()} of ${total.toLocaleString()} bytes`;
+    const bytes = `${written.toLocaleString()} of ${total.toLocaleString()} bytes`;
+    if (phase === 'downloading' && total) detail.textContent = bytes;
+    if (phase === 'recovery' && total) detail.textContent = 'Package of the running version: ' + bytes;
     // Byte updates use the semantic progress element, not a noisy live region.
     let announcement = state?.disabledReason || '';
     if (phase === 'ready') announcement = 'Verified package saved for ' + state.tag + '.';

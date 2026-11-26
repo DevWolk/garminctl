@@ -134,6 +134,10 @@ Module map:
   waiting on itself. A stop request is not proof of successful shutdown; the
   UI exposes that distinction and prevents replay. Reload resumes status only.
   One download holds the existing window Scope until worker/cache cleanup ends.
+  A download of another version first retains the running version's published
+  package, the one preflight verifies, under the `recovery` phase. Saved last,
+  it could make retention remove a selection that was only verified again. The
+  selection is saved even when that fails; the error then names both versions.
   Cancel uses an operation ID; canceling stays active until join, and stale
   requests/callbacks cannot affect the next operation. Window close cancels and
   joins preparation before closing an owned backend; reused backend remains.

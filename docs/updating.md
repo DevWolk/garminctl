@@ -67,8 +67,10 @@ Opening the tab does not contact GitHub or start a download.
 1. Choose **Check for updates**. This refreshes the release history from
    GitHub. Stable releases are selected by default. **Include prereleases**
    changes which saved releases are shown, without another network request.
-2. Choose **Download selected release**. garminctl downloads the package,
-   checks its signature and saves it on this computer. **Cancel download** is
+2. Choose **Download selected release**. garminctl downloads two packages,
+   checks their signatures and saves them on this computer: first the version
+   you run now, unless it is already saved, then the selected release. The
+   installation verifies the first one as a way back. **Cancel download** is
    complete only when the unfinished download has been removed. Reloading the
    page keeps watching the same download.
 3. Choose **Install saved release…** and confirm. garminctl then:
@@ -114,7 +116,7 @@ To install a saved release, also:
 | The app was installed by Setup, DEB or RPM, on amd64. | Update by hand. |
 | The app runs its own server. | The saved packages cannot be listed. If the app uses a `garminctl serve` that you started, stop that server and open the app again. |
 | The selected release is newer than the installed one. | To go back, use [return to an older version](#return-to-an-older-version). |
-| The saved packages include the version you run now; the app verifies it as a way back. | It is there when you downloaded that version in the app before: saved packages survive uninstalling. Otherwise download your current version from the release list as well, or update by hand. |
+| The saved packages include the version you run now; the app verifies it as a way back. | Download the release again: each download also saves the version you run now. If that version has no published release, or the download reports that its package could not be saved, update by hand. |
 | No watch job, such as a sync, is running. | Wait for it to end. |
 | On Linux: `pkexec` and the package tools are present, and the installed `garminctl` belongs to root. On Windows: the installed `garminctl.exe` is not in use. | The message names what is missing or running. It is shown before the app closes. |
 

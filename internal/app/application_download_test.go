@@ -17,8 +17,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DevWolk/garminctl/internal/containers/application"
 	"github.com/DevWolk/garminctl/internal/ship/updatetransport"
@@ -165,6 +167,14 @@ func downloadTestWorker() error {
 func downloadPipeline(t *testing.T, tag string, draft bool) (applicationPackageDownload, application.DownloadTarget) {
 	t.Helper()
 
+	return downloadSeriesPipeline(t, draft, tag)
+}
+
+// downloadSeriesPipeline publishes every given tag, so that one cache can
+// hold several releases.
+func downloadSeriesPipeline(t *testing.T, draft bool, tags ...string) (applicationPackageDownload, application.DownloadTarget) {
+	t.Helper()
+
 	if runtime.GOARCH != "amd64" || (runtime.GOOS != "linux" && runtime.GOOS != "windows") {
 		t.Skip("synthetic native Setup/DEB fixture requires an amd64 publishing platform")
 	}
@@ -174,27 +184,39 @@ func downloadPipeline(t *testing.T, tag string, draft bool) (applicationPackageD
 		t.Fatal(err)
 	}
 
-	kind, name := "deb", "garminctl_"+strings.ReplaceAll(strings.TrimPrefix(tag, "v"), "-", ".")+"_linux_amd64.deb"
-	if runtime.GOOS == "windows" {
+	kind, setup := "deb", runtime.GOOS == "windows"
+	if setup {
 		kind = "setup"
-		name = "garminctl_" + tag + "_windows_amd64_setup.exe"
 	}
 
-	client := &http.Client{Transport: downloadTestHTTP(func(r *http.Request) (*http.Response, error) {
-		var value any
+	const firstReleaseID = 11
 
-		switch r.URL.Path {
-		case "/repos/DevWolk/garminctl/releases/tags/" + tag:
-			value = map[string]any{"id": 11, "tag_name": tag, "draft": draft}
-		case "/repos/DevWolk/garminctl/releases/11/assets":
-			value = []updatetransport.AssetRef{{ID: 101, Name: name, Size: int64(len(downloadTestBytes)), URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/101"}, {ID: 102, Name: name + ".sig", Size: 384, URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/102"}}
-		default:
-			return nil, fmt.Errorf("unexpected parent HTTP %s", r.URL)
+	client := &http.Client{Transport: downloadTestHTTP(func(r *http.Request) (*http.Response, error) {
+		for index, tag := range tags {
+			id := firstReleaseID + index
+
+			var value any
+
+			switch r.URL.Path {
+			case "/repos/DevWolk/garminctl/releases/tags/" + tag:
+				value = map[string]any{"id": id, "tag_name": tag, "draft": draft}
+			case fmt.Sprintf("/repos/DevWolk/garminctl/releases/%d/assets", id):
+				name := "garminctl_" + strings.ReplaceAll(strings.TrimPrefix(tag, "v"), "-", ".") + "_linux_amd64.deb"
+				if setup {
+					name = "garminctl_" + tag + "_windows_amd64_setup.exe"
+				}
+
+				value = []updatetransport.AssetRef{{ID: 101, Name: name, Size: int64(len(downloadTestBytes)), URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/101"}, {ID: 102, Name: name + ".sig", Size: 384, URL: "https://api.github.com/repos/DevWolk/garminctl/releases/assets/102"}}
+			default:
+				continue
+			}
+
+			body, err := json.Marshal(value)
+
+			return downloadTestResponse(body), err
 		}
 
-		body, err := json.Marshal(value)
-
-		return downloadTestResponse(body), err
+		return nil, fmt.Errorf("unexpected parent HTTP %s", r.URL)
 	})}
 	directory := t.TempDir()
 
@@ -215,6 +237,67 @@ func TestApplicationDownloadUsesRealCachedCLIAndReverifiesRetainedPackage(t *tes
 	again, err := pipeline.Download(t.Context(), application.Release{Tag: applicationDownloadTag}, target, nil)
 	if err != nil || again == nil || *again != *result {
 		t.Fatalf("retained=%+v %v", again, err)
+	}
+
+	assertDownloadOperationsClean(t, pipeline)
+}
+
+type downloadTestInventory struct{ value *application.InventoryResult }
+
+func (f downloadTestInventory) Info(context.Context) (*application.InventoryResult, error) {
+	return f.value, nil
+}
+
+type downloadTestFeed []application.Release
+
+func (f downloadTestFeed) Releases(context.Context) ([]application.Release, error) { return f, nil }
+
+// A selection that is already saved is only verified again, so nothing marks
+// it as recently saved. Saving the running version beside it then triggers
+// retention, which must not remove the selection the download reports.
+func TestApplicationDownloadKeepsAnOlderSavedSelectionBesideTheRunningVersion(t *testing.T) {
+	t.Parallel()
+
+	saved := []string{"v2.1.0", "v2.2.0", "v2.3.0", "v2.4.0", "v2.5.0"}
+	if len(saved) != application.RetainedPackages {
+		t.Fatalf("the fixture must fill the retention limit of %d", application.RetainedPackages)
+	}
+
+	pipeline, target := downloadSeriesPipeline(t, false, append(slices.Clone(saved), downloadTestBuild)...)
+	releases := downloadTestFeed{{Tag: downloadTestBuild}}
+	oldest := time.Now().Add(-time.Hour)
+
+	for age, tag := range saved {
+		releases = append(releases, application.Release{Tag: tag})
+
+		result, err := pipeline.Download(t.Context(), application.Release{Tag: tag}, target, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		when := oldest.Add(time.Duration(age) * time.Minute)
+		if err := os.Chtimes(filepath.Join(pipeline.packageDirectory, result.CacheID), when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	info := &application.InventoryResult{OS: target.OS, Arch: target.Arch, Desktop: application.BinaryVersion{Version: downloadTestBuild}, CLI: application.BinaryVersion{Path: target.CLIPath, Version: downloadTestBuild}, Installation: application.InstallationInfo{Kind: target.Installation}}
+	action := application.NewDownloadReleaseAction(downloadTestInventory{info}, releases, pipeline)
+
+	result, err := action.Run(t.Context(), application.DownloadRequest{Tag: saved[0]}, nil)
+	if err != nil || result == nil || result.Tag != saved[0] {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+
+	if _, err := os.Stat(filepath.Join(pipeline.packageDirectory, result.CacheID)); err != nil {
+		t.Fatalf("the download reported %s as saved, but it is not in the cache: %v", saved[0], err)
+	}
+
+	var phases []string
+
+	running, err := pipeline.Download(t.Context(), application.Release{Tag: downloadTestBuild}, target, func(p application.DownloadProgress) { phases = append(phases, p.Phase) })
+	if err != nil || running == nil || slices.Contains(phases, "downloading") {
+		t.Fatalf("the running version was not saved by the download: result=%+v err=%v phases=%q", running, err, phases)
 	}
 
 	assertDownloadOperationsClean(t, pipeline)
