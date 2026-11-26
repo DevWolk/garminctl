@@ -20,9 +20,8 @@ Use **Garmin Express** when you want Garmin's support behind the program, use
 a Mac, have a Garmin device that is not a watch, or need maps, marine charts,
 golf courses, product registration or Wi-Fi setup.
 
-Use **garminctl** when you want to change watch settings over USB without
-Garmin Connect, work from a terminal or through an AI assistant, or manage the
-watch without a Garmin account.
+Use **garminctl** when you want an AI assistant or a script to set up the
+watch, or want to change watch settings on the computer over USB.
 
 On Linux, also look at [openExpress](#open-source-tools). It covers maps and
 courses, which garminctl does not, and garminctl's own Linux USB support is

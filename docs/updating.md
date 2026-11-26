@@ -114,7 +114,7 @@ To install a saved release, also:
 | The app was installed by Setup, DEB or RPM, on amd64. | Update by hand. |
 | The app runs its own server. | The saved packages cannot be listed. If the app uses a `garminctl serve` that you started, stop that server and open the app again. |
 | The selected release is newer than the installed one. | To go back, use [return to an older version](#return-to-an-older-version). |
-| A package of the version you run now is saved too, as a way back. | Select your current version in the release list and download it as well, or update by hand. |
+| The saved packages include the version you run now; the app verifies it as a way back. | It is there when you downloaded that version in the app before: saved packages survive uninstalling. Otherwise download your current version from the release list as well, or update by hand. |
 | No watch job, such as a sync, is running. | Wait for it to end. |
 | On Linux: `pkexec` and the package tools are present, and the installed `garminctl` belongs to root. On Windows: the installed `garminctl.exe` is not in use. | The message names what is missing or running. It is shown before the app closes. |
 
