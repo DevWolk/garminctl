@@ -172,6 +172,22 @@ test('native download shows counted bytes, remains canceling until cleanup and p
   await ui.get('download-start').fire('click');assert.equal(starts,2);
 });
 
+test('native download names the package of the running version while it is saved as the way back',async()=>{
+  const clock=downloadClock();const ui=fixture(undefined,clock);
+  let current=idleDownload();
+  await ui.page.attach(bridge({downloadStatus:async()=>current,startDownload:async tag=>current={id:1,tag,phase:'recovery',written:0,total:0,active:true}}));
+  await ui.page.activate();
+  await ui.get('download-start').fire('click');
+  assert.match(ui.get('download-release').textContent,/v2.0.0/);
+  assert.match(ui.get('download-detail').textContent,/running version/);
+  assert.equal(ui.get('download-progress').hidden,false);assert.equal(ui.get('download-progress').value,undefined);
+  current={...current,written:1,total:4};await clock.tick();
+  assert.equal(ui.get('download-progress').value,1);assert.equal(ui.get('download-progress').max,4);
+  assert.match(ui.get('download-detail').textContent,/running version.*1 of 4 bytes/);
+  assert.equal(ui.get('download-status').textContent,'');
+  assert.equal(ui.get('download-cancel').hidden,false);
+});
+
 test('saved preparation after page reload is observed without starting another download',async()=>{
   const clock=downloadClock();const ui=fixture(undefined,clock);
   let current={id:7,tag:'v2.0.0-beta.1',phase:'downloading',written:3,total:4,active:true},starts=0;

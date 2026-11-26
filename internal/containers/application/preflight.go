@@ -7,7 +7,7 @@ import (
 )
 
 // ErrRecoveryPackageUnavailable requires a retained current-version package before installation.
-var ErrRecoveryPackageUnavailable = errors.New("the current version has no retained recovery package; use the manual installer")
+var ErrRecoveryPackageUnavailable = errors.New("the package of the running version is not saved as the way back; download a release in the Application tab to save it, or install a package by hand")
 
 // PreflightRequest selects an existing cache record without supplying paths or keys.
 type PreflightRequest struct {
