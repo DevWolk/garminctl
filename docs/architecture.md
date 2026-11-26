@@ -5,17 +5,17 @@ it before you change the code, or when you want to know what the program does
 to your watch. The [glossary](glossary.md) explains the user-facing terms;
 [terms used on this page](#terms-used-on-this-page) covers the internal ones.
 
-## Goals
+## Why it exists
 
-The design follows from five goals.
+garminctl is a personal project with two aims:
 
-1. **One program manages the watch over USB**: settings, apps, files,
-   workouts, music and sync.
-2. **Nothing else to install.** No separate runtime, driver or background
-   service.
-3. **Everything can be driven by a prompt or a script**, not only by a window.
-4. **Do not damage the watch.** Its file formats are only partly documented.
-5. **One person, one computer.** There are no accounts, roles or remote access.
+1. **Set up a Garmin watch through an AI assistant.** Watch settings, the
+   settings of watch faces and apps, and workouts are changed with MCP tools
+   instead of by hand.
+2. **Practice building a larger program in Go.**
+
+The command line, the web UI and the desktop app use the same code as the MCP
+tools.
 
 ## Overview
 
@@ -56,13 +56,13 @@ The desktop app adds what a browser page cannot do: a Save dialog, a guard for
 unsaved edits, and installing garminctl updates. See
 [the desktop app](#the-desktop-app).
 
-**Why several front ends over one implementation** (goal 3). A feature such as
+**Why several front ends over one implementation.** A feature such as
 "change a watch setting" is written once, as an action. The CLI command, the
 HTTP route and the MCP tool are thin adapters that call it. Not every feature
 has all three: sideloading an app is in the HTTP API only, and `backup` is in
 the CLI only.
 
-**Why the UI is embedded** (goal 2). The web UI is plain HTML, CSS and
+**Why the UI is embedded.** The web UI is plain HTML, CSS and
 JavaScript, compiled into the binary with its fonts and map library. Building
 it needs no bundler or package manager, and the page loads without internet
 access. Only map tiles are fetched online, when you open a map.
@@ -79,14 +79,14 @@ delete, make a directory. Three transports implement it, and
 | Native MTP | Linux, in a build with CGO | garminctl speaks MTP over libusb. Experimental: not verified on physical hardware. |
 | Directory | `-root DIR` | `DIR` holds the watch's `GARMIN/` tree: a mounted watch, a copy made with `garminctl backup`, or test fixtures. |
 
-**What the PowerShell bridge provides** (goal 2). A watch in MTP mode has no
+**What the PowerShell bridge provides.** A watch in MTP mode has no
 drive letter; Windows reaches it through Windows Portable Devices.
 Windows PowerShell and the .NET compiler it uses are part of Windows, so the
 bridge works without installing anything, and the Windows build needs no CGO.
 One bridge also serves two builds: from WSL, the Linux binary starts it through
 `powershell.exe` and uses the watch that Windows sees.
 
-**What the directory transport provides** (goal 4). Tests and development need
+**What the directory transport provides.** Tests and development need
 no watch, and a copy of a watch can be read with the same commands. Paths are
 opened through `os.Root`, so a watch path cannot leave the directory. A
 directory has no watch behind it: nothing applies pending files, and storage
@@ -135,7 +135,7 @@ it never takes over a port that another program holds.
 ## How changes reach the watch
 
 Where the watch has an input mechanism, garminctl uses it instead of editing
-the watch's own records (goal 4).
+the watch's own records.
 
 | Change | What garminctl writes | Takes effect | Safety copy |
 | --- | --- | --- | --- |
@@ -149,7 +149,7 @@ the watch's own records (goal 4).
 
 If a safety copy cannot be written, the change is not made.
 
-**Why the codecs keep what they do not understand** (goal 4). The Connect IQ
+**Why the codecs keep what they do not understand.** The Connect IQ
 settings file and the app registry are rewritten from their decoded form, so
 the codecs must give back every byte they did not change. They keep unknown
 fields, raw bytes and record order, and tests require that decoding and
@@ -233,7 +233,7 @@ with each of these.
 `garminctl serve` listens on `127.0.0.1:8787` by default and serves the web UI,
 the [HTTP API](http-api.md) and the MCP endpoint.
 
-The server has no login (goal 5). Anything that can reach it can read and write
+The server has no login. Anything that can reach it can read and write
 the watch, so a web page from elsewhere must not be able to call it through the
 browser. [`LocalOnly`](../internal/ship/httpx/security.go) refuses:
 

@@ -12,66 +12,55 @@
 > Garmin services as Garmin's own apps, and Garmin may change them at any time.
 > Use at your own risk.
 
-Manage a Garmin watch from your computer over USB: browse its files, change
-its settings, manage apps, workouts and music, and sync recordings with Garmin
-Connect.
-
-## What you can do
-
-- Change watch settings and Connect IQ app settings.
-- Hide, show, remove and sideload apps; browse the Connect IQ store.
-- See activities with maps and charts, and daily health from Garmin Connect.
-- Create workouts and send them to the watch.
-- Upload music and build playlists.
-- Check for and install watch software updates.
-- Sync with Garmin Connect, by hand or when the watch is plugged in.
-- Let an AI assistant read the watch and make most of these changes through
-  MCP.
+Manage a Garmin watch from your computer over USB, by hand or through an AI
+assistant: change its settings, manage apps, workouts and music, browse its
+files, and sync recordings with Garmin Connect.
 
 ## Why garminctl
 
-Garmin's own desktop program is Garmin Express. garminctl is an independent
-alternative with a different focus: the watch itself, over USB, from a window,
-a terminal or an AI assistant.
+garminctl lets an AI assistant set up your Garmin watch. You say what you want,
+for example *"make the backlight manual, hide the Golf activity and add a
+4 × 400 m interval workout"*, and the assistant makes the changes over USB.
 
-What garminctl offers:
+Through [MCP](docs/mcp.md), an assistant can:
 
-- **Watch settings without Garmin Connect.** garminctl reads the settings from
-  the watch and writes your changes over USB, with a review before they are
-  saved. It needs no account and no internet access. With Garmin's tools you
-  change watch settings in the Garmin Connect app or website, or on the watch,
-  and a sync applies them.
-- **Automation.** Everything can be run from a command line or by an AI
-  assistant, so a change can be scripted or asked for in plain words. Garmin's
-  pages describe no command line or API for Garmin Express.
-- **Linux.** Garmin Express runs on Windows and macOS only. In garminctl, USB
-  on native Linux is still experimental.
-- **No Garmin account for the watch.** Settings, apps, files, music and
-  workouts written straight to the watch work without signing in. An account
-  is needed for sync, health data and Garmin Connect workouts.
-- **Nothing in the background**, unless you turn on autostart. Garmin Express
-  is designed to run as a background service, which can be turned off.
-- **The watch's files.** Browse, copy and delete them, and open Garmin's data
-  files in readable form.
-- **Open source**, under the MIT license.
+- change watch settings;
+- change the settings of a watch face or another Connect IQ app;
+- create a workout from a description and send it to the watch;
+- hide, show and remove apps;
+- install watch software updates and sync with Garmin Connect;
+- read your activities and health data.
 
-What you give up:
+You can do the same by hand in the desktop app, in a browser or on the command
+line. By hand you can also upload music, sideload apps, and upload or download
+the watch's files.
 
-- **Garmin's support.** garminctl is unofficial. Garmin can change its
-  services at any time, and a feature can stop working until garminctl is
-  updated.
+### Compared with Garmin Express
+
+Garmin Express is Garmin's own desktop program.
+
+garminctl adds:
+
+- control by an AI assistant or a script;
+- changing watch settings on the computer, over USB;
+- Linux, where USB support is still experimental.
+
+garminctl lacks:
+
+- **Garmin's support.** It is unofficial, and Garmin can change its services
+  at any time.
 - **Maps, marine charts, golf courses, product registration and Wi-Fi setup.**
-  Garmin Express has them; garminctl does not.
 - **Devices other than watches, and macOS.**
-- **A list of supported watches.** garminctl has none. It works with the files
-  a watch shows over USB, and another model or software version can behave
-  differently.
+- **A list of supported watches.** Another model or software version can
+  behave differently.
 - **A publisher that Windows recognizes.** On Windows 11, Smart App Control
   can block garminctl's command-line program; see
   [Smart App Control](docs/desktop.md#smart-app-control).
 
 garminctl does not replace or change Garmin Express, so you can keep both
 installed and use Garmin Express for what only it does.
+
+### Compared with other open-source tools
 
 Among open-source tools, the closest is
 [openExpress](https://github.com/TomaszBojanowski/openExpress), a Linux app for
