@@ -67,7 +67,9 @@ Among open-source tools, the closest is
 sync, updates, maps, apps and music over USB. As far as we found, garminctl is
 the only open-source tool that changes watch settings over USB, and the only
 one that changes the settings of watch apps (Connect IQ) on a computer. It runs
-on Windows too.
+on Windows too. Several MCP servers give an assistant your Garmin Connect data
+and workouts; they work online, while garminctl's MCP tools also change the
+watch itself.
 
 [garminctl and the alternatives](docs/alternatives.md) compares them feature by
 feature, with links to the sources.
